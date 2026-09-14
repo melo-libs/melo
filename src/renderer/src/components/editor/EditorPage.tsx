@@ -398,7 +398,7 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
   }
 
   return (
-    <div className="ed-page" data-width={width}>
+    <div className="ed-page" data-width={width} data-has-clip={clipSource ? true : undefined}>
       {clipSource && docInfo && <ClipBanner source={clipSource} markdown={docInfo.body} />}
       <EditorContent editor={editor} className="ed-prose">
         {editor && <SlashMenu editor={editor} />}

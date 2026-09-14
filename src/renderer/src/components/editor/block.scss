@@ -14,6 +14,11 @@
   font-family: var(--font-reading);
   color: var(--ink);
 }
+.ed-page[data-has-clip] {
+  /* The source banner already establishes the page entrance; the default
+     document inset would leave a second, oversized band above it. */
+  padding-top: 32px;
+}
 .ed-page[data-width='narrow'] {
   max-width: 620px;
 }
