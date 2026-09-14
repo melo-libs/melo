@@ -1,0 +1,10 @@
+/* ============================================================
+   Style entry — imported once from main.tsx.
+   Fonts are imported in main.tsx (JS side); this file owns
+   tokens → reset → shared mixins, components added later.
+   ============================================================ */
+
+@use './tokens.scss';
+@use './reset.scss';
+@use './mixins.scss';
+@use './shell.scss';

@@ -1,0 +1,139 @@
+/* ============================================================
+   Design tokens — cool neutral surfaces, azure accent
+   Source: design tokens.css (cool variant), kept 1:1.
+   ============================================================ */
+
+:root {
+  /* Typography */
+  --font-serif: 'Source Serif 4 Variable', 'Source Serif Pro', 'Noto Serif SC', Georgia, serif;
+  --font-sans: 'Inter Variable', 'PingFang SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'SF Mono', Menlo, monospace;
+  --font-reading:
+    'Source Sans 3 Variable', 'Source Sans 3', 'PingFang SC', -apple-system, BlinkMacSystemFont,
+    sans-serif;
+
+  /* Type scale — editor body */
+  /* Display ladder compressed one notch from the design's 40/32 (title/H1):
+     large hanzi titles wrapped to 2-3 lines and dominated the 576px measure. */
+  --fs-h1: 28px;
+  --fs-h2: 24px;
+  /* 20 (not the design's 19) keeps the scale on clean steps: 16/20/24/32/40. */
+  --fs-h3: 20px;
+  --fs-body: 16px;
+  --fs-ui: 13px;
+  --fs-ui-sm: 12px;
+
+  /* 1.75 lands body lines on the pixel grid (16 x 1.75 = 28px). */
+  --lh-body: 1.75;
+  --lh-heading: 1.3;
+
+  /* Light theme — true-neutral surfaces, cool-slate ink */
+  --paper: oklch(1 0 0);
+  --paper-2: oklch(0.97 0 0);
+  --paper-3: oklch(0.945 0 0);
+  --ink: oklch(0.22 0.013 250);
+  --ink-2: oklch(0.435 0.011 250);
+  --ink-3: oklch(0.56 0.009 250);
+  --ink-4: oklch(0.69 0.007 250);
+  --hairline: oklch(0.9 0 0);
+  --hairline-2: oklch(0.858 0 0);
+  --hairline-3: oklch(0.922 0 0);
+  --sidebar-bg: #f6f6f6;
+
+  /* Accent — vivid azure */
+  --accent: oklch(0.585 0.21 262);
+  --accent-soft: oklch(0.585 0.21 262 / 0.1);
+  --accent-line: oklch(0.585 0.21 262 / 0.35);
+  --accent-hover: oklch(0.52 0.205 264);
+
+  /* Link */
+  --link: oklch(0.585 0.21 262);
+  --link-soft: oklch(0.585 0.21 262 / 0.1);
+  --link-hover: oklch(0.52 0.205 264);
+
+  /* AI spark — brand gold, only on Melo/AI touchpoints */
+  --ai: oklch(0.805 0.165 86);
+  --ai-soft: oklch(0.805 0.165 86 / 0.16);
+  --ai-hover: oklch(0.745 0.17 84);
+
+  /* Semantic */
+  --selection: oklch(0.8 0.075 262 / 0.42);
+  /* Highlighter lemon — v1.0.0's hue (#ffff00) with the glare taken out. */
+  --hl-mark: oklch(0.94 0.16 105 / 0.5);
+  /* Find & replace — browser-native palette: yellow matches, orange
+     current, ink text on both. */
+  --find-match: oklch(0.92 0.18 105);
+  --find-active: oklch(0.76 0.16 55);
+  --code-bg: oklch(0.968 0 0);
+  /* Light enough that the 4px bar reads as a margin accent, not a border. */
+  --quote-bar: oklch(0.88 0 0);
+  --sel-row: #ebf0fb;
+  --sel-row-hover: #e0e8fa;
+
+  /* Layout */
+  --sidebar-w: 260px;
+  --outline-w: 240px;
+  --editor-max: 720px;
+  --density: 1;
+
+  /* Elevation — cool near-black slate */
+  --shadow-sm: 0 1px 2px rgba(17, 20, 28, 0.06), 0 0 0 0.5px rgba(17, 20, 28, 0.04);
+  --shadow-md: 0 4px 14px rgba(17, 20, 28, 0.08), 0 1px 2px rgba(17, 20, 28, 0.06);
+  --shadow-lg: 0 18px 48px rgba(17, 20, 28, 0.14), 0 2px 6px rgba(17, 20, 28, 0.08);
+
+  /* Radii */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark theme — cool-slate ramp */
+[data-theme='dark'] {
+  --paper: oklch(0.196 0.006 250);
+  --paper-2: oklch(0.236 0.007 250);
+  --paper-3: oklch(0.286 0.008 250);
+  --sidebar-bg: oklch(0.216 0.006 250);
+  --ink: oklch(0.95 0.004 250);
+  --ink-2: oklch(0.852 0.006 250);
+  --ink-3: oklch(0.66 0.008 250);
+  --ink-4: oklch(0.538 0.007 250);
+  --hairline: oklch(0.322 0.008 250);
+  --hairline-2: oklch(0.38 0.009 250);
+  --hairline-3: oklch(0.29 0.007 250);
+
+  --accent: oklch(0.685 0.18 262);
+  --accent-soft: oklch(0.685 0.18 262 / 0.18);
+  --accent-line: oklch(0.685 0.18 262 / 0.45);
+  --accent-hover: oklch(0.75 0.165 262);
+
+  --link: oklch(0.685 0.18 262);
+  --link-soft: oklch(0.685 0.18 262 / 0.18);
+  --link-hover: oklch(0.75 0.165 262);
+
+  --ai: oklch(0.705 0.095 150);
+  --ai-soft: oklch(0.705 0.095 150 / 0.16);
+  --ai-hover: oklch(0.76 0.09 150);
+
+  --selection: oklch(0.62 0.09 262 / 0.4);
+  --hl-mark: oklch(0.65 0.13 100 / 0.4);
+  --find-match: oklch(0.55 0.12 105);
+  --find-active: oklch(0.62 0.15 55);
+  --code-bg: oklch(0.25 0.006 250);
+  --quote-bar: oklch(0.4 0.008 250);
+  --sel-row: oklch(0.33 0.062 262);
+  --sel-row-hover: oklch(0.365 0.07 262);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 20px 52px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Settings: Editor font = Serif swaps the reading face for note content,
+   including headings. Set on <html> by App from settings.editorFont. */
+:root[data-reading-font='serif'] {
+  --font-reading: var(--font-serif);
+}

@@ -1,0 +1,775 @@
+/* ============================================================
+   Smart Folders — center column, rule bar, popovers, results,
+   empty state, preview inspector, builder modal.
+   ============================================================ */
+
+.smart-view .ico,
+.smart-modal .ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.smart-view .ico svg,
+.smart-modal .ico svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---------------- center column ---------------- */
+.smart-view {
+  /* Fallback only — the live width is user-resizable, set inline. */
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--paper);
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  border-right: 1px solid var(--hairline);
+}
+.sv-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+.sv-resize:hover,
+.sv-resize:active {
+  box-shadow: inset -2px 0 0 var(--hairline-2);
+}
+:where(.smart-view) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+
+/* Same top strip as the editor: window-drag region, same height. */
+.sv-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px 0 22px;
+  height: 46px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.sv-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-3);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.sv-crumb .sf-glyph {
+  color: var(--ink-3);
+}
+.sv-crumb .sep {
+  color: var(--ink-4);
+}
+.sv-crumb .cur {
+  color: var(--ink);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sv-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-3);
+}
+.sv-iconbtn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.sv-iconbtn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+/* ---------------- status bar (count + sort) ---------------- */
+.sv-status {
+  display: flex;
+  align-items: center;
+  padding: 0 22px 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+.sv-count {
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- rule chips (builder modal only) ---------------- */
+.rule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  color: var(--ink-2);
+  position: relative;
+  transition: border-color 120ms var(--ease);
+}
+.rule-chip:hover {
+  border-color: var(--hairline-2);
+}
+.rule-chip.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.rule-chip .rc-key {
+  color: var(--ink-4);
+  font-size: 12px;
+}
+.rule-chip .rc-val {
+  color: var(--ink);
+  font-weight: 500;
+}
+.rule-chip .rc-caret {
+  color: var(--ink-4);
+}
+.rule-chip .rc-x {
+  color: var(--ink-4);
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  margin: 0 -2px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.rule-chip:hover .rc-x,
+.rule-chip.open .rc-x {
+  opacity: 1;
+}
+.rule-chip .rc-x:hover {
+  color: var(--danger, #e05252);
+}
+.rule-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  color: var(--ink-3);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  transition:
+    border-color 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.rule-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sf-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink-4);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  margin-left: auto;
+}
+.sf-sort:hover {
+  background: var(--paper-3);
+  color: var(--ink-2);
+}
+.sf-sort b {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* ---------------- popover (rule chip / sort / builder selects) ---------------- */
+.pop {
+  position: absolute;
+  z-index: 60;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  min-width: 184px;
+}
+.pop-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  padding: 8px 10px 4px;
+}
+.pop-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--ink-2);
+  width: 100%;
+  text-align: left;
+  transition: background 80ms var(--ease);
+}
+.pop-opt:hover {
+  background: var(--paper-2);
+}
+.pop-opt.sel {
+  color: var(--accent-hover);
+  font-weight: 500;
+}
+.pop-opt .ico {
+  color: var(--ink-4);
+  flex-shrink: 0;
+}
+.pop-opt.sel .ico {
+  color: var(--accent);
+}
+.pop-opt .tick {
+  margin-left: auto;
+  color: var(--accent);
+}
+.pop-div {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 4px;
+}
+
+/* ---------------- results list ---------------- */
+.sf-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.sf-results::-webkit-scrollbar {
+  width: 10px;
+}
+.sf-results::-webkit-scrollbar-thumb {
+  background: var(--hairline-2);
+  border-radius: 10px;
+  border: 3px solid var(--paper);
+}
+/* Timeline group headers carry real content (dates, months, years) —
+   sentence case, unlike the app's uppercase structural micro-labels. */
+.res-group-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 14px 22px 4px;
+}
+.sf-results > .res-group-head:first-child {
+  padding-top: 8px;
+}
+.res-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 22px;
+  cursor: default;
+  position: relative;
+}
+.res-row + .res-row::before {
+  content: '';
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 0;
+  height: 1px;
+  background: var(--hairline);
+  opacity: 0.5;
+  transition: opacity 120ms var(--ease);
+}
+.res-row:hover::before,
+.res-row:hover + .res-row::before,
+.res-row.sel::before,
+.res-row.sel + .res-row::before {
+  opacity: 0;
+}
+.res-row:hover {
+  background: var(--paper-2);
+}
+.res-row.sel {
+  background: var(--sel-row);
+}
+.res-main {
+  flex: 1;
+  min-width: 0;
+}
+.res-name {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.res-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-4);
+  min-width: 0;
+}
+.res-meta .dot-sep {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  flex-shrink: 0;
+}
+.res-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.res-tag {
+  color: var(--ink-4);
+  flex-shrink: 0;
+}
+.res-tile {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-4);
+}
+
+/* ---------------- buttons ---------------- */
+.smart-view .btn,
+.smart-modal .btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.smart-view .btn:hover,
+.smart-modal .btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.smart-view .btn.ghost,
+.smart-modal .btn.ghost {
+  background: var(--paper);
+  color: var(--ink-2);
+  border-color: var(--hairline-2);
+}
+.smart-view .btn.ghost:hover,
+.smart-modal .btn.ghost:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+  border-color: var(--hairline-2);
+}
+.smart-view .btn.sm,
+.smart-modal .btn.sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.smart-modal .btn.ghost.danger {
+  color: var(--ink-4);
+}
+.smart-modal .btn.ghost.danger:hover {
+  background: rgba(224, 82, 82, 0.06);
+  color: #e05252;
+}
+.smart-view .btn.quiet,
+.smart-modal .btn.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-3);
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.smart-view .btn.quiet:hover,
+.smart-modal .btn.quiet:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.smart-view .btn:disabled,
+.smart-modal .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------------- empty state ---------------- */
+/* Quiet by design: this is a frequent in-column state (fresh folder,
+   strict rules), not an onboarding moment — plain icon, sans heading. */
+.sf-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  color: var(--ink-3);
+}
+.sf-empty h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 0 0 4px;
+}
+.sf-empty p {
+  font-size: 12px;
+  color: var(--ink-4);
+  max-width: 220px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+/* ---------------- builder modal ---------------- */
+.smart-modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 20, 28, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 32px;
+}
+[data-theme='dark'] .smart-modal-scrim {
+  background: rgba(0, 0, 0, 0.55);
+}
+.smart-modal {
+  width: 560px;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--paper);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+:where(.smart-modal) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 12px 22px;
+}
+.modal-close {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+}
+.modal-close:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.modal-head h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+  letter-spacing: -0.01em;
+}
+.modal-body {
+  padding: 0 22px 20px;
+  overflow-y: auto;
+}
+.modal-body::-webkit-scrollbar,
+.preview-list::-webkit-scrollbar {
+  width: 10px;
+}
+.modal-body::-webkit-scrollbar-thumb,
+.preview-list::-webkit-scrollbar-thumb {
+  background: var(--hairline-2);
+  border-radius: 10px;
+  border: 3px solid var(--paper);
+}
+.field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-4);
+  margin: 0 0 8px;
+}
+.name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  font-size: 14px;
+  font-family: var(--font-serif);
+  font-weight: 600;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+.name-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+.glyph-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+.glyph-pick {
+  height: 32px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 100ms var(--ease),
+    background 100ms var(--ease);
+}
+.glyph-pick:hover {
+  color: var(--ink-2);
+  background: var(--paper-2);
+}
+.glyph-pick.sel {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.builder-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.brule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.sel-btn:hover {
+  border-color: var(--accent);
+}
+.sel-btn .rc-caret {
+  color: var(--ink-4);
+}
+.sel-btn.key {
+  color: var(--ink-4);
+  min-width: 84px;
+}
+.sel-btn.op {
+  color: var(--ink-3);
+}
+.sel-btn.val {
+  font-weight: 500;
+  flex: 1;
+  justify-content: space-between;
+}
+.rule-text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+.rule-text-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.rule-text-input::placeholder {
+  color: var(--ink-4);
+  font-weight: 400;
+}
+.brule .rc-x {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.brule:hover .rc-x {
+  opacity: 1;
+}
+.brule .rc-x:hover {
+  color: var(--danger, #e05252);
+}
+.builder-add {
+  margin-top: 10px;
+}
+
+.preview-box {
+  margin-top: 18px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--paper);
+}
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--hairline);
+}
+.preview-head b {
+  color: var(--ink);
+  font-weight: 500;
+}
+/* Fixed height so rule edits never resize (and jiggle) the modal —
+   fewer results leave blank space, more results scroll. */
+.preview-list {
+  height: 168px;
+  overflow-y: auto;
+}
+.preview-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+.preview-item + .preview-item {
+  border-top: 1px solid var(--hairline-3);
+}
+.preview-item .pi-name {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.preview-item .pi-meta {
+  font-size: 12px;
+  color: var(--ink-4);
+  flex-shrink: 0;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preview-item .pi-time {
+  font-size: 12px;
+  color: var(--ink-4);
+  flex-shrink: 0;
+  min-width: 62px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.preview-more {
+  padding: 8px 12px;
+  border-top: 1px solid var(--hairline-3);
+  font-size: 12px;
+  color: var(--ink-4);
+}
+.preview-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--hairline);
+}
+.modal-foot .spacer {
+  flex: 1;
+}

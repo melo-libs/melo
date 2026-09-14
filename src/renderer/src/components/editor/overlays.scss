@@ -1,0 +1,1065 @@
+/* ============================================================
+   Editor overlays — slash menu, bubble menu, block menu.
+   Ported from design overlays.css (tweaks panel lives in Phase 10).
+   ============================================================ */
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---------- Slash command menu ---------- */
+/* Positioned by floating-ui (fixed strategy); enter/exit transition handled
+   by useTransitionStyles, so no CSS animation here. */
+.slash {
+  width: 248px;
+  max-height: var(--slash-max-height, 60vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+
+/* The "/query" text decoration: subtle highlight + a "Filter…" hint while
+   the query is still empty. */
+.slash-decoration {
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.slash-decoration.is-empty::after {
+  content: attr(data-decoration-content);
+  color: var(--ink-4);
+  margin-left: 1px;
+}
+.slash-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  /* The global scrollbar reserves 10px on the right; match it on the left
+     and pin the gutter (stable even when the list is short) so both side
+     insets are always equal. */
+  padding: 4px 0 4px 10px;
+  scrollbar-gutter: stable;
+}
+.slash-section-label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+}
+.slash-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 100ms var(--ease);
+}
+/* Shared menu states: hover = quiet paper-2; accent-soft is reserved for
+   the keyboard focus and the current-type row. */
+.slash-item:hover {
+  background: var(--paper-2);
+}
+.slash-item[data-focus='true'],
+.slash-item[data-focus='true']:hover {
+  background: var(--accent-soft);
+}
+/* Single-line rows (descriptions removed): 24px chip + 14px icon, the same
+   chip family as the bubble dropdown and block menu. Border dropped — 18
+   outlined boxes in a list read as noise. */
+.slash-glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  flex-shrink: 0;
+  /* Text faces (Aa / H1–H3) — same treatment as the block menu chips. */
+  font-size: 10px;
+  font-weight: 600;
+}
+.slash-body {
+  flex: 1;
+  min-width: 0;
+}
+.slash-name {
+  font-size: 12px;
+  /* Regular, not medium — the block menu's unweighted rows read cleaner at
+     12px, and native macOS menus use regular too. */
+  font-weight: 400;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.slash-shortcut {
+  font: 500 10px var(--font-mono);
+  color: var(--ink-4);
+}
+
+/* ---------- Block gutter menu ---------- */
+/* Unified menu-row spec (slash / bubble dropdown / block menu): 24px
+   borderless chips, 12px ink labels, 5px 8px rows, hover paper-2, keyboard
+   focus + current type accent-soft, r-lg panels. */
+.block-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 210px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  animation: pop 120ms var(--ease);
+}
+.block-menu .bm-section {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+}
+.block-menu .bm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.block-menu .bm-item:hover {
+  background: var(--paper-2);
+}
+.block-menu .bm-item.focused,
+.block-menu .bm-item.focused:hover {
+  background: var(--accent-soft);
+}
+.block-menu .bm-item.active {
+  background: var(--accent-soft);
+}
+/* Type sample chip on turn-into rows — mirrors the bubble dropdown's. */
+.block-menu .bm-sample {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--paper-2);
+  border-radius: var(--r-sm);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.block-menu .bm-item.active .bm-sample {
+  background: var(--paper);
+  color: var(--accent);
+}
+.block-menu .bm-check {
+  margin-left: auto;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.block-menu .bm-item .bm-shortcut {
+  margin-left: auto;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-4);
+}
+.block-menu .bm-item.danger {
+  color: oklch(0.55 0.18 25);
+}
+.block-menu .bm-item.danger:hover,
+.block-menu .bm-item.danger.focused {
+  background: oklch(0.55 0.18 25 / 0.1);
+  color: oklch(0.5 0.2 25);
+}
+.block-menu .bm-sep {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 0;
+}
+
+/* ---------- Bubble menu ---------- */
+/* Hidden while a block is being dragged (see EditorBubbleMenu), and while the
+   equation editor is open (see MathEditor). */
+body.melo-dragging .bubble,
+body.melo-eq-editing .bubble {
+  display: none;
+}
+/* Self-positioned: EditorBubbleMenu places it on selection change only
+   (never on doc changes), so format clicks don't make it jump. */
+/* Light paper surface (cool redesign — source: "Melo Lite Editor (cool).html").
+   The old dark ink pill is gone; the toolbar now sits on paper with a
+   hairline border and a layered shadow.
+   Sizing follows the LATEST cool design source (28px square buttons,
+   16px glyphs at 1.7 stroke; even-grid snapped, fetched via DesignSync
+   2026-07 — the local snapshot had older 30px values): 4px ring, 38px
+   chrome, ink-dark controls, light two-layer shadow. Hover states and
+   structure stay ours. */
+.bubble {
+  z-index: 70;
+  /* Stroke parity with the design source, verified against its icon
+     factory: same 18-viewBox as ours, CSS stroke-width 1.7 at 16px
+     (≈1.5px optical). */
+  --icon-stroke: 1.7;
+  background: var(--paper);
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  /* Latest cool source's lighter shadow — the old three-layer one added
+     visual bulk that read as extra height. */
+  box-shadow:
+    0 1px 2px rgba(60, 45, 25, 0.05),
+    0 10px 24px -10px rgba(60, 45, 25, 0.2);
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  gap: 2px;
+  font-family: var(--font-sans);
+  animation: pop 120ms var(--ease);
+}
+/* No pointer arrow (deviation from the design source, user call): the bar
+   sits directly over the highlighted selection, so attribution needs no
+   second signal — and a clamped/flipped arrow pointed at the wrong place. */
+[data-theme='dark'] .bubble {
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 14px 32px -10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+/* Square 28px buttons (latest cool design), 16px glyphs. */
+.bubble-btn {
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 8px;
+  /* Labels never wrap when their measured widths are snapped in JS. */
+  white-space: nowrap;
+  /* Full ink, matching the latest cool source — ink-2 read washed out. */
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  position: relative;
+  z-index: 1;
+  /* v1.0.0's exact HeroUI button motion (@heroui/theme 2.4.13): 250ms with
+     the `ease` keyword. Not --ease — that curve starts slow and reads as
+     lag; `ease` front-loads the change so feedback feels instant. */
+  transition:
+    background 250ms ease,
+    color 250ms ease,
+    transform 250ms ease;
+}
+.bubble-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+/* Press feedback (v1.0.0: HeroUI pressed scale 0.97). */
+.bubble-btn:active {
+  transform: scale(0.97);
+}
+/* Solid accent fill with white glyph — the v1.0.0 active style (bg-blue-500
+   text-white), carried over on the accent token. Deviation from the design's
+   translucent fill + inset ring, which read as washed-out wireframe; user
+   call. */
+/* Active is a terminal state — no extra hover feedback on top (native
+   macOS controls behave the same); the rule's position after .bubble-btn:hover
+   keeps the fill stable under the pointer. */
+.bubble-btn[data-active='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+/* Even sizes so everything centers on whole pixels inside the 26px row. */
+.bubble-caret {
+  width: 10px;
+  height: 10px;
+}
+/* Design glyph size — overrides the JSX attribute; carets keep their
+   own smaller face. */
+.bubble-btn svg:not(.bubble-caret) {
+  width: 16px;
+  height: 16px;
+}
+.bubble-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--hairline);
+  margin: 0 4px;
+}
+.bubble-turn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  min-width: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.bubble-turn span {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+/* Fixed-width face: the hidden ghost (widest textual face, "H1") sizes the
+   box, the current face — short text or a 14px block icon — paints over it,
+   centered, so the trigger and the caret never move between block types. */
+.bubble-turn-label {
+  position: relative;
+  display: inline-block;
+}
+.bubble-turn-ghost {
+  visibility: hidden;
+  display: inline-block;
+  min-width: 14px;
+}
+.bubble-turn-current {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bubble-turn .bubble-caret {
+  color: var(--ink-3);
+  flex-shrink: 0;
+  transition: transform 120ms var(--ease);
+}
+.bubble-turn.open .bubble-caret {
+  transform: rotate(180deg);
+}
+.bubble-turn.open {
+  background: var(--paper-2);
+}
+/* Highlight toggle — an A over a bar of the actual mark color, so the
+   button previews exactly what the highlight looks like. (The dropdown
+   with text colors and multicolor highlights is gone: neither survives
+   Markdown; only ==text== does.) */
+/* Active = the real mark effect: ink A on the actual highlight color,
+   not the blue used by the other toggles. The bar would double-paint a
+   darker stripe on the same-color background, so it goes transparent. */
+.bubble-btn.bubble-hl-btn[data-active='true'],
+.bubble-btn.bubble-hl-btn[data-active='true']:hover {
+  background: var(--hl-mark);
+  color: var(--ink);
+}
+.bubble-hl-btn[data-active='true'] .bubble-hl-letter-trigger {
+  border-bottom-color: transparent;
+}
+.bubble-hl-letter-trigger {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  color: currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  /* Opaque lemon — the translucent --hl-mark swatch read washed out next
+     to the ink-dark glyphs. */
+  border-bottom: 2px solid oklch(0.9 0.16 105);
+  padding-bottom: 1px;
+}
+/* Bubble dropdowns — panels beneath the toolbar */
+.bubble-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 80;
+  padding: 4px;
+  font-family: var(--font-sans);
+  animation: pop 120ms var(--ease);
+}
+.bubble-format-dd {
+  left: 0;
+  width: 220px;
+}
+.bubble-dd-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  padding: 6px 12px 4px;
+}
+.bubble-dd-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  border-radius: var(--r-sm);
+}
+.bubble-dd-item:hover {
+  background: var(--paper-2);
+}
+.bubble-dd-item.focused,
+.bubble-dd-item.focused:hover {
+  background: var(--accent-soft);
+}
+.bubble-dd-item.active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.bubble-dd-sample {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-2);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+}
+.bubble-dd-item.active .bubble-dd-sample {
+  background: var(--paper);
+  color: var(--accent);
+}
+.bubble-dd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.bubble-dd-name {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink);
+}
+.bubble-dd-check {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+/* Link panel (design: .link-pop) — stacked text + URL fields with a
+   footer action bar: quiet icons left, Apply anchored bottom-right. */
+.link-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 40px;
+  z-index: 85;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  font-family: var(--font-sans);
+  animation: pop 120ms var(--ease);
+}
+.lk-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lk-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lk-spacer {
+  flex: 1;
+}
+/* Accent text button, not a filled block — the popover register is
+   quiet (ghost icons, hairlines); a saturated slab overpowered it.
+   Same treatment as the design's popover-scale primary (ai-go). */
+.lk-apply {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.lk-apply:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+.lk-apply:disabled {
+  color: var(--ink-4);
+  pointer-events: none;
+}
+.link-pop input,
+.img-pop input {
+  width: 320px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+.link-pop input::placeholder,
+.img-pop input::placeholder {
+  color: var(--ink-4);
+}
+.link-pop input:focus,
+.img-pop input:focus {
+  border-color: var(--accent);
+}
+.link-pop .bubble-btn:disabled,
+.img-pop .bubble-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Image panel — same anatomy as the link panel, but it IS the bubble
+   (anchored over the selected image, no toolbar above it). */
+.img-pop {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+}
+
+/* ============================================================
+   Find & replace bar — floats over the editor's top-right.
+   ============================================================ */
+.find-bar {
+  position: fixed;
+  top: 96px;
+  right: 16px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  animation: pop 120ms var(--ease);
+}
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.find-input {
+  width: 200px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+.find-input::placeholder {
+  color: var(--ink-4);
+}
+.find-input:focus {
+  border-color: var(--accent);
+}
+.find-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  transition: background 100ms var(--ease);
+}
+.find-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.find-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.find-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.find-case {
+  font-size: 11px;
+  font-weight: 600;
+}
+.find-count {
+  min-width: 38px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.find-text-btn {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  transition: background 100ms var(--ease);
+}
+.find-text-btn:hover {
+  background: var(--accent-soft);
+}
+.find-text-btn:disabled {
+  color: var(--ink-4);
+  pointer-events: none;
+}
+
+/* ============================================================
+   Code-block language picker (Radix Popover combobox) — follows the
+   unified menu spec: r-lg panel, 12px rows, hover paper-2.
+   ============================================================ */
+.lang-picker {
+  z-index: 90;
+  width: 180px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-sans);
+  animation: pop 120ms var(--ease);
+}
+.lang-picker-input {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+.lang-picker-input:focus {
+  border-color: var(--accent);
+}
+.lang-picker-input::placeholder {
+  color: var(--ink-4);
+}
+.lang-picker-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-gutter: stable;
+  padding-right: 0;
+}
+.lang-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--ink-2);
+  text-align: left;
+  transition: background 80ms var(--ease);
+}
+.lang-picker-item:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.lang-picker-item[data-focus='true'] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.lang-picker-item.current {
+  color: var(--accent);
+}
+.lang-picker-item .tick {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.lang-picker-empty {
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+/* ============================================================
+   Image lightbox — full-window viewer (fixed dark chrome in both
+   themes; a photo viewer is inherently dark).
+   ============================================================ */
+.ilb-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: oklch(0.14 0.008 250 / 0.92);
+  overflow: hidden;
+  animation: pop 120ms var(--ease);
+}
+.ilb-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  max-width: none;
+  cursor: grab;
+  user-select: none;
+}
+.ilb-img.dragging {
+  cursor: grabbing;
+}
+.ilb-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--r-lg);
+  background: oklch(0.22 0.01 250 / 0.9);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  backdrop-filter: blur(12px);
+  font-family: var(--font-sans);
+}
+.ilb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: oklch(0.85 0 0);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 100ms var(--ease);
+}
+.ilb-btn:hover {
+  background: oklch(1 0 0 / 0.12);
+}
+.ilb-pct {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  color: oklch(0.85 0 0);
+  font-variant-numeric: tabular-nums;
+}
+.ilb-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: oklch(1 0 0 / 0.14);
+}
+
+/* ============================================================
+   Equation editor — anchored popover (design: .eq*)
+   ============================================================ */
+.eq-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: transparent;
+}
+.eq {
+  position: fixed;
+  z-index: 90;
+  width: 468px;
+  max-width: calc(100vw - 24px);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  animation: pop 140ms var(--ease);
+}
+.eq.inline {
+  width: 420px;
+}
+.eq-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.eq-head-glyph {
+  display: inline-flex;
+  color: var(--accent);
+}
+.eq-head-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+.eq-mode {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 2px;
+}
+.eq-mode button {
+  padding: 3px 9px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--ink-3);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+.eq-mode button[data-on='true'] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+.eq-palette {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+.eq-pgroup {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.eq-pgroup + .eq-pgroup::before {
+  content: '';
+  width: 1px;
+  height: 18px;
+  background: var(--hairline-2);
+  margin: 0 4px;
+}
+.eq-sym {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 100ms var(--ease),
+    color 100ms var(--ease),
+    background 100ms var(--ease);
+}
+.eq-sym:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.eq-sym.tmpl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.eq-sym .katex {
+  font-size: 0.95em;
+  color: inherit;
+}
+.eq-input {
+  display: block;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 12px 14px;
+  background: transparent;
+  color: var(--ink);
+  min-height: 40px;
+}
+.eq.inline .eq-input {
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.eq-input::placeholder {
+  color: var(--ink-4);
+}
+.eq-preview {
+  border-top: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: 16px 14px;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+}
+.eq-preview.inline {
+  justify-content: flex-start;
+}
+.eq-preview .katex {
+  color: var(--ink);
+  font-size: 1.15em;
+}
+.eq-preview-empty {
+  color: var(--ink-4);
+  font-style: italic;
+  font-size: 13px;
+}
+.eq-err {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 8px 14px;
+  border-top: 1px solid var(--hairline);
+  background: oklch(0.95 0.045 25 / 0.6);
+  color: oklch(0.48 0.18 25);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+[data-theme='dark'] .eq-err {
+  background: oklch(0.32 0.07 25 / 0.5);
+  color: oklch(0.82 0.13 25);
+}
+.eq-err-dot {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.eq-err-text {
+  flex: 1;
+  min-width: 0;
+}
+.eq-err-fix {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: 4px;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: 500 11px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.eq-err-fix:hover {
+  background: oklch(0.48 0.18 25);
+  color: #fff;
+  border-color: transparent;
+}
+[data-theme='dark'] .eq-err-fix:hover {
+  background: oklch(0.82 0.13 25);
+  color: oklch(0.2 0.03 25);
+}
+.eq-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--hairline);
+}
+.eq-foot-hint {
+  font-size: 11px;
+  color: var(--ink-4);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.eq-foot-hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.eq-foot-hint kbd {
+  font: 500 10px var(--font-mono);
+  padding: 1px 5px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 3px;
+  color: var(--ink-3);
+}
+.eq-foot-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.eq-cancel {
+  font-size: 12px;
+  color: var(--ink-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+.eq-cancel:hover {
+  color: var(--ink);
+}
+.eq-done {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  padding: 6px 14px;
+  border-radius: var(--r-sm);
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.eq-done:hover {
+  background: var(--accent-hover);
+}

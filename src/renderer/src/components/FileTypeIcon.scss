@@ -1,0 +1,110 @@
+/* ============================================================
+   File-type tile icons — soft fill, hairline border, glyph on top.
+   `ft-bare` skips the tile for shapes that are themselves shapes
+   (folder, bookmark). Group color comes from CSS variables.
+   ============================================================ */
+
+.ft-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: -2px;
+}
+
+.ft-tile-bg {
+  fill: var(--ft-fill, var(--paper-2));
+  stroke: var(--ft-stroke, var(--hairline-2));
+  stroke-width: 0.9;
+}
+
+.ft-tile-glyph {
+  fill: none;
+  stroke: var(--ft-glyph, var(--ink-2));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+}
+
+.ft-bare-glyph .ft-tile-glyph {
+  stroke-width: 1.4;
+}
+
+.ft-bare {
+  stroke: var(--ft-glyph, var(--ink-3));
+  fill: none;
+
+  path[fill] {
+    fill: var(--ft-glyph, var(--ink-3));
+  }
+}
+
+/* Group palettes — light theme */
+.ft-note {
+  --ft-fill: oklch(0.96 0.012 75);
+  --ft-stroke: oklch(0.88 0.025 75);
+  --ft-glyph: oklch(0.42 0.06 70);
+}
+.ft-clip {
+  --ft-fill: oklch(0.95 0.04 145);
+  --ft-stroke: oklch(0.85 0.06 145);
+  --ft-glyph: oklch(0.4 0.1 145);
+}
+.ft-read {
+  --ft-fill: oklch(0.94 0.04 25);
+  --ft-stroke: oklch(0.85 0.06 25);
+  --ft-glyph: oklch(0.45 0.13 25);
+}
+.ft-media {
+  --ft-fill: oklch(0.95 0.03 290);
+  --ft-stroke: oklch(0.84 0.05 290);
+  --ft-glyph: oklch(0.45 0.12 290);
+}
+.ft-code {
+  --ft-fill: oklch(0.94 0.025 220);
+  --ft-stroke: oklch(0.84 0.05 220);
+  --ft-glyph: oklch(0.42 0.1 220);
+}
+.ft-archive {
+  --ft-fill: oklch(0.95 0.018 65);
+  --ft-stroke: oklch(0.85 0.04 65);
+  --ft-glyph: oklch(0.45 0.06 65);
+}
+.ft-folder {
+  --ft-glyph: oklch(0.55 0.08 70);
+}
+
+/* Dark-theme group palettes */
+[data-theme='dark'] {
+  .ft-note {
+    --ft-fill: oklch(0.28 0.012 75);
+    --ft-stroke: oklch(0.36 0.02 75);
+    --ft-glyph: oklch(0.78 0.05 70);
+  }
+  .ft-clip {
+    --ft-fill: oklch(0.27 0.04 145);
+    --ft-stroke: oklch(0.35 0.06 145);
+    --ft-glyph: oklch(0.78 0.1 145);
+  }
+  .ft-read {
+    --ft-fill: oklch(0.27 0.04 25);
+    --ft-stroke: oklch(0.36 0.06 25);
+    --ft-glyph: oklch(0.78 0.12 25);
+  }
+  .ft-media {
+    --ft-fill: oklch(0.28 0.03 290);
+    --ft-stroke: oklch(0.36 0.05 290);
+    --ft-glyph: oklch(0.78 0.1 290);
+  }
+  .ft-code {
+    --ft-fill: oklch(0.27 0.025 220);
+    --ft-stroke: oklch(0.35 0.05 220);
+    --ft-glyph: oklch(0.78 0.1 220);
+  }
+  .ft-archive {
+    --ft-fill: oklch(0.28 0.018 65);
+    --ft-stroke: oklch(0.36 0.04 65);
+    --ft-glyph: oklch(0.78 0.05 65);
+  }
+  .ft-folder {
+    --ft-glyph: oklch(0.78 0.08 70);
+  }
+}

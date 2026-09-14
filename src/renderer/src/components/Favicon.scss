@@ -1,0 +1,28 @@
+/* ============================================================
+   Favicon — letter-in-circle host marker.
+   Base from design; muted/color variants realize the documented
+   intent (muted = quiet gray outline so it doesn't fight tile colors;
+   color = deterministic colored fill).
+   ============================================================ */
+
+.favicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.favicon-color {
+  color: #fff;
+}
+
+.favicon-muted {
+  background: var(--paper-3);
+  border: 1px solid var(--hairline-2);
+  color: var(--ink-4);
+}

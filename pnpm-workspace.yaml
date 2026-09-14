@@ -1,0 +1,18 @@
+packages:
+  - .
+
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - x64
+    - arm64
+
+patchedDependencies:
+  '@parcel/watcher@2.6.0': patches/@parcel__watcher@2.6.0.patch
+
+allowBuilds:
+  '@parcel/watcher': true
+  better-sqlite3: true
+  electron: true
+  esbuild: true

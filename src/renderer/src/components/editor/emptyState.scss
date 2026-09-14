@@ -1,0 +1,241 @@
+/* ============================================================
+   Empty state — no tab open
+   ============================================================ */
+.ed-top[data-empty='true'] .ed-breadcrumb,
+.ed-top[data-empty='true'] .ed-status,
+.ed-top[data-empty='true'] [aria-label='Export'],
+.ed-top[data-empty='true'] [aria-label='More actions'],
+.ed-top[data-empty='true'] [aria-label='Toggle outline'] {
+  display: none;
+}
+
+.es {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+.es-inner {
+  margin: auto;
+  width: 100%;
+  max-width: 560px;
+  padding: 64px 32px 88px;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes es-rise {
+  from {
+    transform: translateY(7px);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .es-inner > * {
+    animation: es-rise 460ms var(--ease) both;
+  }
+  .es-inner > *:nth-child(2) {
+    animation-delay: 40ms;
+  }
+  .es-inner > *:nth-child(3) {
+    animation-delay: 90ms;
+  }
+  .es-inner > *:nth-child(4) {
+    animation-delay: 140ms;
+  }
+  .es-inner > *:nth-child(5) {
+    animation-delay: 180ms;
+  }
+}
+
+/* Quick-capture */
+.es-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.es-capture-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--ink);
+  font: 400 24px/1.35 var(--font-serif);
+  letter-spacing: -0.005em;
+  padding: 2px 1px 11px;
+  border-bottom: 1.5px solid var(--hairline-2);
+  transition: border-color 160ms var(--ease);
+}
+.es-capture.big .es-capture-input {
+  font-size: 27px;
+}
+:root[lang='zh-CN'] .es-capture-input::placeholder {
+  font-style: normal;
+}
+.es-capture-input::placeholder {
+  color: var(--ink-4);
+  font-style: italic;
+}
+.es-capture:focus-within .es-capture-input {
+  border-bottom-color: var(--accent);
+}
+
+.es-capture-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-4);
+  padding-left: 1px;
+}
+.es-capture-cap b {
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.es-capture-ret {
+  font: 500 11px var(--font-mono);
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--paper-3);
+  color: var(--ink-4);
+  opacity: 0;
+  transition:
+    opacity 160ms var(--ease),
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+.es-capture-cap[data-ready='true'] .es-capture-ret {
+  opacity: 1;
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Secondary links */
+.es-links {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.es-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+  font-weight: 500;
+  transition: color 110ms var(--ease);
+}
+.es-link svg {
+  color: var(--ink-4);
+  transition: color 110ms var(--ease);
+}
+.es-link:hover {
+  color: var(--ink);
+}
+.es-link:hover svg {
+  color: var(--accent);
+}
+.es-link-sep {
+  color: var(--ink-4);
+}
+
+/* Recent list */
+.es-list {
+  display: flex;
+  flex-direction: column;
+}
+.es-list-quiet {
+  margin-top: 34px;
+}
+.es-list-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  margin-bottom: 8px;
+}
+.es-recent {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  margin: 0 -10px;
+  border-radius: var(--r-md);
+  text-align: left;
+  transition: background 110ms var(--ease);
+}
+.es-recent:hover {
+  background: var(--paper-2);
+}
+.es-recent-ic {
+  color: var(--ink-4);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.es-recent:hover .es-recent-ic {
+  color: var(--accent);
+}
+.es-recent-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.es-recent-folder {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ink-4);
+  white-space: nowrap;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.es-noresult {
+  font-size: 13px;
+  color: var(--ink-4);
+  padding: 6px 10px;
+}
+
+/* Footer hint */
+.es-foot {
+  margin-top: 40px;
+  font-size: 12px;
+  color: var(--ink-4);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* Clickable — rests at ink-2 like every interactive label (ink-4 read
+   as decoration), and hovers into the link treatment. */
+.es-foot-link {
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color 110ms var(--ease);
+}
+.es-foot-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.es-kbd {
+  font: 500 11px var(--font-mono);
+  color: var(--ink-4);
+  background: var(--paper-3);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.5;
+}
+.es-kbd.ghost {
+  background: transparent;
+}

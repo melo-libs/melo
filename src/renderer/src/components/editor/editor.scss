@@ -1,0 +1,402 @@
+/* ============================================================
+   Editor column — top bar, tabs, bottom bar, top menus.
+   Block canvas styles arrive in Phase 4. Ported from design
+   editor.css / tabs.css + top-menu rules (inlined in design HTML).
+   ============================================================ */
+
+.editor-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  background: var(--paper);
+  position: relative;
+}
+
+/* ---------- Top bar ---------- */
+.ed-top {
+  display: flex;
+  align-items: center;
+  padding: 10px 18px;
+  gap: 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--paper);
+  min-height: 46px;
+  position: relative;
+  -webkit-app-region: drag;
+}
+.ed-top button {
+  -webkit-app-region: no-drag;
+}
+
+.ed-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-ui);
+  color: var(--ink-3);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.ed-breadcrumb .crumb {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  cursor: default;
+}
+.ed-breadcrumb .crumb.cur {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ed-breadcrumb .sep {
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+.ed-unsaved {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  white-space: nowrap;
+}
+
+.ed-status {
+  font-size: var(--fs-ui-sm);
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+.ed-status[data-status='error'] {
+  color: #e05252;
+}
+
+.ed-top-actions {
+  display: flex;
+  gap: 2px;
+}
+.ed-iconbtn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+  position: relative;
+}
+.ed-iconbtn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.ed-iconbtn[data-active='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ed-iconbtn .tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease);
+  z-index: 100;
+}
+.ed-iconbtn:hover .tooltip {
+  opacity: 1;
+  transition-delay: 400ms;
+}
+
+/* ---------- Top menus (Export / More) ---------- */
+.top-menu {
+  z-index: 90;
+  min-width: 240px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.top-menu .tm-section {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+}
+.top-menu .tm-item[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.top-menu .tm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+  outline: none;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.top-menu .tm-item:hover,
+.top-menu .tm-item[data-highlighted] {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.top-menu .tm-item .tm-label {
+  flex: 1;
+  white-space: nowrap;
+}
+.top-menu .tm-item .tm-meta {
+  font-size: 11px;
+  color: var(--ink-4);
+  margin-left: 8px;
+}
+.top-menu .tm-item:hover .tm-meta,
+.top-menu .tm-item[data-highlighted] .tm-meta {
+  color: var(--ink-3);
+}
+.top-menu .tm-item .tm-shortcut {
+  margin-left: auto;
+  font: 500 10px var(--font-mono);
+  color: var(--ink-4);
+}
+.top-menu .tm-item.danger {
+  color: oklch(0.55 0.18 25);
+}
+.top-menu .tm-item.danger:hover,
+.top-menu .tm-item.danger[data-highlighted] {
+  background: oklch(0.55 0.18 25 / 0.1);
+  color: oklch(0.5 0.2 25);
+}
+.top-menu .tm-sep {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 0;
+}
+
+/* ---------- Tabs ---------- */
+.ed-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--hairline);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  min-height: 31px;
+  flex-shrink: 0;
+}
+.ed-tabs::-webkit-scrollbar {
+  display: none;
+}
+.ed-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px 0 11px;
+  max-width: 184px;
+  height: 31px;
+  background: var(--paper-2);
+  border-right: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink-3);
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+  flex-shrink: 0;
+}
+.ed-tab:hover {
+  background: var(--paper-3);
+  color: var(--ink-2);
+}
+.ed-tab[data-active='true'] {
+  background: var(--paper);
+  color: var(--ink);
+}
+.ed-tab[data-active='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1.5px;
+  background: var(--accent);
+}
+.ed-tab-icon {
+  color: var(--ink-4);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.ed-tab[data-active='true'] .ed-tab-icon {
+  color: var(--accent);
+}
+.ed-tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.005em;
+}
+.ed-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+.ed-tab[data-dirty='true'] .ed-tab-dot {
+  opacity: 1;
+  background: var(--accent);
+}
+.ed-tab-close {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--ink-4);
+  opacity: 0;
+  transition: all 100ms var(--ease);
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+.ed-tab:hover .ed-tab-close,
+.ed-tab[data-active='true'] .ed-tab-close {
+  opacity: 1;
+}
+.ed-tab[data-dirty='true']:not(:hover) .ed-tab-close {
+  opacity: 0;
+}
+.ed-tab-close:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+.ed-tab-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 31px;
+  color: var(--ink-4);
+  border-right: 1px solid var(--hairline);
+  flex-shrink: 0;
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.ed-tab-new:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+.ed-tabs-spacer {
+  flex: 1;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: -1px;
+  background: var(--paper-2);
+}
+
+/* ---------- Tab context menu ---------- */
+.ed-tab-ctx {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.ed-tab-ctx-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  color: var(--ink-2);
+  border-radius: 5px;
+  transition:
+    background 80ms var(--ease),
+    color 80ms var(--ease);
+}
+.ed-tab-ctx-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+.ed-tab-ctx-item:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+.ed-tab-ctx-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--hairline);
+}
+
+/* ---------- Scroll area ---------- */
+.ed-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  /* Be the offset parent so heading offsetTop is measured against this
+     scroll container — the TOC extension's active-state tracking relies
+     on that. */
+  position: relative;
+}
+/* During a tab switch the outgoing document briefly keeps its old height;
+   suppress scrolling so the collapse doesn't flash a scrollbar through. */
+.ed-scroll.ed-switching {
+  overflow-y: hidden;
+}
+
+/* ---------- Bottom bar ---------- */
+.ed-bottombar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 20px;
+  border-top: 1px solid var(--hairline);
+  background: var(--paper-2);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--ink-4);
+  min-height: 28px;
+}
+.ed-bottombar .sep {
+  color: var(--hairline-2);
+}
+.ed-bottombar .push {
+  margin-left: auto;
+}
+.ed-bottombar b {
+  color: var(--ink-2);
+  font-weight: 500;
+}

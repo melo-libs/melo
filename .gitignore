@@ -1,0 +1,14 @@
+node_modules
+dist
+out
+.DS_Store
+*.log*
+.npmrc
+.VSCodeCounter
+release
+package-mac-signed.sh
+stats.html
+
+# Reference repos for Tiptap research (cloned locally, not tracked)
+.reference/
+*.tsbuildinfo

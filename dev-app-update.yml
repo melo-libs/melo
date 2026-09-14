@@ -1,0 +1,4 @@
+provider: github
+owner: melo-libs
+repo: melo-lite-release
+updaterCacheDirName: melo-lite-updater-dev

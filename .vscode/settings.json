@@ -1,0 +1,37 @@
+{
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "cSpell.words": [
+    "alfaaz",
+    "clsx",
+    "Dismissable",
+    "domcontentloaded",
+    "heroui",
+    "katex",
+    "linkify",
+    "linkifyjs",
+    "lowlight",
+    "lucide",
+    "markdownit",
+    "micromark",
+    "nextui",
+    "prosemirror",
+    "sonner",
+    "tailwindcss",
+    "Textmenu",
+    "tiptap",
+    "Tocs",
+    "uidotdev",
+    "usehooks"
+  ],
+  "files.associations": {
+    "*.scss": "tailwindcss",
+  }
+}

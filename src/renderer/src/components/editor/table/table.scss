@@ -1,0 +1,401 @@
+/* ============================================================
+   Table styles
+   Variables mapped to our design tokens (tokens.scss)
+   ============================================================ */
+
+:root {
+  --tt-table-border-color: var(--hairline-2);
+  /* Azure-tinted cell selection — hue 55 was a warm-variant relic. */
+  --tt-table-selected-bg: oklch(0.92 0.04 262 / 0.5);
+  --tt-table-selected-stroke: var(--accent);
+  --tt-table-column-resize-handle-bg: var(--accent);
+  --tt-table-handle-bg-color: var(--code-bg);
+  --tt-table-extend-icon-color: var(--ink-4);
+
+  --tt-table-cell-padding: 6px 10px;
+  /* On the document rhythm grid (16px blocks). */
+  --tt-table-margin-block: 16px;
+
+  --tt-table-pad-block-start: 1rem;
+  --tt-table-pad-block-end: 1.5rem;
+  --tt-table-pad-inline-start: 1rem;
+  --tt-table-pad-inline-end: 1.5rem;
+}
+
+[data-theme='dark'] {
+  --tt-table-selected-bg: oklch(0.35 0.04 262 / 0.5);
+  --tt-table-handle-bg-color: var(--code-bg);
+  --tt-table-extend-icon-color: var(--ink-4);
+}
+
+/* ============================================================
+   prosemirror-table.scss — base ProseMirror table structure
+   ============================================================ */
+
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror td:not([data-colwidth]):not(.column-resize-dragging),
+.ProseMirror th:not([data-colwidth]):not(.column-resize-dragging) {
+  min-width: var(--default-cell-min-width);
+}
+
+.ProseMirror .selectedCell::after {
+  z-index: 2;
+  position: absolute;
+  content: '';
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--tt-table-selected-bg);
+  pointer-events: none;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+
+/* ============================================================
+   table-node.scss — table container, cells, resize, alignment
+   ============================================================ */
+
+.ed-prose [data-content-type='table'] {
+  margin-block: var(--tt-table-margin-block);
+}
+
+.ed-prose [data-content-type='table'] .tableWrapper {
+  padding-block-start: var(--tt-table-pad-block-start);
+  padding-inline-start: var(--tt-table-pad-inline-start);
+  padding-inline-end: var(--tt-table-pad-inline-end);
+  padding-block-end: var(--tt-table-pad-block-end);
+  margin-left: -1rem;
+  overflow-y: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.ed-prose table {
+  width: auto !important;
+  word-break: break-word;
+}
+
+.ed-prose th,
+.ed-prose td {
+  border: 1px solid var(--tt-table-border-color);
+  padding: var(--tt-table-cell-padding);
+  /* Tables are data density, not long-form reading — tighter type than
+     the prose's 16/28 (a single-line row drops from 45px to ~35px). */
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.ed-prose table th {
+  background-color: var(--code-bg);
+  font-weight: 600;
+  text-align: left;
+}
+
+.ed-prose td p,
+.ed-prose th p {
+  margin: 0;
+}
+
+/* Tiptap uses colwidth instead of data-colwidth */
+.ProseMirror td,
+.ProseMirror th {
+  min-width: auto !important;
+}
+.ProseMirror td:not([colwidth]):not(.column-resize-dragging),
+.ProseMirror th:not([colwidth]):not(.column-resize-dragging) {
+  min-width: var(--default-cell-min-width) !important;
+}
+
+/* Column resize handle */
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  margin-inline-start: -1px;
+  margin-top: -1px;
+  height: calc(100% + 2px);
+  background: var(--tt-table-column-resize-handle-bg);
+  cursor: col-resize;
+  transition: background 150ms 50ms;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+/* ============================================================
+   Drag feedback
+   ============================================================ */
+
+.tiptap-table-dropcursor {
+  position: absolute;
+  z-index: 20;
+  background-color: var(--tt-table-column-resize-handle-bg);
+  pointer-events: none;
+}
+
+.table-cell-dragging-source {
+  z-index: 2;
+  position: absolute;
+  content: '';
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--tt-table-selected-bg);
+}
+
+/* ============================================================
+   table-handle-menu.scss — handle button (row/column grip)
+   ============================================================ */
+
+.tiptap-table-handle-menu {
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--tt-table-handle-bg-color);
+  border-radius: var(--r-md);
+  cursor: grab;
+
+  .tiptap-button-icon {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+  }
+
+  &.menu-opened {
+    background-color: var(--accent-hover);
+
+    .tiptap-button-icon {
+      color: var(--paper);
+    }
+  }
+
+  &.is-dragging {
+    cursor: grabbing;
+    background-color: var(--accent-hover);
+
+    .tiptap-button-icon {
+      color: var(--paper);
+    }
+  }
+
+  &.row {
+    width: 0.75rem;
+    height: var(--table-handle-ref-height);
+  }
+
+  &.column {
+    height: 0.75rem;
+    width: var(--table-handle-ref-width);
+
+    .tiptap-button-icon {
+      transform: rotate(90deg);
+    }
+  }
+}
+
+/* ============================================================
+   table-extend-row-column-button.scss — extend ("+") buttons
+   ============================================================ */
+
+.tiptap-table-extend-row-column-button {
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--tt-table-handle-bg-color);
+  border-radius: var(--r-md);
+
+  .tiptap-button-icon {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    color: var(--tt-table-extend-icon-color);
+  }
+
+  &.tiptap-table-row-end-add-remove {
+    width: 100%;
+    height: 0.75rem;
+    cursor: row-resize;
+  }
+
+  &.tiptap-table-column-end-add-remove {
+    width: 0.75rem;
+    cursor: col-resize;
+  }
+}
+
+/* ============================================================
+   Cell handle menu — expandable dot on right edge of cell
+   ============================================================ */
+
+.expandable-menu-button {
+  --button-size: 16px;
+  --button-offset: -8px;
+  --dot-size-small: 8px;
+  --dot-size-large: 16px;
+  --dot-offset-small: 3px;
+  --dot-offset-large: 0;
+
+  position: absolute;
+  top: 50%;
+  right: var(--button-offset);
+  transform: translateY(-50%);
+  width: var(--button-size);
+  height: var(--button-size);
+  background: transparent;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: var(--dot-offset-small);
+    width: var(--dot-size-small);
+    height: var(--dot-size-small);
+    background: var(--accent);
+    border-radius: 9999px;
+    transform: translateY(-50%);
+    transition:
+      width 0.05s ease,
+      height 0.05s ease,
+      right 0.05s ease;
+  }
+
+  svg {
+    position: relative;
+    z-index: 1;
+    width: var(--button-size);
+    height: var(--button-size);
+    color: var(--paper);
+    opacity: 0;
+    transform: scale(0.9);
+    transition:
+      opacity 0.05s ease,
+      transform 0.05s ease;
+    pointer-events: none;
+    flex-shrink: 0;
+  }
+
+  &:hover,
+  &:focus-visible,
+  &.menu-opened {
+    &::before {
+      width: var(--dot-size-large);
+      height: var(--dot-size-large);
+      right: var(--dot-offset-large);
+    }
+
+    svg {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ============================================================
+   Widget containers (table-controls, selection overlay)
+   ============================================================ */
+
+.table-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
+
+  > * {
+    pointer-events: auto;
+  }
+}
+
+.table-selection-overlay-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+
+/* ============================================================
+   Handle dropdown menu (Radix DropdownMenu)
+   ============================================================ */
+
+.table-handle-dropdown {
+  min-width: 200px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+}
+
+.table-handle-dropdown [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 80ms;
+
+  &:hover {
+    background: var(--code-bg);
+  }
+
+  &[data-disabled] {
+    opacity: 0.4;
+    cursor: default;
+
+    &:hover {
+      background: transparent;
+    }
+  }
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.table-handle-dropdown [role='separator'] {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 0;
+}

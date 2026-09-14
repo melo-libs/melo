@@ -1,0 +1,375 @@
+/* ============================================================
+   App shell — three-column grid: sidebar | editor | outline.
+   Sidebar and outline collapse to 0 via data attributes.
+   ============================================================ */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr var(--outline-w);
+  height: 100vh;
+  background: var(--paper);
+}
+
+.app[data-sidebar='hidden'] {
+  grid-template-columns: 0 1fr var(--outline-w);
+}
+
+.app[data-outline='hidden'] {
+  grid-template-columns: var(--sidebar-w) 1fr 0;
+}
+
+.app[data-sidebar='hidden'][data-outline='hidden'] {
+  grid-template-columns: 0 1fr 0;
+}
+
+/* Region placeholders — replaced by real components per phase.
+   `overflow: hidden` keeps a collapsed column from leaking content. */
+.app-region {
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-outline {
+  border-left: 1px solid var(--hairline);
+  background: var(--paper);
+}
+
+/* Zero the placeholder border when collapsed so a 0-width column
+   doesn't leave a 1px sliver. */
+.app[data-outline='hidden'] .app-outline {
+  border-left: 0;
+}
+
+/* When the sidebar is collapsed, the leftmost top bar needs room for
+   macOS traffic lights. If the smart list is visible it's the leftmost
+   element; otherwise the editor top bar is. */
+.app[data-sidebar='hidden'] .ed-top,
+.app[data-sidebar='hidden'] .sv-top {
+  padding-left: 78px;
+}
+.app[data-sidebar='hidden'][data-smart] .ed-top {
+  padding-left: 18px;
+}
+
+/* Smart folder active: center-region becomes horizontal (list | editor).
+   The editor tab bar is redundant — the smart list IS the navigation. */
+.app[data-smart] .center-region {
+  flex-direction: row;
+}
+.app[data-smart] .ed-tabs {
+  display: none;
+}
+
+/* Center cell hosts the editor and the smart-folder view; whichever is
+   hidden keeps its state (the editor must not unmount mid-edit). */
+.center-region {
+  min-width: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.center-region > .center-pane {
+  flex: 1;
+  /* min-width matters in smart mode, where center-region flows as a row:
+     without it the editor pane refuses to shrink below its content and
+     gets clipped at the window edge instead of reflowing. */
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.center-region .editor-col {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------- Workspace opener (no workspace yet) ---------- */
+.ws-opener {
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 48px 32px 64px;
+  box-sizing: border-box;
+  background: var(--paper);
+  -webkit-app-region: drag;
+}
+.ws-opener-welcome {
+  width: min(100%, 720px);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  font-family: var(--font-sans);
+  -webkit-app-region: no-drag;
+}
+.ws-opener-brand {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.ws-opener-brand img {
+  display: block;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+.ws-opener-welcome h1 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.ws-opener-lead {
+  max-width: 52ch;
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 20px;
+  text-wrap: pretty;
+}
+.ws-opener-folder-stage {
+  position: relative;
+  width: min(100%, 640px);
+  min-height: 296px;
+  margin-top: 28px;
+  padding-top: 36px;
+}
+.ws-opener-folder-back {
+  position: absolute;
+  inset: 20px 18px 26px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
+.ws-opener-folder-tab {
+  position: absolute;
+  top: 0;
+  left: 48px;
+  min-width: 132px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px 6px;
+  border: 1px solid var(--hairline);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: #ffd200;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.ws-opener-paper {
+  position: absolute;
+  top: 32px;
+  right: 52px;
+  left: 70px;
+  height: 160px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px 8px 0 0;
+  background: var(--paper);
+  transform: rotate(-1deg);
+}
+.ws-opener-paper i {
+  display: block;
+  height: 1px;
+  margin: 24px 36px 0;
+  background: var(--hairline);
+}
+.ws-opener-paper i + i {
+  margin-top: 16px;
+}
+.ws-opener-paper i:nth-child(2) {
+  width: 58%;
+}
+.ws-opener-paper i:nth-child(3) {
+  width: 72%;
+}
+.ws-opener-folder-front {
+  position: relative;
+  z-index: 2;
+  min-height: 240px;
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  margin-top: 52px;
+  padding: 36px 38px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--ink) 8%, transparent);
+  text-align: left;
+}
+.ws-opener-folder-icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
+.ws-opener-folder-copy h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ws-opener-folder-copy p {
+  max-width: 36ch;
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 20px;
+}
+.ws-opener-primary {
+  min-width: 132px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition:
+    background 150ms var(--ease),
+    transform 150ms var(--ease);
+}
+.ws-opener-primary:hover {
+  background: color-mix(in srgb, var(--ink) 90%, var(--paper));
+}
+.ws-opener-primary:active {
+  transform: translateY(2px);
+}
+.ws-opener-below-actions {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.ws-opener-secondary {
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.ws-opener-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+}
+.ws-opener-hint svg {
+  flex: 0 0 auto;
+}
+.ws-opener-primary:focus-visible,
+.ws-opener-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .ws-opener {
+    padding: 36px 20px 48px;
+  }
+  .ws-opener-folder-stage {
+    min-height: 430px;
+    margin-top: 28px;
+  }
+  .ws-opener-folder-front {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 34px 28px;
+    text-align: center;
+  }
+  .ws-opener-folder-copy p {
+    margin-right: auto;
+    margin-left: auto;
+  }
+  .ws-opener-paper {
+    right: 36px;
+    left: 56px;
+  }
+}
+
+@media (max-width: 520px) {
+  .ws-opener {
+    padding: 30px 14px 40px;
+  }
+  .ws-opener-welcome h1 {
+    font-size: 40px;
+    line-height: 48px;
+  }
+  .ws-opener-folder-tab {
+    left: 30px;
+    min-width: 136px;
+  }
+  .ws-opener-folder-back {
+    right: 10px;
+    left: 10px;
+  }
+  .ws-opener-paper {
+    right: 24px;
+    left: 42px;
+  }
+  .ws-opener-folder-front {
+    padding: 30px 22px;
+  }
+}
+
+@media (max-height: 720px) {
+  .ws-opener {
+    place-items: start center;
+    padding: 36px 32px 48px;
+  }
+  .ws-opener-brand {
+    margin-bottom: 8px;
+  }
+  .ws-opener-brand img {
+    width: 40px;
+    height: 40px;
+  }
+  .ws-opener-welcome h1 {
+    font-size: 36px;
+    line-height: 44px;
+  }
+  .ws-opener-lead {
+    margin-top: 12px;
+  }
+  .ws-opener-folder-stage {
+    margin-top: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-opener-primary {
+    transition: none;
+  }
+}

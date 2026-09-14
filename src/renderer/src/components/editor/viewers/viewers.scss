@@ -1,0 +1,236 @@
+/* ============================================================
+   Viewer tabs — non-editable files in the editor column.
+   The scroll container is locked while a viewer is active
+   (`.ed-scroll[data-viewer]`); each view manages its own overflow.
+   ============================================================ */
+
+.ed-scroll[data-viewer='true'] {
+  overflow: hidden;
+}
+
+.viewer-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ---------- image / video ---------- */
+.viewer-media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.viewer-media img,
+.viewer-media video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--r-md);
+}
+
+/* ---------- pdf (pdf.js) ---------- */
+.pdf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--paper);
+}
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* Side padding mirrors PANE_PADDING in PdfViewer.tsx. */
+  padding: 14px 16px 40px;
+}
+.pdf-page {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.pdf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* pdf.js text layer — invisible glyphs positioned over the canvas so
+   text selection and copy work. Rules mirror pdf.js v5's own text_layer
+   stylesheet (Apache-2.0): the library sizes the container and every
+   span through --total-scale-factor (set on .pdf-page by the viewer)
+   plus the --min-font-size / --font-height / --scale-x / --rotate
+   variables it writes at render time. */
+.pdf-textlayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: transparent;
+}
+.pdf-textlayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.pdf-textlayer > :not(.markedContent),
+.pdf-textlayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+/* Same translucent wash as text selection everywhere else in the app —
+   the glyphs live on the canvas below, so the overlay must stay see-through
+   (and `opacity` is ignored on ::selection; the alpha is in the token). */
+.pdf-textlayer ::selection {
+  background: var(--selection);
+  color: transparent;
+}
+.pdf-zoom {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.pdf-zoom button {
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--ink-3);
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.pdf-zoom button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.pdf-zoom .pdf-zoom-reset {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+}
+
+/* ---------- read-only text ---------- */
+.viewer-text-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px 40px;
+}
+.viewer-text {
+  font: 12.5px/1.65 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-2);
+  margin: 0;
+}
+.viewer-notice {
+  padding: 7px 40px;
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.viewer-notice button {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- file card ---------- */
+.viewer-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  text-align: center;
+}
+.viewer-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 6px;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+}
+.viewer-card-meta {
+  font-size: 12px;
+  color: var(--ink-4);
+}
+.viewer-card-note {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.viewer-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.viewer-btn {
+  padding: 6px 14px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.viewer-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.viewer-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.viewer-btn.primary:hover {
+  opacity: 0.9;
+}
+.viewer-card-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.viewer-card-hint kbd {
+  font: 500 10px var(--font-mono);
+  padding: 1px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--paper-2);
+}
+.viewer-audio {
+  margin-top: 14px;
+  width: min(420px, 100%);
+}

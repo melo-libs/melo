@@ -1,0 +1,824 @@
+/* ============================================================
+   Editor page + ProseMirror content styling.
+   Design block values (editor.css) re-keyed onto Tiptap's real DOM
+   (.ProseMirror h1/p/blockquote/ul/ol/pre/hr/img...).
+   Callout / toggle intentionally unsupported.
+   ============================================================ */
+
+/* The selected reading face applies to body text and headings as one
+   typographic system. Quotes keep their distinct voice below. */
+.ed-page {
+  max-width: var(--editor-max);
+  margin: 0 auto;
+  padding: 54px 72px 240px;
+  font-family: var(--font-reading);
+  color: var(--ink);
+}
+.ed-page[data-width='narrow'] {
+  max-width: 620px;
+}
+.ed-page[data-width='wide'] {
+  max-width: 880px;
+}
+.ed-page[data-width='full'] {
+  /* Wider than every fixed step at ANY window size: uncap the measure and
+     shrink the page's own side padding instead (72px -> 60px; not lower —
+     the drag-handle gutter and heading markers need 60px of left inset).
+     A max-width below 100% here made "full" narrower than "wide" in
+     small windows. */
+  max-width: none;
+  padding-inline: 60px;
+}
+
+/* ---------- Clip banner (web clips) ---------- */
+.ed-clip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 2px 4px 14px;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink-3);
+  flex-wrap: wrap;
+}
+.ed-clip-fav {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--ink-4);
+  img {
+    border-radius: 3px;
+    object-fit: contain;
+  }
+}
+.ed-clip-site {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.ed-clip-dot {
+  color: var(--hairline-2);
+}
+.ed-clip-meta,
+.ed-clip-when {
+  color: var(--ink-4);
+}
+.ed-clip-spacer {
+  flex: 1 1 16px;
+}
+.ed-clip-orig {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms var(--ease);
+}
+.ed-clip-orig:hover {
+  text-decoration-color: var(--accent);
+}
+.ed-clip-arrow {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ---------- Drag handle (gutter) ---------- */
+/* The DragHandle extension positions this next to the hovered block; we
+   only style the + / grip buttons inside it. */
+.drag-handle {
+  /* The extension moves the handle by writing inline `top`; easing it makes
+     the handle glide between blocks instead of teleporting (matches the
+     reference). Show/hide is inline `visibility`, which can't be eased. */
+  transition-property: top;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+.drag-handle .block-gutter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  /* Opaque backdrop: the handle floats over the heading level markers, and
+     when the pointer is on its buttons the heading below loses :hover and
+     its marker would show through transparent buttons. Paper-colored fill
+     keeps the marker occluded; on paper it's invisible. */
+  background: var(--paper);
+  border-radius: var(--r-sm);
+}
+.gutter-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-4);
+  border-radius: var(--r-sm);
+  cursor: grab;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.gutter-btn:hover {
+  background: var(--paper-2);
+  color: var(--ink-2);
+}
+.gutter-btn.drag:active {
+  cursor: grabbing;
+}
+
+/* Selection extension decorates the selected range with `.selection` while
+   the editor is blurred — keeps the target text visibly highlighted when
+   focus moves into the bubble's link input. */
+.ed-prose .ProseMirror .selection {
+  background: var(--selection);
+}
+
+/* ---------- Drag selection + drop cursor ---------- */
+/* While dragging, mute the text selection highlight / caret so the dragged
+   text doesn't ghost, and tint the dragged block so it reads as one unit. */
+.ed-prose .ProseMirror-noderangeselection *::selection {
+  background: transparent;
+}
+.ed-prose .ProseMirror-noderangeselection * {
+  caret-color: transparent;
+}
+/* Accent tint for node/range selections — this is both the "grabbed block"
+   feedback (a NodeSelection is set when the drag handle is pressed) and the
+   in-flight drag feedback (the handle promotes it to a node-range selection).
+   The fill is added only to plain text blocks so it doesn't clobber
+   pre/hr/img's own backgrounds. Mixed in srgb: oklch is polar, and paper's
+   explicit 0° hue drags the azure toward red — the tint rendered pink. */
+.ed-prose .ProseMirror-selectednode:not(pre):not(hr):not(img):not(.img-wrap),
+.ed-prose .ProseMirror-selectednoderange:not(pre):not(hr):not(img):not(.img-wrap) {
+  /* Pale, opaque tint (accent blended into paper) — lighter than the old
+     translucent overlay and not see-through. Follows the accent hue. */
+  background: color-mix(in srgb, var(--accent) 9%, var(--paper));
+  border-radius: var(--r-sm);
+}
+/* pre/hr/img have their own background/content, so use an outline ring for
+   feedback instead of a fill that would clobber it. */
+.ed-prose .ProseMirror-selectednode:where(pre, hr, img, .img-wrap),
+.ed-prose .ProseMirror-selectednoderange:where(pre, hr, img, .img-wrap) {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+/* Lighter drop indicator (the accent line is softened with opacity).
+   Visibility is gated on the body-level dragging flag (see BubbleMenu):
+   the dropcursor plugin only hears drop/dragend on the editor DOM, which
+   misses drags that start on the handle, and then leans on a 5s fallback
+   timer — leaving the line lingering after the drop. The body flag comes
+   from document-level listeners, which always fire. */
+.melo-dropcursor {
+  opacity: 0.55;
+  border-radius: 2px;
+  visibility: hidden;
+}
+body.melo-dragging .melo-dropcursor {
+  visibility: visible;
+}
+
+/* ---------- ProseMirror surface ---------- */
+.ed-prose .ProseMirror {
+  outline: none;
+  font-family: var(--font-reading);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--ink);
+  /* Clipped articles carry long URLs / identifiers that would overflow. */
+  overflow-wrap: break-word;
+  /* Extend the editable surface left under the drag-handle gutter so a
+     straight-down drag there still maps to a drop position (posAtCoords
+     needs the cursor over the ProseMirror). The padding offsets the
+     negative margin, so text stays visually put. */
+  padding-left: 60px;
+  margin-left: -60px;
+}
+
+/* ---------- Virtual cursor (SmoothCaret) ---------- */
+/* The caret element is a sibling of .ProseMirror (appended to .ed-prose), not
+   an in-content widget — keeping it out of the content flow so it never
+   becomes .ProseMirror's first child (which broke the drag handle). Positioned
+   absolutely relative to .ed-prose, so that must establish a containing block. */
+.ed-prose {
+  position: relative;
+}
+.ed-prose .ProseMirror.virtual-cursor-enabled {
+  caret-color: transparent;
+}
+/* The plugin only shows the caret element while ProseMirror has focus
+   (via view.hasFocus()), so the color is unconditional here. */
+.ed-prose {
+  --prosemirror-virtual-cursor-color: #2e71f6;
+}
+.ed-prose .prosemirror-virtual-cursor {
+  position: absolute;
+  cursor: text;
+  pointer-events: none;
+  transform: translate(-1px) scaleY(1.15);
+  user-select: none;
+  -webkit-user-select: none;
+  border-left: 2px solid var(--prosemirror-virtual-cursor-color);
+}
+.ed-prose .prosemirror-virtual-cursor-left {
+  width: 1ch;
+  transform: translate(calc(-1ch + -1px));
+  border-bottom: 2px solid var(--prosemirror-virtual-cursor-color);
+  border-right: 2px solid var(--prosemirror-virtual-cursor-color);
+  border-left: none;
+}
+.ed-prose .prosemirror-virtual-cursor-right {
+  width: 1ch;
+  border-bottom: 2px solid var(--prosemirror-virtual-cursor-color);
+  border-left: 2px solid var(--prosemirror-virtual-cursor-color);
+  border-right: none;
+}
+.ed-prose .prosemirror-virtual-cursor-animation {
+  animation: melo-caret-blink 1s ease-in-out 0.5s infinite;
+}
+@keyframes melo-caret-blink {
+  0%,
+  10% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+/* Block spacing. Avoid the `> * + *` universal sibling combinator: inserting a
+   block (every Enter) changes sibling structure, and a universal `+` defeats
+   the browser's sibling-invalidation fast path, forcing a full-document style
+   recalc (~2.5ms on a medium doc — the Enter lag). Per-block margin-top with a
+   :first-child reset is visually identical but only invalidates when the first
+   block changes, so a mid-document Enter triggers no doc-wide recalc. */
+.ed-prose .ProseMirror > * {
+  /* Vertical rhythm on a 4px grid: 16px between blocks, heading top
+     margins at 20/24/28/36 — every gap a multiple of four, headings
+     always clearing the paragraph gap by at least one step. */
+  margin: 16px 0 0;
+}
+.ed-prose .ProseMirror > *:first-child {
+  margin-top: 0;
+}
+
+/* Document title = first H1, at H1's own size — the top position and the
+   whitespace below identify it; an outsized face adds nothing (the title
+   renders exactly once). Heading line-heights are whole-px (pixel grid) —
+   the level markers below inherit the exact first-line box. */
+.ed-prose .ProseMirror > h1:first-child {
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  line-height: 36px;
+  letter-spacing: -0.01em;
+  margin: 0 0 16px;
+}
+
+/* Headings follow the selected reading face. Only the top margin is set:
+   the gap below a heading comes from the next block's own 10px top
+   margin (sibling margins collapse, so a smaller bottom value here
+   would be silently swallowed anyway). The large top gap against the
+   10px paragraph rhythm (~3:1) is what ties a heading to its text. */
+.ed-prose .ProseMirror h1 {
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  line-height: 36px;
+  letter-spacing: -0.01em;
+  margin-top: 36px;
+}
+.ed-prose .ProseMirror h2 {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  line-height: 32px;
+  letter-spacing: -0.005em;
+  margin-top: 28px;
+}
+.ed-prose .ProseMirror h3 {
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  line-height: 26px;
+  margin-top: 24px;
+  color: var(--ink-2);
+}
+/* h4–h6 sit at body size; weight + an ink step per level keep the
+   hierarchy visible in exports too, where the gutter markers don't exist. */
+.ed-prose .ProseMirror :is(h4, h5, h6) {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 28px;
+  margin-top: 20px;
+}
+.ed-prose .ProseMirror h5 {
+  color: var(--ink-2);
+}
+.ed-prose .ProseMirror h6 {
+  color: var(--ink-3);
+}
+
+/* Heading level markers — a faint H1–H6 tag in the gutter so levels are
+   tellable at a glance (size alone doesn't separate H2 from H3). Pure
+   ::before: never enters the document, so serialization, export and share
+   cards are untouched. The tag box spans the whole drag-handle gutter, so
+   hovering anywhere the handle can appear counts as hovering the heading.
+   Vertical alignment comes from the inherited px line-height: the tag
+   centers on the heading's first line box. */
+.ed-prose .ProseMirror > :is(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+}
+.ed-prose .ProseMirror > :is(h1, h2, h3, h4, h5, h6)::before {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  box-sizing: border-box;
+  width: 60px; /* = the gutter carved out by .ProseMirror's padding-left */
+  padding-right: 8px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  transition: opacity 150ms var(--ease);
+}
+.ed-prose .ProseMirror > h1::before {
+  content: 'H1';
+}
+.ed-prose .ProseMirror > h2::before {
+  content: 'H2';
+}
+.ed-prose .ProseMirror > h3::before {
+  content: 'H3';
+}
+.ed-prose .ProseMirror > h4::before {
+  content: 'H4';
+}
+.ed-prose .ProseMirror > h5::before {
+  content: 'H5';
+}
+.ed-prose .ProseMirror > h6::before {
+  content: 'H6';
+}
+/* The drag handle takes this slot on hover — swap the marker out. When the
+   pointer moves onto the handle's own buttons the heading loses :hover and
+   its marker fades back in, but the handle's opaque backdrop (see
+   .block-gutter) sits on top of it, so the swap holds visually. */
+.ed-prose .ProseMirror > :is(h1, h2, h3, h4, h5, h6):hover::before {
+  opacity: 0;
+}
+
+.ed-prose .ProseMirror p {
+  text-wrap: pretty;
+}
+
+/* Quote — serif against the sans body carries the "quoted voice"; no
+   italic (CJK has none, it would render as fake-oblique hanzi). */
+.ed-prose .ProseMirror blockquote {
+  padding: 4px 0 4px 20px;
+  border-left: 4px solid var(--quote-bar);
+  font-family: var(--font-serif);
+  color: var(--ink-3);
+  margin: 16px 0;
+}
+.ed-prose .ProseMirror blockquote p {
+  margin: 0;
+}
+
+/* List items wrap their text in <p> (Tiptap's listItem schema) — kill
+   the UA's 1em paragraph margins or item spacing runs wild; the item
+   gap is owned by the li rules below. Multi-paragraph items keep a
+   small internal gap. */
+.ed-prose .ProseMirror li > p {
+  margin: 0;
+}
+.ed-prose .ProseMirror li > p + p {
+  margin-top: 6px;
+}
+
+/* Bullet list */
+.ed-prose .ProseMirror ul:not([data-type='taskList']) {
+  padding-left: 24px;
+  list-style: none;
+}
+.ed-prose .ProseMirror ul:not([data-type='taskList']) li {
+  position: relative;
+  margin: 4px 0;
+}
+.ed-prose .ProseMirror ul:not([data-type='taskList']) li::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  /* Dead-centers the 6px dot on the 28px first line box. */
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+/* Nesting markers follow the classic disc → circle → square ladder —
+   same ink, lighter/smaller shapes per level. Depth counts each list
+   type's own ancestors (platform convention). */
+.ed-prose .ProseMirror ul:not([data-type='taskList']) ul:not([data-type='taskList']) li::before {
+  background: transparent;
+  border: 1px solid var(--ink-3);
+}
+.ed-prose
+  .ProseMirror
+  ul:not([data-type='taskList'])
+  ul:not([data-type='taskList'])
+  ul:not([data-type='taskList'])
+  li::before {
+  background: var(--ink-3);
+  border: 0;
+  border-radius: 0;
+  width: 4px;
+  height: 4px;
+  top: 12px;
+  left: -15px;
+}
+
+/* Numbered list — 1. → a. → i. down the levels (outline convention;
+   nested "2. → a. → i." reads as a hierarchy where all-decimal loses
+   the reader). */
+.ed-prose .ProseMirror ol {
+  padding-left: 28px;
+  list-style: decimal;
+}
+.ed-prose .ProseMirror ol ol {
+  list-style: lower-alpha;
+}
+.ed-prose .ProseMirror ol ol ol {
+  list-style: lower-roman;
+}
+.ed-prose .ProseMirror ol li {
+  margin: 4px 0;
+}
+.ed-prose .ProseMirror ol li::marker {
+  color: var(--ink-3);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Task list */
+.ed-prose .ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding: 0;
+}
+.ed-prose .ProseMirror ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0;
+}
+.ed-prose .ProseMirror ul[data-type='taskList'] li > label {
+  flex-shrink: 0;
+  /* Full first-line box height + flex centering: the checkbox lands
+     dead-center on the 28px line with no magic offset. */
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+.ed-prose .ProseMirror ul[data-type='taskList'] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.ed-prose .ProseMirror ul[data-type='taskList'] li > div > p {
+  margin: 0;
+  transition: color 120ms var(--ease);
+}
+/* 16px box, thin stroke, slim check — the 18px block with a fat white
+   tick read as a button, not a mark in running text. */
+.ed-prose .ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--hairline-2);
+  border-radius: 4px;
+  background: var(--paper);
+  cursor: pointer;
+  position: relative;
+  transition: all 120ms var(--ease);
+}
+.ed-prose .ProseMirror ul[data-type='taskList'] input[type='checkbox']:hover {
+  border-color: var(--accent);
+}
+.ed-prose .ProseMirror ul[data-type='taskList'] input[type='checkbox']:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+/* SVG tick centered by the background engine — a rotated-border pseudo
+   needs hand-tuned offsets and always sits half a pixel off. */
+.ed-prose .ProseMirror ul[data-type='taskList'] input[type='checkbox']:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M2.2 5.4 4.4 7.5 7.9 3" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px 10px;
+}
+/* Done-styling lands on the item's OWN paragraph only — text-decoration
+   propagates through descendants, so putting it on the content div also
+   struck through every (possibly unchecked) nested subtask. */
+.ed-prose .ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div > p {
+  color: var(--ink-4);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* Code block (lowlight + MeloCodeBlock NodeView: gutter | code, with a
+   language chip + copy button floating top-right). The gutter stays put
+   while the code column scrolls horizontally on its own. */
+.ed-prose .ProseMirror pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--code-bg);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline);
+  tab-size: 2;
+  margin: 16px 0;
+  padding: 0;
+  position: relative;
+  display: flex;
+  /* No overflow clip: the language picker menu hangs below the chrome;
+     horizontal scrolling belongs to the code column. */
+}
+.ed-prose .ProseMirror pre .cb-gutter {
+  flex-shrink: 0;
+  min-width: 22px;
+  padding: 16px 0 16px 12px;
+  text-align: right;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  user-select: none;
+}
+.ed-prose .ProseMirror pre code {
+  font-family: inherit;
+  background: none;
+  border: 0;
+  flex: 1;
+  min-width: 0;
+  display: block;
+  overflow-x: auto;
+  padding: 16px 20px 16px 14px;
+  color: var(--ink);
+  white-space: pre;
+}
+.ed-prose .ProseMirror pre .cb-chrome {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Language chip — auto-width text button (a full "javascript" never
+   truncates); click swaps in the filter input + picker menu. */
+.ed-prose .ProseMirror pre .cb-lang-btn {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 4px;
+  font: 500 10px var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  white-space: nowrap;
+  transition: background 100ms var(--ease);
+}
+.ed-prose .ProseMirror pre .cb-lang-btn:hover {
+  background: var(--paper);
+  color: var(--ink-2);
+}
+/* Hover-only, and OUT of the layout while hidden — an invisible button
+   still holding space pushed the chip off the corner. Ghost icon in the
+   chip's own register; both lock to 20px so the chrome's height (and
+   the chip's centering) never jumps when the button pops in. */
+.ed-prose .ProseMirror pre .cb-copy {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--ink-4);
+  transition:
+    color 100ms var(--ease),
+    background 100ms var(--ease);
+}
+.ed-prose .ProseMirror pre:hover .cb-copy,
+.ed-prose .ProseMirror pre .cb-copy:focus-visible {
+  display: inline-flex;
+}
+.ed-prose .ProseMirror pre .cb-copy:hover {
+  background: var(--paper);
+  color: var(--ink-2);
+}
+.ed-prose .ProseMirror pre .hljs-comment,
+.ed-prose .ProseMirror pre .hljs-quote {
+  color: var(--ink-4);
+  font-style: italic;
+}
+.ed-prose .ProseMirror pre .hljs-keyword,
+.ed-prose .ProseMirror pre .hljs-selector-tag,
+.ed-prose .ProseMirror pre .hljs-built_in {
+  color: oklch(0.55 0.16 290);
+  font-weight: 500;
+}
+.ed-prose .ProseMirror pre .hljs-string,
+.ed-prose .ProseMirror pre .hljs-title.function_,
+.ed-prose .ProseMirror pre .hljs-attr {
+  color: oklch(0.52 0.14 145);
+}
+.ed-prose .ProseMirror pre .hljs-number,
+.ed-prose .ProseMirror pre .hljs-literal {
+  color: oklch(0.55 0.14 220);
+}
+.ed-prose .ProseMirror pre .hljs-title,
+.ed-prose .ProseMirror pre .hljs-name {
+  color: oklch(0.58 0.14 30);
+}
+[data-theme='dark'] .ed-prose .ProseMirror pre .hljs-keyword,
+[data-theme='dark'] .ed-prose .ProseMirror pre .hljs-built_in {
+  color: oklch(0.78 0.15 290);
+}
+[data-theme='dark'] .ed-prose .ProseMirror pre .hljs-string {
+  color: oklch(0.78 0.14 145);
+}
+[data-theme='dark'] .ed-prose .ProseMirror pre .hljs-number {
+  color: oklch(0.78 0.14 220);
+}
+[data-theme='dark'] .ed-prose .ProseMirror pre .hljs-title {
+  color: oklch(0.78 0.14 30);
+}
+
+/* Divider */
+.ed-prose .ProseMirror hr {
+  border: 0;
+  height: 1px;
+  background: var(--hairline);
+  margin: 28px 0;
+}
+
+/* Image — inline by default so badges / shields sit side-by-side; the
+   NodeView wraps img + alt caption in .img-wrap. A sole image in a
+   paragraph presents as a block and shows its caption. */
+.ed-prose .ProseMirror img {
+  max-width: 100%;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline);
+  vertical-align: middle;
+}
+.ed-prose .ProseMirror .img-wrap {
+  display: inline;
+}
+.ed-prose .ProseMirror .img-wrap .img-alt {
+  display: none;
+}
+/* .img-block is a node decoration set by the Image extension when the
+   image is its paragraph's sole child — CSS sibling selectors can't tell
+   (text nodes are invisible to them, and ProseMirror appends a trailing
+   hack <br> after a terminal inline atom). */
+.ed-prose .ProseMirror .img-wrap.img-block {
+  display: block;
+  margin: 16px 0;
+}
+/* Alt renders as a quiet centered caption — block images only (a caption
+   under an inline badge would break the text flow). Hidden when empty. */
+.ed-prose .ProseMirror .img-wrap.img-block .img-alt:not(:empty) {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-4);
+  text-align: center;
+}
+/* (image selected/dragged feedback is the shared outline ring above) */
+
+/* Inline marks */
+.ed-prose .ProseMirror strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.ed-prose .ProseMirror em {
+  font-style: italic;
+}
+.ed-prose .ProseMirror :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--code-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+}
+.ed-prose .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms var(--ease);
+}
+.ed-prose .ProseMirror a:hover {
+  text-decoration-color: var(--accent);
+}
+/* No horizontal padding (deviation from the design's `0 2px`): padding on an
+   inline element adds layout width, so toggling the highlight reflowed the
+   whole line. The translucent mark color also rules out the negative-margin
+   bleed trick — adjacent mark segments (split by bold/italic boundaries)
+   would double-paint dark seams where they overlap. */
+.ed-prose .ProseMirror mark {
+  background: var(--hl-mark);
+  color: var(--ink);
+  border-radius: 2px;
+}
+
+/* Find & replace match highlights (decorations from FindBar) —
+   browser-native palette: yellow matches, orange current. */
+.ed-prose .ProseMirror .find-match {
+  background: var(--find-match);
+  border-radius: 2px;
+}
+.ed-prose .ProseMirror .find-match-active {
+  background: var(--find-active);
+}
+
+/* Placeholder (empty doc / empty first line). */
+.ed-prose .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--ink-4);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Mathematics — block ($$…$$) + inline ($…$), KaTeX rendered.
+   Design maps `.math-block` / `.imath` onto Tiptap's mathematics DOM
+   (`[data-type='block-math']` / `[data-type='inline-math']`). */
+.ed-prose .ProseMirror [data-type='block-math'] {
+  display: block;
+  margin: 4px auto;
+  padding: 16px 20px;
+  text-align: center;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  overflow-x: auto;
+  transition:
+    background 120ms var(--ease),
+    box-shadow 120ms var(--ease);
+}
+.ed-prose .ProseMirror [data-type='block-math']:hover {
+  background: var(--paper-2);
+}
+.ed-prose .ProseMirror [data-type='block-math'].ProseMirror-selectednode {
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1px var(--hairline-2);
+  outline: none;
+}
+.ed-prose .ProseMirror [data-type='block-math'] .katex-display {
+  margin: 0;
+}
+.ed-prose .ProseMirror [data-type='block-math'] .katex {
+  color: var(--ink);
+}
+.ed-prose .ProseMirror [data-type='block-math'][data-latex='']::after {
+  content: 'Empty equation — click to edit';
+  color: var(--ink-4);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+.ed-prose .ProseMirror [data-type='inline-math'] {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+  white-space: nowrap;
+  transition:
+    background 100ms var(--ease),
+    box-shadow 100ms var(--ease);
+}
+.ed-prose .ProseMirror [data-type='inline-math']:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px oklch(0.585 0.21 262 / 0.28);
+}
+.ed-prose .ProseMirror [data-type='inline-math'] .katex {
+  color: var(--ink);
+}
+.ed-prose .ProseMirror [data-type='inline-math'].ProseMirror-selectednode {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.ed-prose .ProseMirror [data-type='inline-math'][data-latex='']::after {
+  content: 'f(x)';
+  color: var(--ink-4);
+}

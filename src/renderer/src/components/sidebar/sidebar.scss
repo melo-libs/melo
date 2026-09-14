@@ -1,0 +1,1286 @@
+/* ============================================================
+   Sidebar — file tree, local-first folder metaphor.
+   Ported from design sidebar.css + tree enhancements
+   button from file-menus.css.
+   ============================================================ */
+
+.sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  height: 100vh;
+  position: relative;
+}
+
+.sb-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+.sb-resize:hover,
+.sb-resize:active {
+  box-shadow: inset -2px 0 0 var(--hairline-2);
+}
+
+/* ---------- Top: traffic lights + workspace switcher ---------- */
+.sb-top {
+  padding: 14px 16px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: drag;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  position: relative;
+}
+
+/* Reserves the footprint of the real macOS traffic lights. */
+.sb-traffic-spacer {
+  width: 52px;
+  flex-shrink: 0;
+}
+
+/* Workspace switcher */
+.sb-workspace {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-left: 4px;
+  padding: 5px 8px 5px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 160ms var(--ease);
+  -webkit-app-region: no-drag;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+.sb-workspace:hover {
+  background: oklch(0.93 0.003 265 / 0.55);
+}
+.sb-workspace.open {
+  background: oklch(0.9 0.018 75 / 0.7);
+}
+[data-theme='dark'] .sb-workspace:hover {
+  background: oklch(0.3 0.004 265 / 0.55);
+}
+[data-theme='dark'] .sb-workspace.open {
+  background: oklch(0.36 0.02 75 / 0.7);
+}
+.sb-ws-info {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  line-height: 1.2;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.sb-ws-name {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.sb-ws-caret {
+  color: var(--ink-4);
+  display: inline-flex;
+  flex-shrink: 0;
+  transform: rotate(90deg);
+  transition:
+    color 120ms var(--ease),
+    transform 120ms var(--ease);
+}
+.sb-workspace.open .sb-ws-caret {
+  color: var(--ink-2);
+  transform: rotate(270deg);
+}
+.sb-workspace:hover .sb-ws-caret {
+  color: var(--ink-2);
+}
+
+/* Workspace popover */
+.sb-ws-pop {
+  width: 260px;
+  z-index: 1001;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 32px rgba(17, 20, 28, 0.18),
+    0 2px 6px rgba(17, 20, 28, 0.08);
+  padding: 6px;
+  animation: ws-pop-in 140ms var(--ease) both;
+}
+@keyframes ws-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sb-ws-pop-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  padding: 8px 10px 6px;
+}
+.sb-ws-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  position: relative;
+  transition: background 100ms var(--ease);
+}
+.sb-ws-row:hover,
+.sb-ws-row.active {
+  background: var(--paper-2);
+}
+.sb-ws-row-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  flex: 1;
+  min-width: 0;
+}
+.sb-ws-row-name {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-ws-row-meta {
+  font-size: 10.5px;
+  color: var(--ink-4);
+  margin-top: 1px;
+}
+.sb-ws-check {
+  color: var(--accent);
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.sb-ws-row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--ink-4);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 100ms var(--ease),
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.sb-ws-row:hover .sb-ws-row-more {
+  opacity: 1;
+}
+.sb-ws-row-more:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+.sb-ws-divider {
+  height: 1px;
+  background: var(--hairline);
+  margin: 6px 4px;
+}
+.sb-ws-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.sb-ws-action:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.sb-ws-action.subtle {
+  color: var(--ink-3);
+}
+.sb-ws-action svg {
+  color: var(--ink-4);
+}
+.sb-workspace.switching .sb-ws-name {
+  opacity: 0.55;
+}
+.sb-ws-row.invalid .sb-ws-row-name {
+  color: var(--ink-4);
+}
+.sb-ws-row.invalid .sb-ws-row-meta {
+  color: oklch(0.55 0.18 25);
+}
+.sb-ws-rename {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--accent-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  outline: none;
+  width: 100%;
+}
+.sb-ws-menu {
+  position: absolute;
+  top: 100%;
+  right: 6px;
+  z-index: 10;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+.sb-ws-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink-2);
+  border-radius: 5px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 80ms var(--ease),
+    color 80ms var(--ease);
+}
+.sb-ws-menu-item:hover:not(:disabled) {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.sb-ws-menu-item:disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+.sb-ws-action:hover svg {
+  color: var(--ink-2);
+}
+.sb-ws-hint {
+  padding: 8px 10px 6px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  color: var(--ink-4);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sb-ws-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  color: var(--ink-3);
+}
+
+/* ---------- Search ---------- */
+.sb-search {
+  margin: 2px 12px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  transition: border-color 150ms var(--ease);
+}
+.sb-search:hover {
+  border-color: var(--hairline-2);
+}
+.sb-search input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: var(--fs-ui);
+  min-width: 0;
+}
+.sb-search input::placeholder {
+  color: var(--ink-4);
+}
+.sb-search kbd {
+  font: 500 10px var(--font-mono);
+  padding: 2px 5px;
+  background: var(--paper-3);
+  border-radius: 3px;
+  color: var(--ink-3);
+}
+
+/* ---------- Section header ---------- */
+.sb-section {
+  padding: 12px 18px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+}
+.sb-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.sb-section button {
+  color: var(--ink-4);
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+}
+.sidebar:hover .sb-section button {
+  opacity: 1;
+}
+.sb-section button:hover {
+  color: var(--ink-2);
+}
+
+/* ---------- Tree ---------- */
+.sb-tree {
+  flex: 1;
+  overflow-y: auto;
+  /* Right inset comes from the always-reserved scrollbar gutter (8px,
+     same as the left padding) — a system classic scrollbar would
+     otherwise eat extra width and pull the rows off-center. */
+  padding: 0 0 20px 8px;
+  scrollbar-gutter: stable;
+}
+.sb-tree::-webkit-scrollbar {
+  width: 8px;
+}
+/* Follow the app-wide hover-only scrollbar language (reset.scss). */
+.sb-tree::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.sb-tree:hover::-webkit-scrollbar-thumb {
+  background: var(--hairline-2);
+  background-clip: content-box;
+}
+
+.tree-node {
+  user-select: none;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-ui);
+  color: var(--ink-2);
+  cursor: pointer;
+  min-height: 26px;
+  position: relative;
+}
+.tree-row:hover {
+  background: var(--paper-3);
+}
+/* Active is a terminal state — no darker hover on top (same call as the
+   bubble menu's active buttons; Finder rows behave the same). Deviation
+   from the design source, which darkened to --sel-row-hover. */
+.tree-row.active {
+  background: var(--sel-row);
+  color: var(--accent);
+}
+.tree-row.selected:not(.active) {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+.tree-chev {
+  width: 14px;
+  color: var(--ink-4);
+  display: inline-flex;
+  justify-content: center;
+  transition: transform 150ms var(--ease);
+}
+.tree-chev.open {
+  transform: rotate(90deg);
+}
+.tree-chev.leaf {
+  visibility: hidden;
+}
+
+.tree-folder-icon,
+.tree-file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--ink-3);
+}
+.tree-folder-icon.inbox {
+  color: var(--ink-2);
+}
+[data-theme='dark'] .tree-folder-icon.inbox {
+  color: var(--ink-2);
+}
+.tree-row.active .tree-folder-icon {
+  color: var(--accent);
+}
+
+.tree-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-star {
+  display: inline-flex;
+  color: oklch(0.7 0.13 70);
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+[data-theme='dark'] .tree-star {
+  color: oklch(0.8 0.13 75);
+}
+
+/* Inbox row — slightly weighted, with count badge */
+.tree-row.inbox-row {
+  font-weight: 500;
+}
+.tree-row.inbox-row .tree-label {
+  color: var(--ink);
+}
+/* Shared count style — every sidebar count (Inbox, smart folders)
+   renders the same quiet tabular number. */
+.sb-count {
+  font-size: 10px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.tree-row .sb-count {
+  margin-left: auto;
+}
+
+/* Recent pulse — newly arrived clips */
+@keyframes recent-pulse {
+  0% {
+    background: oklch(0.585 0.21 262 / 0.2);
+  }
+  60% {
+    background: oklch(0.585 0.21 262 / 0.08);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.tree-row.recent {
+  animation: recent-pulse 2.4s var(--ease) both;
+}
+
+/* Drag-over highlight on folder rows */
+.tree-row.drag-over {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.tree-children {
+  /* The single source of indentation (the rows carry no per-depth padding):
+     11px margin keeps the guide line under the chevron, 6px padding nests
+     the children — 17px per level. */
+  padding-left: 6px;
+  border-left: 1px solid transparent;
+  transition: border-color 150ms var(--ease);
+  margin-left: 11px;
+}
+.tree-node:hover > .tree-children {
+  border-left-color: var(--hairline);
+}
+
+/* Tile shifts toward accent inside an active row */
+.tree-row.active .ft-tile-bg {
+  fill: var(--accent-soft);
+  stroke: oklch(0.585 0.21 262 / 0.4);
+}
+.tree-row.active .ft-tile-glyph,
+.tree-row.active .ft-bare {
+  stroke: var(--accent);
+}
+
+/* ---------- Bottom ---------- */
+.sb-bottom {
+  /* One text line now (the storage bar is gone) — symmetric padding,
+     the 26px buttons set the row height. */
+  padding: 8px 14px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-ui-sm);
+  color: var(--ink-3);
+}
+.sb-storage {
+  flex: 1;
+}
+.sb-storage-size {
+  color: var(--ink-4);
+}
+.sb-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.sb-icon-btn:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+/* ============================================================
+   Context menu (Radix) + Properties card (Radix Dialog).
+   Ported from design file-menus.css; positioning is handled by
+   Radix, so only opacity is animated (no transform conflict).
+   ============================================================ */
+
+@keyframes ctx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ctx-menu {
+  z-index: 1100;
+  min-width: 240px;
+  max-width: 280px;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  animation: ctx-fade 100ms var(--ease);
+  max-height: var(--radix-context-menu-content-available-height, 70vh);
+  overflow-y: auto;
+}
+
+.ctx-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.ctx-head-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.ctx-sep {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 0;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+  outline: none;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.ctx-item:hover,
+.ctx-item[data-highlighted] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.ctx-item[data-disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.ctx-item.danger {
+  color: oklch(0.5 0.18 25);
+}
+.ctx-item.danger:hover,
+.ctx-item.danger[data-highlighted] {
+  background: oklch(0.6 0.2 25 / 0.1);
+  color: oklch(0.45 0.2 25);
+}
+[data-theme='dark'] .ctx-item.danger {
+  color: oklch(0.72 0.18 25);
+}
+.ctx-ic {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.ctx-item:hover .ctx-ic,
+.ctx-item[data-highlighted] .ctx-ic {
+  color: var(--ink);
+}
+.ctx-item.danger .ctx-ic {
+  color: oklch(0.55 0.18 25);
+}
+.ctx-lbl {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ctx-kbd {
+  font: 500 10px var(--font-mono);
+  color: var(--ink-4);
+  flex-shrink: 0;
+}
+.ctx-arrow {
+  color: var(--ink-4);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.ctx-item:hover .ctx-arrow,
+.ctx-item[data-highlighted] .ctx-arrow {
+  color: var(--ink-2);
+}
+
+/* ---------- Move destination dialog ---------- */
+.move-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: rgba(17, 20, 28, 0.2);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: scrim-fade 160ms var(--ease);
+}
+[data-theme='dark'] .move-dialog-scrim {
+  background: rgba(0, 0, 0, 0.5);
+}
+.move-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 1301;
+  width: 448px;
+  max-width: calc(100vw - 32px);
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(17, 20, 28, 0.18);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  animation: scrim-fade 160ms var(--ease);
+}
+.move-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px 12px;
+}
+.move-dialog-heading {
+  flex: 1;
+  min-width: 0;
+}
+.move-dialog-heading h2 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-dialog-heading p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--ink-4);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-dialog-close {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+}
+.move-dialog-close:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.move-dialog-search {
+  display: flex;
+  height: 40px;
+  margin: 0 20px 8px;
+  padding: 0 12px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  color: var(--ink-4);
+}
+.move-dialog-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.move-dialog-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 12px var(--font-sans);
+}
+.move-dialog-search input::placeholder {
+  color: var(--ink-4);
+}
+.move-dialog-search-clear {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+}
+.move-dialog-search-clear:hover {
+  background: var(--paper-3);
+  color: var(--ink);
+}
+.move-dialog-breadcrumbs,
+.move-dialog-search-summary {
+  display: flex;
+  height: 28px;
+  margin: 0 20px 6px;
+  align-items: center;
+  overflow: hidden;
+  color: var(--ink-4);
+  font-size: 12px;
+}
+.move-dialog-crumb-wrap {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  flex-shrink: 1;
+}
+.move-dialog-crumb-wrap svg {
+  margin: 0 4px;
+  flex-shrink: 0;
+  color: var(--ink-4);
+}
+.move-dialog-crumb-wrap button {
+  overflow: hidden;
+  padding: 4px;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-dialog-crumb-wrap button:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.move-dialog-crumb-wrap button.current {
+  color: var(--ink);
+  font-weight: 500;
+}
+.move-dialog-list {
+  position: relative;
+  height: 216px;
+  margin: 0 20px;
+  overflow-y: auto;
+  background: var(--paper);
+  box-shadow:
+    inset 0 1px var(--hairline),
+    inset 0 -1px var(--hairline);
+}
+.move-dialog-list-spacer {
+  position: relative;
+  width: 100%;
+}
+.move-dialog-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: 100%;
+  height: 36px;
+  padding: 0 8px;
+  align-items: center;
+  gap: 10px;
+  outline: 0;
+  color: var(--ink-2);
+  text-align: left;
+}
+.move-dialog-row:hover,
+.move-dialog-row.active {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.move-dialog-list.searching .move-dialog-row.active {
+  background: var(--accent-soft);
+}
+.move-dialog-row-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--ink-3);
+}
+.move-dialog-row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.move-dialog-row-name {
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-dialog-row-path {
+  overflow: hidden;
+  color: var(--ink-4);
+  font: 400 10px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-dialog-row > svg {
+  --icon-stroke: 1.6;
+  flex-shrink: 0;
+  color: var(--ink-3);
+}
+.move-dialog-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-4);
+  font-size: 12px;
+}
+.move-dialog-footer {
+  display: flex;
+  min-height: 56px;
+  padding: 10px 20px;
+  align-items: center;
+  gap: 12px;
+  background: var(--paper);
+}
+.move-dialog-destination {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--ink-4);
+  font-size: 12px;
+}
+.move-dialog-destination strong {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.move-dialog-destination span {
+  flex-shrink: 0;
+  color: var(--ink-4);
+  font-size: 12px;
+}
+.move-dialog-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+/* ---------- Properties card ---------- */
+@keyframes scrim-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.prop-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 20, 28, 0.18);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 1200;
+  animation: scrim-fade 180ms var(--ease);
+}
+[data-theme='dark'] .prop-scrim {
+  background: rgba(0, 0, 0, 0.45);
+}
+.prop-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  z-index: 1201;
+  animation: scrim-fade 200ms var(--ease);
+}
+.prop-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.prop-head-info {
+  flex: 1;
+  min-width: 0;
+}
+.prop-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  /* The card's whole job is showing the full record — wrap long titles
+     (two lines) instead of eating them with an ellipsis. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  margin-bottom: 2px;
+}
+.prop-kind {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  letter-spacing: 0.02em;
+}
+.prop-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+  flex-shrink: 0;
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.prop-close:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.prop-close:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+.prop-rows {
+  padding: 8px 18px 18px;
+}
+.prop-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12.5px;
+}
+.prop-row:last-child {
+  border-bottom: 0;
+}
+.prop-k {
+  width: 80px;
+  flex-shrink: 0;
+  color: var(--ink-4);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.prop-v {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.prop-link {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.prop-url {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent);
+}
+.prop-tags {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.prop-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  border: 1px solid var(--hairline);
+  color: var(--ink-3);
+}
+.prop-ext {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  margin-left: 4px;
+  color: var(--ink-3);
+}
+
+/* ---------- Smart Folders (design smart-proto.css, sidebar block) ---------- */
+.sf-list {
+  padding: 0 8px;
+}
+.sf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  min-height: 28px;
+  position: relative;
+  cursor: default;
+  color: var(--ink-2);
+  width: 100%;
+  text-align: left;
+  font-size: var(--fs-ui);
+  font-family: var(--font-sans);
+}
+.sf-row:hover {
+  background: var(--paper-3);
+}
+.sf-row.active {
+  background: var(--sel-row);
+  color: var(--ink);
+}
+.sf-row.active:hover {
+  background: var(--sel-row-hover);
+}
+.sf-row .sf-glyph {
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+.sf-row.active .sf-glyph {
+  color: var(--accent);
+}
+.sf-row .ico svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sf-row-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sf-row.active .sb-count {
+  color: var(--accent);
+}
+
+/* ---------- Inline name editing (rename / new note) ---------- */
+.tree-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--fs-ui);
+  line-height: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 1px 5px;
+  margin: -2px 0 -2px -1px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  appearance: none;
+}
+.tree-name-input::selection {
+  background: var(--accent);
+  color: var(--paper);
+}
+.tree-row.renaming {
+  background: var(--paper-3);
+  cursor: text;
+}
+.tree-create-row {
+  cursor: default;
+}
+
+/* ---------- File-type suffix (design Sidebar.jsx, extStyle=suffix) ---------- */
+.tree-label {
+  display: flex;
+  align-items: baseline;
+}
+.tree-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-ext {
+  flex-shrink: 0;
+  margin-left: 1px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.tree-row.active .tree-ext {
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+/* ---------- Drag-and-drop (design file-menus.css) ---------- */
+.tree-row.dragging {
+  opacity: 0.45;
+}
+/* Drop INTO a folder */
+.tree-row.drop-inside {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Dropping on the tree's blank area moves to the workspace top level. */
+.sb-tree.drop-root {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  border-radius: var(--r-sm);
+}
+
+/* sb-search is a button now — it opens the ⌘K palette. */
+.sb-search {
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms var(--ease);
+}
+.sb-search:hover {
+  border-color: var(--hairline-2);
+}
+.sb-search-ph {
+  flex: 1;
+  color: var(--ink-4);
+  font-size: var(--fs-ui);
+}
+
+/* Sort button shows its non-default state quietly. */
+.sb-section-actions button[data-on] {
+  color: var(--accent);
+}
+.sb-sort-menu {
+  min-width: 200px;
+}
+.sb-sort-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  padding: 6px 10px 4px;
+}
+.sb-sort-ck {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--accent);
+}
+.sb-sort-on .ctx-lbl {
+  color: var(--ink);
+}

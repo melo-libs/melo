@@ -1,0 +1,282 @@
+/* ============================================================
+   Share-as-image modal. The chrome uses app tokens; the card
+   artwork itself is inline-styled (so it serializes for export).
+   ============================================================ */
+
+.share-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 20, 28, 0.22);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 1200;
+  animation: scrim-fade 180ms var(--ease);
+}
+[data-theme='dark'] .share-scrim {
+  background: rgba(0, 0, 0, 0.5);
+}
+@keyframes scrim-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.share-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 960px;
+  height: 600px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  z-index: 1201;
+  animation: scrim-fade 200ms var(--ease);
+}
+
+.share-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 14px 12px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+.share-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 1px;
+}
+.share-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.share-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+  transition:
+    background 100ms var(--ease),
+    color 100ms var(--ease);
+}
+.share-close:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.share-close:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+.share-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+/* ---------- Preview stage ---------- */
+.share-stage {
+  flex: 1;
+  display: flex;
+  /* `margin: auto` on the child centers it but, unlike align/justify-center,
+     still lets you scroll to BOTH ends when the card overflows — so a tall
+     long-image card isn't clipped (and unreachable) at the top. */
+  padding: 28px;
+  background: var(--paper-2);
+  overflow: auto;
+}
+.share-art {
+  margin: auto;
+  box-shadow: var(--shadow-md);
+  /* scaled to fit the stage; export reads the true 540px-wide node */
+  transform: scale(0.78);
+  transform-origin: center;
+  flex-shrink: 0;
+}
+
+/* ---------- Control panel ---------- */
+.share-panel {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--hairline);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+.share-panel-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  margin-top: 6px;
+}
+
+.share-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  text-align: left;
+  transition:
+    border-color 120ms var(--ease),
+    background 120ms var(--ease);
+}
+.share-preset:hover {
+  border-color: var(--hairline-2);
+}
+.share-preset.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.share-preset-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.share-preset-desc {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.share-checks {
+  display: flex;
+  flex-direction: column;
+}
+.share-check {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 0;
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.share-check.disabled {
+  color: var(--ink-4);
+  cursor: default;
+}
+.share-check-input {
+  /* Visually hidden but still focusable and announced (not display:none). */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+.share-check-input:focus-visible + .share-check-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.share-check-box {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 1.5px solid var(--hairline-2);
+  background: var(--paper);
+  transition:
+    background 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+.share-check-box.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.share-check.disabled .share-check-box {
+  background: var(--paper-3);
+  border-color: var(--hairline);
+}
+.share-check-label {
+  flex: 1;
+}
+
+/* Signature text field, revealed under the Signature checkbox. */
+.share-sig-input {
+  margin: 2px 0 6px 29px; /* align with the checkbox label (box 18 + gap 11) */
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline-2);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition:
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+.share-sig-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.share-sig-input::placeholder {
+  color: var(--ink-4);
+}
+
+.share-actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+}
+.share-btn {
+  width: 100%;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  font-weight: 550;
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease),
+    opacity 120ms var(--ease);
+}
+.share-btn.ghost {
+  border: 1px solid var(--hairline-2);
+  color: var(--ink-2);
+}
+.share-btn.ghost:hover {
+  background: var(--paper-2);
+}
+.share-btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.share-btn.primary:hover {
+  background: var(--accent-hover);
+}
+.share-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

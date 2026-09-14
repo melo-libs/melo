@@ -1,0 +1,71 @@
+appId: com.melolib.lite
+productName: Melo
+directories:
+  buildResources: build
+afterPack: scripts/afterPack.cjs
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+compression: maximum
+asar: true
+asarUnpack:
+  - resources/**
+  # pnpm.supportedArchitectures installs both packaged macOS architectures,
+  # and @parcel/watcher selects the matching N-API binary at runtime. Native
+  # modules cannot be loaded from inside app.asar.
+  - node_modules/@parcel/watcher-*/**/*
+win:
+  executableName: Melo
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+  oneClick: true
+  perMachine: false
+mac:
+  category: public.app-category.productivity
+  type: distribution
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlementsInherit: build/entitlements.mac.plist
+  fileAssociations:
+    - ext: md
+      name: Markdown
+      role: Editor
+      mimeType: text/markdown
+    - ext: markdown
+      name: Markdown
+      role: Editor
+      mimeType: text/markdown
+  extendInfo:
+    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  target: [{ 'target': 'default', 'arch': ['x64'] }, { 'target': 'default', 'arch': ['arm64'] }]
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
+linux:
+  target:
+    - AppImage
+    - snap
+    - deb
+  maintainer: Melo
+  category: Utility
+appImage:
+  artifactName: ${name}-${version}.${ext}
+# Native deps (better-sqlite3) must be rebuilt per packaged target arch —
+# with this off, a cross-arch build would ship the host's binary and the
+# indexer would fail to load at startup.
+npmRebuild: true
+publish:
+  provider: github
+  owner: melo-libs
+  repo: melo
+  private: false
+  releaseType: release
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
