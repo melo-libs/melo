@@ -34,7 +34,7 @@
     "test": "vitest run --exclude 'src/main/**' && pnpm run test:main",
     "test:main": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run src/main",
     "test:e2e:single-instance": "pnpm run build && node scripts/e2e-single-instance.mjs",
-    "test:e2e:workspace": "node scripts/e2e-workspace-watcher.mjs"
+    "test:e2e:workspace": "pnpm run build && node scripts/e2e-workspace-watcher.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
