@@ -688,6 +688,7 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
             <FileTypeIcon
               kind={inlineCreate.type === 'folder' ? 'folder' : 'md'}
               size={14}
+              bare
               className="tree-file-icon"
             />
             <NameInput

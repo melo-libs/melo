@@ -166,6 +166,7 @@ export const TreeNode = ({
             <FileTypeIcon
               kind={clipHost ? 'clip' : node.kind}
               size={14}
+              bare
               className="tree-file-icon"
               title={clipHost ? `${fileTypeLabel('clip')} · ${clipHost}` : undefined}
             />
@@ -201,6 +202,7 @@ export const TreeNode = ({
               <FileTypeIcon
                 kind={inlineCreate.type === 'folder' ? 'folder' : 'md'}
                 size={14}
+                bare
                 className="tree-file-icon"
               />
               <NameInput

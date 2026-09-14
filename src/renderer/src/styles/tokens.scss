@@ -38,7 +38,10 @@
   --hairline: oklch(0.9 0 0);
   --hairline-2: oklch(0.858 0 0);
   --hairline-3: oklch(0.922 0 0);
-  --sidebar-bg: #f6f6f6;
+  /* A restrained tint over native macOS sidebar vibrancy. On platforms
+     without vibrancy it resolves against the opaque window background. */
+  --sidebar-bg: color-mix(in srgb, var(--paper) 52%, transparent);
+  --sidebar-control-bg: color-mix(in srgb, var(--paper) 44%, transparent);
 
   /* Accent — vivid azure */
   --accent: oklch(0.585 0.21 262);
@@ -97,6 +100,7 @@
   --paper-2: oklch(0.236 0.007 250);
   --paper-3: oklch(0.286 0.008 250);
   --sidebar-bg: oklch(0.216 0.006 250);
+  --sidebar-control-bg: var(--paper);
   --ink: oklch(0.95 0.004 250);
   --ink-2: oklch(0.852 0.006 250);
   --ink-3: oklch(0.66 0.008 250);

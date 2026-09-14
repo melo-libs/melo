@@ -6,7 +6,7 @@
 
 .sidebar {
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--hairline);
+  border-right: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -28,7 +28,7 @@
 }
 .sb-resize:hover,
 .sb-resize:active {
-  box-shadow: inset -2px 0 0 var(--hairline-2);
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--hairline-2) 72%, transparent);
 }
 
 /* ---------- Top: traffic lights + workspace switcher ---------- */
@@ -68,16 +68,10 @@
   position: relative;
 }
 .sb-workspace:hover {
-  background: oklch(0.93 0.003 265 / 0.55);
+  background: color-mix(in srgb, var(--paper-3) 58%, transparent);
 }
 .sb-workspace.open {
-  background: oklch(0.9 0.018 75 / 0.7);
-}
-[data-theme='dark'] .sb-workspace:hover {
-  background: oklch(0.3 0.004 265 / 0.55);
-}
-[data-theme='dark'] .sb-workspace.open {
-  background: oklch(0.36 0.02 75 / 0.7);
+  background: var(--accent-soft);
 }
 .sb-ws-info {
   display: flex;
@@ -89,9 +83,9 @@
   overflow: hidden;
 }
 .sb-ws-name {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: -0.01em;
   color: var(--ink);
   white-space: nowrap;
@@ -330,14 +324,15 @@
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  background: var(--paper);
-  border: 1px solid var(--hairline);
+  background: var(--sidebar-control-bg);
+  border: 1px solid color-mix(in srgb, var(--hairline) 58%, transparent);
   border-radius: var(--r-md);
   color: var(--ink-3);
   transition: border-color 150ms var(--ease);
 }
 .sb-search:hover {
-  border-color: var(--hairline-2);
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  border-color: color-mix(in srgb, var(--hairline-2) 72%, transparent);
 }
 .sb-search input {
   flex: 1;
@@ -353,18 +348,18 @@
 .sb-search kbd {
   font: 500 10px var(--font-mono);
   padding: 2px 5px;
-  background: var(--paper-3);
+  background: color-mix(in srgb, var(--paper-3) 60%, transparent);
   border-radius: 3px;
   color: var(--ink-3);
 }
 
 /* ---------- Section header ---------- */
 .sb-section {
-  padding: 12px 18px 4px;
+  padding: 12px 18px 5px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--ink-4);
@@ -424,21 +419,21 @@
   font-size: var(--fs-ui);
   color: var(--ink-2);
   cursor: pointer;
-  min-height: 26px;
+  min-height: 28px;
   position: relative;
 }
 .tree-row:hover {
-  background: var(--paper-3);
+  background: color-mix(in srgb, var(--paper-3) 62%, transparent);
 }
 /* Active is a terminal state — no darker hover on top (same call as the
    bubble menu's active buttons; Finder rows behave the same). Deviation
    from the design source, which darkened to --sel-row-hover. */
 .tree-row.active {
-  background: var(--sel-row);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .tree-row.selected:not(.active) {
-  background: var(--paper-3);
+  background: color-mix(in srgb, var(--paper-3) 68%, transparent);
   color: var(--ink);
 }
 
@@ -562,7 +557,7 @@
   /* One text line now (the storage bar is gone) — symmetric padding,
      the 26px buttons set the row height. */
   padding: 8px 14px;
-  border-top: 1px solid var(--hairline);
+  border-top: 1px solid color-mix(in srgb, var(--hairline) 62%, transparent);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -588,7 +583,7 @@
     color 120ms var(--ease);
 }
 .sb-icon-btn:hover {
-  background: var(--paper-3);
+  background: color-mix(in srgb, var(--paper-3) 62%, transparent);
   color: var(--ink);
 }
 
@@ -1147,14 +1142,14 @@
   font-family: var(--font-sans);
 }
 .sf-row:hover {
-  background: var(--paper-3);
+  background: color-mix(in srgb, var(--paper-3) 62%, transparent);
 }
 .sf-row.active {
-  background: var(--sel-row);
+  background: var(--accent-soft);
   color: var(--ink);
 }
 .sf-row.active:hover {
-  background: var(--sel-row-hover);
+  background: var(--accent-soft);
 }
 .sf-row .sf-glyph {
   color: var(--ink-3);
@@ -1283,4 +1278,55 @@
 }
 .sb-sort-on .ctx-lbl {
   color: var(--ink);
+}
+
+/* Native vibrancy gives the light sidebar useful depth, but muddies the dark
+   palette. Dark mode keeps the original opaque surfaces and interaction states. */
+[data-theme='dark'] {
+  .sidebar {
+    border-right-color: var(--hairline);
+  }
+
+  .sb-resize:hover,
+  .sb-resize:active {
+    box-shadow: inset -2px 0 0 var(--hairline-2);
+  }
+
+  .sb-workspace:hover {
+    background: oklch(0.3 0.004 265 / 0.55);
+  }
+
+  .sb-workspace.open {
+    background: oklch(0.36 0.02 75 / 0.7);
+  }
+
+  .sb-search {
+    border-color: var(--hairline);
+  }
+
+  .sb-search:hover {
+    background: var(--paper);
+    border-color: var(--hairline-2);
+  }
+
+  .sb-search kbd,
+  .tree-row:hover,
+  .tree-row.selected:not(.active),
+  .sb-icon-btn:hover,
+  .sf-row:hover {
+    background: var(--paper-3);
+  }
+
+  .tree-row.active,
+  .sf-row.active {
+    background: var(--sel-row);
+  }
+
+  .sf-row.active:hover {
+    background: var(--sel-row-hover);
+  }
+
+  .sb-bottom {
+    border-top-color: var(--hairline);
+  }
 }

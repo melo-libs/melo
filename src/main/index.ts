@@ -63,7 +63,14 @@ const getWindowConfig = (): BrowserWindowConstructorOptions => ({
   minHeight: 600,
   show: false, // 初始不显示
   autoHideMenuBar: true,
-  backgroundColor: '#ffffff',
+  backgroundColor: process.platform === 'darwin' ? '#00000000' : '#ffffff',
+  ...(process.platform === 'darwin'
+    ? {
+        transparent: true,
+        vibrancy: 'sidebar',
+        visualEffectState: 'followWindow',
+      }
+    : {}),
   ...(process.platform === 'linux' ? { icon } : {}),
   webPreferences: {
     preload: join(__dirname, '../preload/index.js'),

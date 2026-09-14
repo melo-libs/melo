@@ -7,7 +7,7 @@
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr var(--outline-w);
   height: 100vh;
-  background: var(--paper);
+  background: transparent;
 }
 
 .app[data-sidebar='hidden'] {
@@ -68,6 +68,7 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
+  background: var(--paper);
 }
 .center-region > .center-pane {
   flex: 1;
