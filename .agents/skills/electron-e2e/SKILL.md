@@ -30,9 +30,10 @@ Use a persistent tmux shell when the dev app must remain available across tool c
 
 Choose the data scope before launching:
 
-- Tests that create, edit, move, or delete files use a temporary `MELO_USER_DATA` profile and a temporary workspace. Prefer the automated suites when they cover the workflow.
-- A non-mutating visual check may reuse the real profile when existing user state is relevant. Do not turn that access into permission to modify real workspace files.
-- For an isolated interactive run, create the profile and workspace with `mktemp -d`, keep their returned absolute paths in the task state, pass the profile path through `MELO_USER_DATA`, and open only the temporary workspace in Melo.
+- Use an isolated instance for tests that mutate files, settings, onboarding state, or other persisted data, and whenever repeatability depends on a known profile. Prefer the automated suites when they cover the workflow.
+- A non-mutating visual check may reuse one already-running dev instance when it is uniquely identifiable, runs the current source, and existing user state is relevant. Do not turn that access into permission to modify real workspace files.
+- Prefer an isolated instance with representative fixtures when real user state is not necessary. A dedicated test instance means the same development app with a temporary `MELO_USER_DATA` profile and temporary workspace, not another installed copy of Melo.
+- For an isolated interactive run, create the profile and workspace with `mktemp -d`, keep their returned absolute paths in the task state, pass the profile path through `MELO_USER_DATA`, and open only the temporary workspace in Melo. This profile also isolates Melo's single-instance lock from the user's running instance.
 
 ## Preflight the interactive app
 
@@ -52,14 +53,15 @@ test -x "$electron_path"
 lsof -nP -iTCP:5173 -sTCP:LISTEN
 lsof -nP -iTCP:9223 -sTCP:LISTEN
 project_root="$(git rev-parse --show-toplevel)"
-ps -axo pid,ppid,command | rg -F "$project_root/node_modules/" | rg 'electron-vite|Electron \.'
+ps -axo pid,ppid,lstart,command | rg -F "$project_root/node_modules/" | rg 'electron-vite|Electron \.'
 ```
 
 Interpret the evidence before acting:
 
 - A healthy `melo-e2e` session is reused. Renderer or SCSS changes normally arrive through HMR; do not restart for them.
 - An idle `melo-e2e` shell is reused for the next launch.
-- A project dev process outside the session is not permission to create another one. Reuse it, or resolve and stop only its exact PIDs before a deliberate restart.
+- One project dev process outside the session is not permission to create another process in the same profile. Reuse it only when its current dev URL and automation endpoint are known; otherwise ask the user to close it, obtain authorization to stop its exact PID, or use an isolated profile when that suits the test.
+- If multiple unmanaged project Electron processes remain and ownership is unclear, stop preflight. Report their exact PIDs, parent PIDs, and start times; do not launch, attach by a generic app identity, or terminate them without authorization.
 - Port 9223 is the default CDP port, not a product requirement. If it is occupied, identify the owner first; then either reuse the relevant instance or choose one available port and use it consistently for that run.
 - If the Electron executable is missing, repair the dependency installation before launching. Repeating `pnpm run dev` cannot fix `ENOENT`.
 
@@ -97,6 +99,7 @@ Before sending the dev command again, verify that the project Electron child and
 - Prefer Playwright connected over CDP for deterministic renderer interactions and assertions against the existing dev process. Do not use Playwright's Electron launcher for this interactive mode because that creates another process owner.
 - Use CUA when native window state, menus, focus, or visual inspection matters. Prefer the already-running app resolved from `node -p "require('electron')"`; on macOS this executable is inside Electron.app. A generic `Electron` name or `com.github.Electron` is acceptable only when the target is unambiguous.
 - Some CUA entry points launch an app when none is attached. Verify exactly one project Electron process before attaching; if attachment fails, inspect the process and port state instead of retrying with another launch.
+- Give CUA attachment calls a bounded tool timeout. Treat one timeout as a failed attachment; do not retry through a generic name or bundle identity. When multiple Electron windows must coexist, prefer the isolated instance's CDP endpoint for renderer checks; native-window inspection may require the user to close the ambiguous instance first.
 - Exercise the affected workflow end to end. For visual work, inspect the actual pixels rather than treating typecheck or DOM assertions as visual verification.
 - Check only states relevant to the change, such as active/inactive window, light/dark appearance, resize/overflow, hover, selection, focus, disabled state, and representative narrow/wide sizes.
 
