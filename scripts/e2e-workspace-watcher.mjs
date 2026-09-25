@@ -16,6 +16,8 @@ const LARGE_FOLDER_COUNT = Number(process.env.MELO_E2E_FOLDER_COUNT ?? 2500)
 const screenshotPath = process.env.MELO_E2E_SCREENSHOT
 const browseScreenshotPath = process.env.MELO_E2E_BROWSE_SCREENSHOT
 const clipScreenshotPath = process.env.MELO_E2E_CLIP_SCREENSHOT
+const smartScreenshotPath = process.env.MELO_E2E_SMART_SCREENSHOT
+const smartBuilderScreenshotPath = process.env.MELO_E2E_SMART_BUILDER_SCREENSHOT
 const logs = []
 let app
 let socketServer
@@ -109,6 +111,85 @@ async function run() {
     0,
     'workspace should restore without a dialog',
   )
+  await page.locator('.sf-row').first().waitFor({ state: 'visible', timeout: 30000 })
+  assert.deepEqual(
+    await page.locator('.sf-row-label').allTextContents(),
+    ['Recent', 'Web Clips', 'PDFs'],
+    'default smart folders should load on a cold start',
+  )
+  await page.locator('.sf-row').first().click()
+  const smartResults = page.locator('.sf-results')
+  await smartResults.waitFor({ state: 'visible', timeout: 30000 })
+  await page.locator('.res-row').first().waitFor({ state: 'visible', timeout: 30000 })
+
+  const sortButton = page.locator('.sf-sort')
+  await sortButton.click()
+  await page.locator('.pop-opt', { hasText: 'Oldest first' }).click()
+  await waitUntil('smart-folder sort should persist', () => {
+    const views = JSON.parse(fs.readFileSync(path.join(workspace, '.melo', 'views.json'), 'utf8'))
+    return views.find((view) => view.id === 'recent')?.sort === 'Oldest first'
+  })
+  await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
+  await page.locator('.sf-row', { hasText: 'Recent' }).click()
+  await waitUntil('smart-folder sort should survive switching views', async () =>
+    (await sortButton.innerText()).includes('Oldest first'),
+  )
+  await sortButton.click()
+  await page.locator('.pop-opt', { hasText: 'Newest first' }).click()
+  await waitUntil('restored sort should persist', () => {
+    const views = JSON.parse(fs.readFileSync(path.join(workspace, '.melo', 'views.json'), 'utf8'))
+    return views.find((view) => view.id === 'recent')?.sort === 'Newest first'
+  })
+
+  await page.locator('.sv-iconbtn').click()
+  const addRule = page.locator('.smart-modal .rule-add')
+  for (let ruleNumber = 1; ruleNumber <= 20; ruleNumber += 1) {
+    await addRule.scrollIntoViewIfNeeded()
+    await addRule.click()
+    await page.locator('.smart-modal .pop-opt', { hasText: /^Kind$/ }).click()
+  }
+  assert(await addRule.isDisabled(), 'the builder should stop at the shared 20-rule limit')
+  assert.match(
+    (await addRule.getAttribute('title')) ?? '',
+    /20/,
+    'the disabled rule control should explain its limit',
+  )
+  if (smartBuilderScreenshotPath) {
+    await page.screenshot({ path: smartBuilderScreenshotPath, fullPage: true })
+  }
+  await page.locator('.smart-modal .modal-close').click()
+  await page.locator('.smart-modal').waitFor({ state: 'detached' })
+
+  let smartHeight = await smartResults.evaluate((element) => element.scrollHeight)
+  // Initial 50 + four more pages proves the view continues beyond the old
+  // 200-result ceiling without making the DOM grow with every loaded row.
+  for (let pageNumber = 2; pageNumber <= 5; pageNumber += 1) {
+    const previousHeight = smartHeight
+    await smartResults.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+      element.dispatchEvent(new Event('scroll'))
+    })
+    await waitUntil(`recent page ${pageNumber} should load while scrolling`, async () => {
+      smartHeight = await smartResults.evaluate((element) => element.scrollHeight)
+      return smartHeight > previousHeight
+    })
+  }
+  assert(
+    smartHeight > 10_000,
+    `Recent should contain more than 200 loaded rows; scroll height is ${smartHeight}px`,
+  )
+  const mountedSmartRows = await smartResults.locator('.res-row').count()
+  assert(
+    mountedSmartRows < 60,
+    `recent items should virtualize loaded pages; mounted ${mountedSmartRows} rows`,
+  )
+  if (smartScreenshotPath) {
+    await smartResults.evaluate((element) => {
+      element.scrollTop = 0
+      element.dispatchEvent(new Event('scroll'))
+    })
+    await page.screenshot({ path: smartScreenshotPath, fullPage: true })
+  }
   assert.equal(await treeRow(page, 'mysql').count(), 0, 'Unix sockets must not appear in the tree')
 
   // This is the regression that the split index/filesystem event introduced:
@@ -314,6 +395,8 @@ async function run() {
         elapsedMs: Date.now() - startedAt,
         mainProcessRssMb: Math.round(rssKb / 1024),
         moveRowsMounted: mountedAtTop,
+        smartRowsMounted: mountedSmartRows,
+        smartResultsScrollHeight: smartHeight,
         moveDialogWidth: Math.round(dialogBox.width),
         moveDialogHeight: Math.round(dialogBox.height),
         screenshot: screenshotPath ?? null,

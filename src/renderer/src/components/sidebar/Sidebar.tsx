@@ -12,7 +12,7 @@ import { formatSize } from '../../lib/format'
 import { copyText } from '../../lib/clipboard'
 import { loadTree, workspaceName } from '../../lib/workspace'
 import { SIcon } from '../smart/SmartIcon'
-import { newRule } from '../smart/smartData'
+import { newRule, smartViewName } from '../smart/smartData'
 import {
   activeSmartIdAtom,
   deleteSmartViewAtom,
@@ -545,53 +545,58 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
         </button>
       </div>
       <div className="sf-list">
-        {smartFolders.map((f) => (
-          <ContextMenu.Root key={f.id}>
-            <ContextMenu.Trigger asChild>
-              <button
-                className={'sf-row' + (f.id === activeSmartId ? ' active' : '')}
-                onClick={() => setActiveSmartId(f.id)}
-              >
-                <SIcon n={f.glyph} s={15} cls="sf-glyph" />
-                <span className="sf-row-label">{f.name}</span>
-                <span className="sb-count">{smartCounts[f.id] ?? 0}</span>
-              </button>
-            </ContextMenu.Trigger>
-            <ContextMenu.Portal>
-              <ContextMenu.Content className="ctx-menu">
-                <ContextMenu.Item
-                  className="ctx-item"
-                  onSelect={() =>
-                    setBuilder({ name: f.name, glyph: f.glyph, rules: f.rules, editId: f.id })
-                  }
+        {smartFolders.map((f) => {
+          const name = smartViewName(f)
+          return (
+            <ContextMenu.Root key={f.id}>
+              <ContextMenu.Trigger asChild>
+                <button
+                  className={'sf-row' + (f.id === activeSmartId ? ' active' : '')}
+                  onClick={() => setActiveSmartId(f.id)}
                 >
-                  <span className="ctx-ic">
-                    <SIcon n="sliders" s={14} />
-                  </span>
-                  <span className="ctx-lbl">{t('ctx.editSmartFolder')}</span>
-                </ContextMenu.Item>
-                <ContextMenu.Separator className="ctx-sep" />
-                <ContextMenu.Item
-                  className="ctx-item danger"
-                  onSelect={() =>
-                    void deleteSmartView(f.id).then((ok) =>
-                      toast(
-                        ok
-                          ? t('sidebar.deletedSmart', { name: f.name })
-                          : t('sidebar.couldNotDeleteSmart'),
-                      ),
-                    )
-                  }
-                >
-                  <span className="ctx-ic">
-                    <SIcon n="trash" s={14} />
-                  </span>
-                  <span className="ctx-lbl">{t('ctx.delete')}</span>
-                </ContextMenu.Item>
-              </ContextMenu.Content>
-            </ContextMenu.Portal>
-          </ContextMenu.Root>
-        ))}
+                  <SIcon n={f.glyph} s={15} cls="sf-glyph" />
+                  <span className="sf-row-label">{name}</span>
+                  {f.preset !== 'recent' && (
+                    <span className="sb-count">{smartCounts[f.id] ?? 0}</span>
+                  )}
+                </button>
+              </ContextMenu.Trigger>
+              <ContextMenu.Portal>
+                <ContextMenu.Content className="ctx-menu">
+                  <ContextMenu.Item
+                    className="ctx-item"
+                    onSelect={() =>
+                      setBuilder({ name, glyph: f.glyph, rules: f.rules, editId: f.id })
+                    }
+                  >
+                    <span className="ctx-ic">
+                      <SIcon n="sliders" s={14} />
+                    </span>
+                    <span className="ctx-lbl">{t('ctx.editSmartFolder')}</span>
+                  </ContextMenu.Item>
+                  <ContextMenu.Separator className="ctx-sep" />
+                  <ContextMenu.Item
+                    className="ctx-item danger"
+                    onSelect={() =>
+                      void deleteSmartView(f.id).then((ok) =>
+                        toast(
+                          ok
+                            ? t('sidebar.deletedSmart', { name })
+                            : t('sidebar.couldNotDeleteSmart'),
+                        ),
+                      )
+                    }
+                  >
+                    <span className="ctx-ic">
+                      <SIcon n="trash" s={14} />
+                    </span>
+                    <span className="ctx-lbl">{t('ctx.delete')}</span>
+                  </ContextMenu.Item>
+                </ContextMenu.Content>
+              </ContextMenu.Portal>
+            </ContextMenu.Root>
+          )
+        })}
       </div>
 
       <div className="sb-section">

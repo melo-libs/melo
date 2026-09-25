@@ -4,7 +4,7 @@ import Database from 'better-sqlite3'
 import matter from 'gray-matter'
 import { normalizeUrl } from './capture/pipeline'
 import { kindOfPath, type SmartKind } from '../../shared/fileKinds'
-import type { SmartHit, SmartRule, SmartVocab } from '../../shared/types/smart'
+import type { SmartHit, SmartRule, SmartSort, SmartVocab } from '../../shared/types/smart'
 
 /**
  * Index layer — `.melo/index.db`, the workspace's rebuildable card catalog.
@@ -136,6 +136,7 @@ export function closeIndex(): void {
     db = null
   }
   root = null
+  invalidateSmartQueries()
 }
 
 /* ---------------- markdown extraction ---------------- */
@@ -226,6 +227,7 @@ export function indexFile(filePath: string): void {
       `INSERT INTO files (path, mtime, btime, size, title, words) VALUES (@path, @mtime, @btime, @size, @title, @words)
        ON CONFLICT(path) DO UPDATE SET mtime=@mtime, btime=@btime, size=@size, title=@title, words=@words`,
     ).run(row)
+    invalidateSmartQueries()
     return
   }
 
@@ -293,6 +295,7 @@ export function indexFile(filePath: string): void {
     db!.prepare('INSERT INTO fts (rowid, content) VALUES (?, ?)').run(id, plain)
   })
   tx()
+  invalidateSmartQueries()
 }
 
 function removeIds(ids: number[]): void {
@@ -309,6 +312,7 @@ function removeIds(ids: number[]): void {
     del('DELETE FROM files WHERE id = ?')
   })
   tx()
+  invalidateSmartQueries()
 }
 
 /** Remove a file, or (for directories) everything under the path. */
@@ -1082,6 +1086,24 @@ interface SmartRow {
   words: number
 }
 
+const SMART_MATCH_CACHE_LIMIT = 8
+let smartRevision = 0
+let smartSnapshotCache: { revision: number; dayStart: number; rows: SmartRow[] } | null = null
+const smartMatchCache = new Map<string, SmartRow[]>()
+
+/** Smart queries are derived entirely from the index. Mutations invalidate
+ *  both the shared snapshot and every sorted rule result in one place. */
+function invalidateSmartQueries(): void {
+  smartRevision += 1
+  smartSnapshotCache = null
+  smartMatchCache.clear()
+}
+
+function localDayStart(): number {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+}
+
 function hostOf(url: string): string | null {
   try {
     return new URL(url).hostname.replace(/^www\./, '') || null
@@ -1092,6 +1114,13 @@ function hostOf(url: string): string | null {
 
 function smartSnapshot(): SmartRow[] {
   if (!db) return []
+  const dayStart = localDayStart()
+  if (smartSnapshotCache?.revision === smartRevision && smartSnapshotCache.dayStart === dayStart) {
+    return smartSnapshotCache.rows
+  }
+  // Relative date rules and timeline buckets change at local midnight even
+  // when no file changed, so yesterday's sorted matches cannot be reused.
+  if (smartSnapshotCache?.dayStart !== dayStart) smartMatchCache.clear()
   const files = db.prepare('SELECT id, path, title, mtime, btime, words FROM files').all() as {
     id: number
     path: string
@@ -1121,16 +1150,14 @@ function smartSnapshot(): SmartRow[] {
     fieldBy.set(r.file_id, f)
   }
 
-  const today = new Date()
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
   // Local calendar-day difference — "Today" must track the user's clock,
   // not a rolling 24h window (a 23:00 capture is still today at 08:00).
   const daysAgo = (ts: number): number => {
     const d = new Date(ts)
     const startOfThat = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-    return Math.max(0, Math.round((startOfToday - startOfThat) / DAY_MS))
+    return Math.max(0, Math.round((dayStart - startOfThat) / DAY_MS))
   }
-  return files.map((f) => {
+  const rows = files.map((f) => {
     const fields = fieldBy.get(f.id) ?? {}
     const createdAt = preciseCreatedAt(fields.created, f.btime, f.mtime)
     const baseKind = kindOfPath(f.path)
@@ -1149,6 +1176,8 @@ function smartSnapshot(): SmartRow[] {
       words: f.words,
     }
   })
+  smartSnapshotCache = { revision: smartRevision, dayStart, rows }
+  return rows
 }
 
 const DATE_DAYS: Record<string, number> = {
@@ -1210,35 +1239,63 @@ function matchSmartRule(row: SmartRow, rule: SmartRule): boolean {
   }
 }
 
-export type SmartSort = 'Newest first' | 'Oldest first' | 'Name A–Z' | 'Source'
-
-/** Sort BEFORE the limit — "Oldest first" over a 500-match view must
- *  surface the actual oldest rows, not the oldest of the newest 200. */
+/** Sort before pagination so every page belongs to one stable ordering. */
 function smartComparator(sort: SmartSort) {
-  if (sort === 'Oldest first') return (a: SmartRow, b: SmartRow) => a.createdAt - b.createdAt
-  if (sort === 'Name A–Z') return (a: SmartRow, b: SmartRow) => a.title.localeCompare(b.title)
+  const byPath = (a: SmartRow, b: SmartRow) => a.path.localeCompare(b.path)
+  if (sort === 'Oldest first')
+    return (a: SmartRow, b: SmartRow) => a.createdAt - b.createdAt || byPath(a, b)
+  if (sort === 'Name A–Z')
+    return (a: SmartRow, b: SmartRow) => a.title.localeCompare(b.title) || byPath(a, b)
   if (sort === 'Source')
     return (a: SmartRow, b: SmartRow) =>
-      (a.sourceHost || 'zzz').localeCompare(b.sourceHost || 'zzz')
-  return (a: SmartRow, b: SmartRow) => b.createdAt - a.createdAt
+      (a.sourceHost || 'zzz').localeCompare(b.sourceHost || 'zzz') || byPath(a, b)
+  return (a: SmartRow, b: SmartRow) => b.createdAt - a.createdAt || byPath(a, b)
 }
 
-export function querySmartRules(
-  rules: SmartRule[],
-  limit = 200,
-  sort: SmartSort = 'Newest first',
-): SmartHit[] {
-  if (!db) return []
-  const rows = smartSnapshot()
-    .filter((row) => rules.every((r) => matchSmartRule(row, r)))
+function smartMatches(rules: SmartRule[], sort: SmartSort): SmartRow[] {
+  const cacheKey = JSON.stringify([localDayStart(), rules, sort])
+  const cached = smartMatchCache.get(cacheKey)
+  if (cached) {
+    // Refresh insertion order so active queries survive the small LRU bound.
+    smartMatchCache.delete(cacheKey)
+    smartMatchCache.set(cacheKey, cached)
+    return cached
+  }
+  const matches = smartSnapshot()
+    .filter((row) => rules.every((rule) => matchSmartRule(row, rule)))
     .sort(smartComparator(sort))
-    .slice(0, limit)
-  const excerptOf = db.prepare('SELECT substr(content, 1, 220) AS c FROM fts WHERE rowid = ?')
+  if (smartMatchCache.size >= SMART_MATCH_CACHE_LIMIT) {
+    const oldest = smartMatchCache.keys().next().value
+    if (oldest !== undefined) smartMatchCache.delete(oldest)
+  }
+  smartMatchCache.set(cacheKey, matches)
+  return matches
+}
+
+export function querySmartRulesPage(
+  rules: SmartRule[],
+  limit = 50,
+  sort: SmartSort = 'Newest first',
+  offset = 0,
+): { items: SmartHit[]; total: number } {
+  if (!db) return { items: [], total: 0 }
+  const matches = smartMatches(rules, sort)
+  const rows = matches.slice(offset, offset + limit)
+  const excerpts = new Map<number, string>()
+  if (rows.length > 0) {
+    const placeholders = rows.map(() => '?').join(', ')
+    const excerptRows = db
+      .prepare(
+        `SELECT rowid AS id, substr(content, 1, 220) AS c FROM fts WHERE rowid IN (${placeholders})`,
+      )
+      .all(...rows.map((row) => row.id)) as { id: number; c: string }[]
+    for (const row of excerptRows) excerpts.set(row.id, row.c)
+  }
   // fts content flattens the H1 into plain text, so an excerpt usually
   // opens with the title — strip it rather than reading it twice.
   const stripTitle = (excerpt: string, title: string): string =>
     excerpt.startsWith(title) ? excerpt.slice(title.length).trim() : excerpt
-  return rows.map((r) => ({
+  const items = rows.map((r) => ({
     path: toAbs(r.path),
     title: r.title,
     kind: r.kind,
@@ -1249,11 +1306,9 @@ export function querySmartRules(
     days: r.days,
     createdAt: r.createdAt,
     words: r.words,
-    excerpt: stripTitle(
-      ((excerptOf.get(r.id) as { c: string } | undefined)?.c ?? '').trim(),
-      r.title,
-    ),
+    excerpt: stripTitle((excerpts.get(r.id) ?? '').trim(), r.title),
   }))
+  return { items, total: matches.length }
 }
 
 /** Counts for many views in one snapshot pass (sidebar badges). */

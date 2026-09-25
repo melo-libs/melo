@@ -5,6 +5,12 @@ import type { SmartKind } from '../fileKinds'
    a flat AND of { key, op, val } rows. */
 
 export type SmartRuleKey = 'Kind' | 'Created' | 'Modified' | 'Folder' | 'Tag' | 'Title' | 'Source'
+export const SMART_SORTS = ['Newest first', 'Oldest first', 'Name A–Z', 'Source'] as const
+export type SmartSort = (typeof SMART_SORTS)[number]
+export const MAX_SMART_RULES = 20
+
+export const SMART_PRESETS = ['recent', 'webClips', 'pdfs'] as const
+export type SmartPreset = (typeof SMART_PRESETS)[number]
 
 export interface SmartRule {
   key: SmartRuleKey
@@ -17,6 +23,9 @@ export interface SmartViewDef {
   name: string
   glyph: string
   rules: SmartRule[]
+  /** Built-in identity is separate from its editable, persisted fallback name. */
+  preset?: SmartPreset
+  sort?: SmartSort
 }
 
 export interface SmartHit {

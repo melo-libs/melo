@@ -1,5 +1,5 @@
 import type { SmartKind } from '@shared/fileKinds'
-import type { SmartRule, SmartVocab } from '@shared/types/smart'
+import type { SmartRule, SmartViewDef, SmartVocab } from '@shared/types/smart'
 import i18n from '../../i18n'
 
 /** Display label for an identity string (rule keys/ops/values, sorts,
@@ -10,6 +10,11 @@ export const smartLabel = (value: string): string => {
   const key = `smartVals.${value}`
   return i18n.exists(key) ? i18n.t(key) : value
 }
+
+/** Built-in names follow the UI language. Editing a preset turns it into a
+ *  normal user-named Smart Folder, so custom names are never translated. */
+export const smartViewName = (view: SmartViewDef): string =>
+  view.preset ? i18n.t(`smartPresets.${view.preset}`) : view.name
 
 /* ============================================================
    Smart Folders — rule vocabulary, time buckets, and glyphs.

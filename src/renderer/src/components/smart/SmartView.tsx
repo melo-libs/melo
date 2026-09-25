@@ -1,12 +1,14 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import i18n from '../../i18n'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '../../lib/cn'
 import { IpcChannels } from '@shared/types/ipc'
-import type { SmartHit, SmartRule } from '@shared/types/smart'
+import type { SmartHit, SmartRule, SmartSort } from '@shared/types/smart'
 import {
   activeSmartIdAtom,
+  persistSmartViewsAtom,
   smartBuilderAtom,
   smartFoldersAtom,
   smartVocabAtom,
@@ -14,20 +16,31 @@ import {
 import { activeTabIdAtom, closeTabAtom, openFileAtom, tabsAtom } from '../../store/editor'
 import { SIcon } from './SmartIcon'
 import { SortMenu, SORTS } from './SmartControls'
-import { bucketOf } from './smartData'
+import { bucketOf, smartViewName } from './smartData'
+import { Button } from '../ui/Button'
+import { toast } from '../Toaster'
 import './smart.scss'
 
-const sortItems = (items: SmartHit[], sort: string) => {
+const PAGE_SIZE = 50
+const EMPTY_RULES: SmartRule[] = []
+
+const sortItems = (items: SmartHit[], sort: SmartSort) => {
   const a = [...items]
-  if (sort === 'Newest first') a.sort((x, y) => y.createdAt - x.createdAt)
-  else if (sort === 'Oldest first') a.sort((x, y) => x.createdAt - y.createdAt)
-  else if (sort === 'Name A–Z') a.sort((x, y) => x.title.localeCompare(y.title))
+  const byPath = (x: SmartHit, y: SmartHit) => x.path.localeCompare(y.path)
+  if (sort === 'Newest first') a.sort((x, y) => y.createdAt - x.createdAt || byPath(x, y))
+  else if (sort === 'Oldest first') a.sort((x, y) => x.createdAt - y.createdAt || byPath(x, y))
+  else if (sort === 'Name A–Z') a.sort((x, y) => x.title.localeCompare(y.title) || byPath(x, y))
   else if (sort === 'Source')
-    a.sort((x, y) => (x.sourceHost || 'zzz').localeCompare(y.sourceHost || 'zzz'))
+    a.sort((x, y) => (x.sourceHost || 'zzz').localeCompare(y.sourceHost || 'zzz') || byPath(x, y))
   return a
 }
 
-const isTimeSort = (sort: string) => sort === 'Newest first' || sort === 'Oldest first'
+const isTimeSort = (sort: SmartSort) => sort === 'Newest first' || sort === 'Oldest first'
+
+type ResultEntry =
+  | { type: 'group'; key: string; label: string }
+  | { type: 'item'; key: string; item: SmartHit; divider: boolean }
+  | { type: 'loading'; key: string }
 
 /* List column width: user-resizable, persisted across sessions. */
 const SV_WIDTH_KEY = 'melo.smartListWidth'
@@ -61,16 +74,22 @@ function briefAge(
 function ResultRow({
   it,
   selected,
+  divider,
   onSelect,
 }: {
   it: SmartHit
   selected: boolean
+  divider: boolean
   onSelect: () => void
 }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   return (
-    <div className={cn('res-row', selected && 'sel')} data-path={it.path} onClick={onSelect}>
+    <div
+      className={cn('res-row', divider && 'with-divider', selected && 'sel')}
+      data-path={it.path}
+      onClick={onSelect}
+    >
       <span className="res-main">
         <div className="res-name">{it.title}</div>
         <div className="res-meta">
@@ -102,19 +121,42 @@ function EmptyState({ onEdit }: { onEdit: () => void }) {
   )
 }
 
+function LoadErrorState({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="sf-empty" role="alert">
+      <h3>{t('smart.couldNotLoad')}</h3>
+      <Button size="small" onClick={onRetry}>
+        {t('smart.retry')}
+      </Button>
+    </div>
+  )
+}
+
 export const SmartView = () => {
   const { t } = useTranslation()
   const folders = useAtomValue(smartFoldersAtom)
   const [activeId, setActiveId] = useAtom(activeSmartIdAtom)
   const setBuilder = useSetAtom(smartBuilderAtom)
+  const persistViews = useSetAtom(persistSmartViewsAtom)
   const vocab = useAtomValue(smartVocabAtom)
   const openFile = useSetAtom(openFileAtom)
   const closeTab = useSetAtom(closeTabAtom)
   const tabs = useAtomValue(tabsAtom)
   const activeTabId = useAtomValue(activeTabIdAtom)
 
-  const [sort, setSort] = useState('Newest first')
+  const [sort, setSort] = useState<SmartSort>('Newest first')
   const [items, setItems] = useState<SmartHit[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [queryError, setQueryError] = useState<{
+    key: string
+    phase: 'initial' | 'more'
+  } | null>(null)
+  const [retryVersion, setRetryVersion] = useState(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const loadingRef = useRef(false)
 
   const [width, setWidth] = useState(savedWidth)
   const widthRef = useRef(width)
@@ -148,7 +190,22 @@ export const SmartView = () => {
   }
 
   const active = folders.find((f) => f.id === activeId)
-  const rules = active?.rules ?? []
+  const rules = active?.rules ?? EMPTY_RULES
+  const activeName = active ? smartViewName(active) : ''
+  const validRules = useMemo(
+    () => rules.filter((rule) => rule.op === 'is empty' || rule.val),
+    [rules],
+  )
+  const queryKey = useMemo(
+    () => JSON.stringify([activeId, validRules, sort]),
+    [activeId, validRules, sort],
+  )
+  const initialError = queryError?.key === queryKey && queryError.phase === 'initial'
+  const loadMoreError = queryError?.key === queryKey && queryError.phase === 'more'
+
+  useEffect(() => {
+    setSort(active?.sort ?? 'Newest first')
+  }, [activeId, active?.sort])
 
   // Track the tab created by smart folder browsing so we can replace it
   // on the next click instead of accumulating tabs.
@@ -170,36 +227,92 @@ export const SmartView = () => {
   const seq = useRef(0)
   useEffect(() => {
     if (!activeId) return
-    const valid = rules.filter((r) => r.op === 'is empty' || r.val)
     let alive = true
     const run = () => {
       const mySeq = ++seq.current
+      loadingRef.current = true
+      setItems(null)
+      setTotal(0)
+      setHasMore(false)
+      setLoadingMore(false)
+      setQueryError(null)
+      scrollRef.current?.scrollTo({ top: 0 })
       window.api
         .invoke(IpcChannels.InvokeQuerySmartView, {
-          rules: valid as SmartRule[],
-          // The backend caps at 200 AFTER ordering — the sort must reach
-          // it, or "Oldest first" on a large view shows the oldest of
-          // the newest 200. The client re-sort below stays for instant
-          // feedback while the refetch is in flight.
-          sort: sort as 'Newest first' | 'Oldest first' | 'Name A–Z' | 'Source',
+          rules: validRules,
+          sort,
+          offset: 0,
+          limit: PAGE_SIZE,
         })
         .then((res) => {
-          if (alive && seq.current === mySeq && res.success && res.data) setItems(res.data.items)
+          if (!alive || seq.current !== mySeq) return
+          if (!res.success || !res.data) {
+            setItems([])
+            setQueryError({ key: queryKey, phase: 'initial' })
+            return
+          }
+          setItems(res.data.items)
+          setTotal(res.data.total)
+          setHasMore(res.data.hasMore)
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!alive || seq.current !== mySeq) return
+          setItems([])
+          setQueryError({ key: queryKey, phase: 'initial' })
+        })
+        .finally(() => {
+          if (alive && seq.current === mySeq) loadingRef.current = false
+        })
     }
     run()
     const off = window.api.on(IpcChannels.OnWorkspaceChanged, run)
     return () => {
       alive = false
+      seq.current += 1
+      loadingRef.current = false
       off()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(rules), activeId, sort])
+  }, [validRules, activeId, sort, queryKey, retryVersion])
 
-  useEffect(() => {
-    setItems(null)
-  }, [activeId])
+  const loadMore = useCallback(() => {
+    if (!activeId || !items || !hasMore || loadingRef.current) return
+    const mySeq = seq.current
+    const offset = items.length
+    loadingRef.current = true
+    setLoadingMore(true)
+    setQueryError(null)
+    void window.api
+      .invoke(IpcChannels.InvokeQuerySmartView, {
+        rules: validRules,
+        sort,
+        offset,
+        limit: PAGE_SIZE,
+      })
+      .then((res) => {
+        if (seq.current !== mySeq) return
+        if (!res.success || !res.data) {
+          setQueryError({ key: queryKey, phase: 'more' })
+          return
+        }
+        const data = res.data
+        setItems((current) => {
+          if (!current) return data.items
+          const paths = new Set(current.map((item) => item.path))
+          return [...current, ...data.items.filter((item) => !paths.has(item.path))]
+        })
+        setTotal(data.total)
+        setHasMore(data.hasMore)
+      })
+      .catch(() => {
+        if (seq.current === mySeq) setQueryError({ key: queryKey, phase: 'more' })
+      })
+      .finally(() => {
+        if (seq.current === mySeq) {
+          loadingRef.current = false
+          setLoadingMore(false)
+        }
+      })
+  }, [activeId, hasMore, items, queryKey, sort, validRules])
 
   const results = useMemo(() => sortItems(items ?? [], sort), [items, sort])
   const selectedIdx = activeTabId ? results.findIndex((r) => r.path === activeTabId) : -1
@@ -250,28 +363,56 @@ export const SmartView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId])
 
+  const entries = useMemo<ResultEntry[]>(() => {
+    const next: ResultEntry[] = []
+    let previousBucket = ''
+    let previousWasItem = false
+    for (const item of results) {
+      if (isTimeSort(sort)) {
+        const bucket = bucketOf(item.days)
+        if (bucket !== previousBucket) {
+          next.push({ type: 'group', key: `group:${bucket}`, label: bucket })
+          previousBucket = bucket
+          previousWasItem = false
+        }
+      }
+      next.push({ type: 'item', key: item.path, item, divider: previousWasItem })
+      previousWasItem = true
+    }
+    if (hasMore) next.push({ type: 'loading', key: 'loading' })
+    return next
+  }, [hasMore, results, sort])
+
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollRef.current,
+    getItemKey: (index) => entries[index].key,
+    estimateSize: (index) => (entries[index].type === 'item' ? 46 : 34),
+    overscan: 6,
+  })
+  const virtualItems = virtualizer.getVirtualItems()
+  const lastVirtualIndex = virtualItems.at(-1)?.index ?? -1
+  useEffect(() => {
+    if (!loadMoreError && lastVirtualIndex >= entries.length - 8) loadMore()
+  }, [entries.length, lastVirtualIndex, loadMore, loadMoreError])
+
   if (!active || !activeId) return null
 
   const openBuilder = () =>
-    setBuilder({ name: active.name, glyph: active.glyph, rules, editId: active.id })
-
-  // Results are already time-sorted (either direction), so buckets come
-  // out in the right order just by walking the list.
-  const bucketed = isTimeSort(sort)
-  const groups: string[] = []
-  const byBucket: Record<string, SmartHit[]> = {}
-  if (bucketed) {
-    results.forEach((it) => {
-      const b = bucketOf(it.days)
-      if (!byBucket[b]) {
-        byBucket[b] = []
-        groups.push(b)
-      }
-      byBucket[b].push(it)
-    })
-  }
+    setBuilder({ name: activeName, glyph: active.glyph, rules, editId: active.id })
 
   const sorts = vocab.sources.length > 0 ? SORTS : SORTS.filter((s) => s !== 'Source')
+  const changeSort = async (nextSort: SmartSort) => {
+    if (nextSort === sort) return
+    const previousSort = sort
+    setSort(nextSort)
+    const nextFolders = folders.map((folder) =>
+      folder.id === activeId ? { ...folder, sort: nextSort } : folder,
+    )
+    if (await persistViews(nextFolders)) return
+    setSort(previousSort)
+    toast(t('smart.couldNotSave'))
+  }
 
   return (
     <div className="smart-view" style={{ width }}>
@@ -280,7 +421,7 @@ export const SmartView = () => {
           <SIcon n={active.glyph} s={14} cls="sf-glyph" />
           <span>{t('smart.breadcrumb')}</span>
           <span className="sep">/</span>
-          <span className="cur">{active.name}</span>
+          <span className="cur">{activeName}</span>
         </div>
         <div className="sv-top-actions">
           <button className="sv-iconbtn" title={t('smart.editSmartFolder')} onClick={openBuilder}>
@@ -290,36 +431,57 @@ export const SmartView = () => {
       </div>
 
       <div className="sv-status">
-        <span className="sv-count">{t('smart.results', { count: results.length })}</span>
-        <SortMenu sort={sort} sorts={sorts} onSort={setSort} />
+        <span className="sv-count">{t('smart.results', { count: total })}</span>
+        <SortMenu sort={sort} sorts={sorts} onSort={(nextSort) => void changeSort(nextSort)} />
       </div>
 
-      {items !== null && results.length === 0 ? (
+      {initialError ? (
+        <LoadErrorState onRetry={() => setRetryVersion((version) => version + 1)} />
+      ) : items !== null && results.length === 0 ? (
         <EmptyState onEdit={openBuilder} />
       ) : (
-        <div className="sf-results">
-          {bucketed
-            ? groups.map((b) => (
-                <Fragment key={b}>
-                  {groups.length > 1 && <div className="res-group-head">{b}</div>}
-                  {byBucket[b].map((it) => (
+        <div ref={scrollRef} className="sf-results" aria-busy={items === null || loadingMore}>
+          <div className="sf-results-virtual" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualItems.map((virtualItem) => {
+              const entry = entries[virtualItem.index]
+              return (
+                <div
+                  key={entry.key}
+                  ref={virtualizer.measureElement}
+                  className="sf-virtual-item"
+                  data-index={virtualItem.index}
+                  style={{ transform: `translateY(${Math.round(virtualItem.start)}px)` }}
+                >
+                  {entry.type === 'group' ? (
+                    <div className="res-group-head">{entry.label}</div>
+                  ) : entry.type === 'loading' ? (
+                    <div
+                      className={cn('sf-results-loading', loadMoreError && 'error')}
+                      role={loadMoreError ? 'alert' : undefined}
+                    >
+                      {loadMoreError ? (
+                        <>
+                          <span>{t('smart.couldNotLoadMore')}</span>
+                          <Button size="small" onClick={loadMore}>
+                            {t('smart.retry')}
+                          </Button>
+                        </>
+                      ) : (
+                        t('smart.loadingMore')
+                      )}
+                    </div>
+                  ) : (
                     <ResultRow
-                      key={it.path}
-                      it={it}
-                      selected={it.path === activeTabId}
-                      onSelect={() => openResult(it.path)}
+                      it={entry.item}
+                      selected={entry.item.path === activeTabId}
+                      divider={entry.divider}
+                      onSelect={() => openResult(entry.item.path)}
                     />
-                  ))}
-                </Fragment>
-              ))
-            : results.map((it) => (
-                <ResultRow
-                  key={it.path}
-                  it={it}
-                  selected={it.path === activeTabId}
-                  onSelect={() => openResult(it.path)}
-                />
-              ))}
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
       <div

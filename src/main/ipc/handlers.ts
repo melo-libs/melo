@@ -40,7 +40,7 @@ import {
   resolveWikilinks,
   getNoteLinks,
   linkMention,
-  querySmartRules,
+  querySmartRulesPage,
   getClipSources,
   countSmartViews,
   getSmartVocab,
@@ -49,6 +49,7 @@ import {
 import { getSmartViews, saveSmartViews } from '../api/smartViews'
 import { downloadImageToAssets } from '../api/capture/pipeline'
 import { sniffImageExt } from '../api/capture/pipeline'
+import { MAX_SMART_RULES, SMART_SORTS, type SmartSort } from '../../shared/types/smart'
 
 /** IPC boundary: smart-view persistence must target the open workspace —
  *  a renderer-supplied path may not write .melo anywhere else. */
@@ -60,7 +61,9 @@ function assertActiveWorkspace(workspaceRoot: string): void {
 }
 
 const MAX_SMART_VIEWS = 100
-const MAX_SMART_RULES = 20
+const SMART_PAGE_SIZE = 50
+const MAX_SMART_PAGE_SIZE = 100
+const SMART_SORT_SET = new Set<SmartSort>(SMART_SORTS)
 import { capture, previewUrl } from '../api/capture'
 import {
   createWorkspace,
@@ -329,9 +332,25 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeQuerySmartView]: async (_, args) => {
     try {
+      if (args.rules.length > MAX_SMART_RULES) {
+        return { success: false, error: 'Too many rules' }
+      }
+      const rules = args.rules
+      const rawOffset = args.offset ?? 0
+      const rawLimit = args.limit ?? SMART_PAGE_SIZE
+      const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.floor(rawOffset) : 0)
+      const limit = Math.min(
+        MAX_SMART_PAGE_SIZE,
+        Math.max(1, Number.isFinite(rawLimit) ? Math.floor(rawLimit) : SMART_PAGE_SIZE),
+      )
+      const sort = args.sort && SMART_SORT_SET.has(args.sort) ? args.sort : undefined
+      const page = querySmartRulesPage(rules, limit, sort, offset)
       return {
         success: true,
-        data: { items: querySmartRules(args.rules.slice(0, MAX_SMART_RULES), 200, args.sort) },
+        data: {
+          ...page,
+          hasMore: offset + page.items.length < page.total,
+        },
       }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
@@ -340,9 +359,12 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeCountSmartViews]: async (_, args) => {
     try {
+      if (args.views.some((view) => view.rules.length > MAX_SMART_RULES)) {
+        return { success: false, error: 'Too many rules' }
+      }
       const bounded = args.views
         .slice(0, MAX_SMART_VIEWS)
-        .map((v) => ({ id: v.id, rules: v.rules.slice(0, MAX_SMART_RULES) }))
+        .map((v) => ({ id: v.id, rules: v.rules }))
       return { success: true, data: { counts: countSmartViews(bounded) } }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
