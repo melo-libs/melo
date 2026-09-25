@@ -13,6 +13,11 @@ import { workspacePathAtom } from './workspace'
 
 const EMPTY_VOCAB: SmartVocab = { tags: [], folders: [], sources: [] }
 
+/** Workspace currently owned by the smart-folder state. This is tracked
+ *  separately from loaded definitions because an intentionally empty
+ *  views.json is valid state, not a loading sentinel. */
+const smartWorkspaceRootAtom = atom<string | null>(null)
+
 export const smartFoldersAtom = atom<SmartViewDef[]>([])
 
 /** Active smart folder id; null = the editor column shows the note. */
@@ -43,16 +48,21 @@ export const smartBuilderAtom = atom<BuilderDraft | null>(null)
  *  discarded (the root is re-checked around every await). */
 export const loadSmartWorkspaceAtom = atom(null, async (get, set) => {
   const workspaceRoot = get(workspacePathAtom)
-  set(smartFoldersAtom, [])
-  set(smartCountsAtom, {})
-  set(smartVocabAtom, EMPTY_VOCAB)
-  set(smartSelectionAtom, {})
-  if (!workspaceRoot) return
+  if (get(smartWorkspaceRootAtom) !== workspaceRoot) {
+    set(smartWorkspaceRootAtom, workspaceRoot)
+    set(smartFoldersAtom, [])
+    set(smartCountsAtom, {})
+    set(smartVocabAtom, EMPTY_VOCAB)
+    set(smartSelectionAtom, {})
+    set(activeSmartIdAtom, null)
+  }
+  if (!workspaceRoot) return false
   const res = await window.api.invoke(IpcChannels.InvokeGetSmartViews, { workspaceRoot })
-  if (get(workspacePathAtom) !== workspaceRoot) return
-  if (!res.success || !res.data) return
+  if (get(workspacePathAtom) !== workspaceRoot) return false
+  if (!res.success || !res.data) return false
   set(smartFoldersAtom, res.data.views)
   await set(refreshSmartMetaAtom)
+  return true
 })
 
 /** Write-only: refresh counts + vocab (index changed under us). */
@@ -61,7 +71,9 @@ export const refreshSmartMetaAtom = atom(null, async (get, set) => {
   const views = get(smartFoldersAtom)
   const [countsRes, vocabRes] = await Promise.all([
     window.api.invoke(IpcChannels.InvokeCountSmartViews, {
-      views: views.map((v) => ({ id: v.id, rules: v.rules })),
+      views: views
+        .filter((view) => view.preset !== 'recent')
+        .map((view) => ({ id: view.id, rules: view.rules })),
     }),
     window.api.invoke(IpcChannels.InvokeGetSmartVocab, undefined),
   ])

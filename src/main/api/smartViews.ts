@@ -1,6 +1,14 @@
 import path from 'path'
 import fs from 'fs-extra'
-import type { SmartRule, SmartViewDef } from '../../shared/types/smart'
+import {
+  SMART_PRESETS,
+  SMART_SORTS,
+  MAX_SMART_RULES,
+  type SmartPreset,
+  type SmartRule,
+  type SmartSort,
+  type SmartViewDef,
+} from '../../shared/types/smart'
 
 /**
  * Smart view definitions live with the workspace: `.melo/views.json`.
@@ -11,34 +19,28 @@ import type { SmartRule, SmartViewDef } from '../../shared/types/smart'
 
 const SEED_VIEWS: SmartViewDef[] = [
   {
-    id: 'thisweek',
-    name: "This Week's Clips",
+    id: 'recent',
+    name: 'Recent',
     glyph: 'clock',
-    rules: [
-      { key: 'Kind', op: 'is', val: 'Web clipping' },
-      { key: 'Created', op: 'in', val: 'This week' },
-    ],
+    rules: [],
+    preset: 'recent',
+    sort: 'Newest first',
+  },
+  {
+    id: 'web-clips',
+    name: 'Web Clips',
+    glyph: 'globe',
+    rules: [{ key: 'Kind', op: 'is', val: 'Web clipping' }],
+    preset: 'webClips',
+    sort: 'Newest first',
   },
   {
     id: 'pdfs',
-    name: 'PDFs to Read',
+    name: 'PDFs',
     glyph: 'book',
     rules: [{ key: 'Kind', op: 'is', val: 'PDF' }],
-  },
-  {
-    id: 'secondbrain',
-    name: '#second-brain',
-    glyph: 'hash',
-    rules: [{ key: 'Tag', op: 'is', val: 'second-brain' }],
-  },
-  {
-    id: 'untagged',
-    name: 'Untagged Inbox',
-    glyph: 'tagOff',
-    rules: [
-      { key: 'Folder', op: 'is', val: 'Inbox' },
-      { key: 'Tag', op: 'is empty', val: '' },
-    ],
+    preset: 'pdfs',
+    sort: 'Newest first',
   },
 ]
 
@@ -47,6 +49,8 @@ function viewsPath(workspaceRoot: string): string {
 }
 
 const RULE_KEYS = new Set(['Kind', 'Created', 'Modified', 'Folder', 'Tag', 'Title', 'Source'])
+const PRESETS = new Set<SmartPreset>(SMART_PRESETS)
+const SORTS = new Set<SmartSort>(SMART_SORTS)
 
 /** views.json is a file-read boundary — keep only structurally sound
  *  definitions and known rule keys; drop the rest instead of letting
@@ -56,7 +60,7 @@ function sanitizeViews(parsed: unknown): SmartViewDef[] | null {
   const views: SmartViewDef[] = []
   for (const v of parsed) {
     if (!v || typeof v !== 'object') continue
-    const { id, name, glyph, rules } = v as Record<string, unknown>
+    const { id, name, glyph, rules, preset, sort } = v as Record<string, unknown>
     if (typeof id !== 'string' || typeof name !== 'string' || typeof glyph !== 'string') continue
     if (!Array.isArray(rules)) continue
     const clean = (rules as SmartRule[])
@@ -70,7 +74,18 @@ function sanitizeViews(parsed: unknown): SmartViewDef[] | null {
       })
       .filter((r) => RULE_KEYS.has(r.key))
       .filter((r) => !(r.key === 'Created' && r.val === 'Anytime'))
-    views.push({ id, name, glyph, rules: clean })
+    views.push({
+      id,
+      name,
+      glyph,
+      rules: clean,
+      ...(typeof preset === 'string' && PRESETS.has(preset as SmartPreset)
+        ? { preset: preset as SmartPreset }
+        : {}),
+      ...(typeof sort === 'string' && SORTS.has(sort as SmartSort)
+        ? { sort: sort as SmartSort }
+        : {}),
+    })
   }
   return views
 }
@@ -97,6 +112,9 @@ export function getSmartViews(workspaceRoot: string): SmartViewDef[] {
 }
 
 export function saveSmartViews(workspaceRoot: string, views: SmartViewDef[]): void {
+  if (views.some((view) => view.rules.length > MAX_SMART_RULES)) {
+    throw new Error(`Smart Folders support at most ${MAX_SMART_RULES} rules`)
+  }
   const file = viewsPath(workspaceRoot)
   fs.ensureDirSync(path.dirname(file))
   const tmp = file + '.tmp'

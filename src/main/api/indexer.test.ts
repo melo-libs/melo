@@ -10,7 +10,7 @@ import {
   listLinkTargets,
   getNoteLinks,
   linkMention,
-  querySmartRules,
+  querySmartRulesPage,
   countSmartViews,
   getSmartVocab,
   preciseCreatedAt,
@@ -19,6 +19,7 @@ import {
   fullScan,
 } from './indexer'
 import { getSmartViews, saveSmartViews } from './smartViews'
+import { MAX_SMART_RULES } from '../../shared/types/smart'
 
 let root: string
 
@@ -29,6 +30,12 @@ function write(rel: string, content: string): string {
   indexFile(abs)
   return abs
 }
+
+const querySmartItems = (
+  rules: Parameters<typeof querySmartRulesPage>[0],
+  limit?: number,
+  sort?: Parameters<typeof querySmartRulesPage>[2],
+) => querySmartRulesPage(rules, limit, sort).items
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'melo-indexer-'))
@@ -201,25 +208,25 @@ describe('smart folders', () => {
 
   it('filters by kind, folder, tag and source', () => {
     seedWorkspace()
-    const pdfs = querySmartRules([{ key: 'Kind', op: 'is', val: 'PDF' }])
+    const pdfs = querySmartItems([{ key: 'Kind', op: 'is', val: 'PDF' }])
     expect(pdfs.map((h) => h.title)).toEqual(['paper'])
 
-    const clips = querySmartRules([{ key: 'Kind', op: 'is', val: 'Web clipping' }])
+    const clips = querySmartItems([{ key: 'Kind', op: 'is', val: 'Web clipping' }])
     expect(clips.map((h) => h.title)).toEqual(['A Clip'])
     expect(clips[0].sourceHost).toBe('example.com')
     // frontmatter created (2020) beats mtime (now) for the time bucket
     expect(clips[0].days).toBeGreaterThan(365)
 
-    const inboxUntagged = querySmartRules([
+    const inboxUntagged = querySmartItems([
       { key: 'Folder', op: 'is', val: 'Inbox' },
       { key: 'Tag', op: 'is empty', val: '' },
     ])
     expect(inboxUntagged.map((h) => h.title)).toEqual(['Untagged'])
 
-    const bySource = querySmartRules([{ key: 'Source', op: 'is', val: 'example.com' }])
+    const bySource = querySmartItems([{ key: 'Source', op: 'is', val: 'example.com' }])
     expect(bySource).toHaveLength(1)
 
-    const rootFiles = querySmartRules([{ key: 'Folder', op: 'is', val: 'Workspace' }])
+    const rootFiles = querySmartItems([{ key: 'Folder', op: 'is', val: 'Workspace' }])
     expect(rootFiles.map((h) => h.title)).toEqual(['Root'])
   })
 
@@ -240,19 +247,35 @@ describe('smart folders', () => {
 
   it('seeds, persists and survives corrupt views.json', () => {
     const seeded = getSmartViews(root)
-    expect(seeded.map((v) => v.id)).toEqual(['thisweek', 'pdfs', 'secondbrain', 'untagged'])
-    const custom = [...seeded, { id: 'x', name: 'X', glyph: 'star', rules: [] }]
+    expect(seeded.map((v) => v.id)).toEqual(['recent', 'web-clips', 'pdfs'])
+    expect(seeded.map((v) => v.preset)).toEqual(['recent', 'webClips', 'pdfs'])
+    const custom = [
+      ...seeded,
+      { id: 'x', name: 'X', glyph: 'star', rules: [], sort: 'Oldest first' as const },
+    ]
     saveSmartViews(root, custom)
     expect(getSmartViews(root).map((v) => v.id)).toContain('x')
+    expect(getSmartViews(root).find((v) => v.id === 'x')?.sort).toBe('Oldest first')
 
     fs.writeFileSync(path.join(root, '.melo', 'views.json'), '{not json')
-    expect(getSmartViews(root).map((v) => v.id)).toEqual([
-      'thisweek',
-      'pdfs',
-      'secondbrain',
-      'untagged',
-    ])
+    expect(getSmartViews(root).map((v) => v.id)).toEqual(['recent', 'web-clips', 'pdfs'])
     expect(fs.existsSync(path.join(root, '.melo', 'views.json.corrupt'))).toBe(true)
+  })
+
+  it('preserves an intentionally empty smart-folder configuration', () => {
+    saveSmartViews(root, [])
+    expect(getSmartViews(root)).toEqual([])
+  })
+
+  it('rejects definitions beyond the supported rule limit', () => {
+    const rules = Array.from({ length: MAX_SMART_RULES + 1 }, () => ({
+      key: 'Kind' as const,
+      op: 'is',
+      val: 'Note',
+    }))
+    expect(() =>
+      saveSmartViews(root, [{ id: 'too-many', name: 'Too many', glyph: 'filter', rules }]),
+    ).toThrow(`at most ${MAX_SMART_RULES} rules`)
   })
 })
 
@@ -346,11 +369,11 @@ body
     write('Inbox/early.md', clip('early', '2026-08-03T02:20:14.567Z'))
     write('Inbox/late.md', clip('late', '2026-08-03T14:21:11.441Z'))
 
-    const newest = querySmartRules([], 200, 'Newest first')
+    const newest = querySmartItems([], 200, 'Newest first')
     expect(newest.map((h) => h.title)).toEqual(['late', 'early'])
     expect(newest[0].createdAt).toBeGreaterThan(newest[1].createdAt)
 
-    const oldest = querySmartRules([], 200, 'Oldest first')
+    const oldest = querySmartItems([], 200, 'Oldest first')
     expect(oldest.map((h) => h.title)).toEqual(['early', 'late'])
   })
 
@@ -359,8 +382,37 @@ body
     write('Inbox/b-mid.md', clip('b-mid', '2026-08-02T08:00:00.000Z'))
     write('Inbox/c-newest.md', clip('c-newest', '2026-08-03T08:00:00.000Z'))
 
-    const oldestTwo = querySmartRules([], 2, 'Oldest first')
+    const oldestTwo = querySmartItems([], 2, 'Oldest first')
     expect(oldestTwo.map((h) => h.title)).toEqual(['a-oldest', 'b-mid'])
+  })
+
+  it('paginates a stable ordering without imposing a result ceiling', () => {
+    const count = 225
+    const pageSize = 50
+    for (let i = 0; i < count; i += 1) {
+      const title = `note-${String(i).padStart(3, '0')}`
+      const created = new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString()
+      write(`Inbox/${title}.md`, clip(title, created))
+    }
+
+    const paths: string[] = []
+    for (let offset = 0; offset < count; offset += pageSize) {
+      const page = querySmartRulesPage([], pageSize, 'Newest first', offset)
+      expect(page.total).toBe(count)
+      paths.push(...page.items.map((hit) => hit.path))
+    }
+    expect(paths).toHaveLength(count)
+    expect(new Set(paths).size).toBe(count)
+    expect(path.basename(paths[0])).toBe('note-224.md')
+    expect(path.basename(paths.at(-1)!)).toBe('note-000.md')
+  })
+
+  it('invalidates cached smart queries when the index changes', () => {
+    write('Inbox/old.md', clip('old', '2026-08-01T08:00:00.000Z'))
+    expect(querySmartRulesPage([], 50).items.map((hit) => hit.title)).toEqual(['old'])
+
+    write('Inbox/new.md', clip('new', '2026-08-02T08:00:00.000Z'))
+    expect(querySmartRulesPage([], 50).items.map((hit) => hit.title)).toEqual(['new', 'old'])
   })
 
   it('exposes clip sources with their capture times', () => {

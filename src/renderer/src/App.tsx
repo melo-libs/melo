@@ -342,7 +342,11 @@ const App = () => {
       .then((result) => {
         if (alive && !result.success) toast(i18n.t('opener.couldNotWatch'))
       })
-    void loadSmartWorkspace()
+    let smartWorkspaceLoaded = false
+    const markSmartWorkspaceLoaded = (loaded: boolean) => {
+      if (alive && loaded) smartWorkspaceLoaded = true
+    }
+    void loadSmartWorkspace().then(markSmartWorkspaceLoaded)
     const off = window.api.on(IpcChannels.OnWorkspaceChanged, (change) => {
       if (change.workspaceRoot !== workspacePath) return
       const { kind } = change
@@ -362,6 +366,12 @@ const App = () => {
       } else if (kind === 'index') {
         workspaceEventVersion += 1
         setTree(applyWorkspaceSources(appStore.get(workspaceTreeAtom), change.sources))
+        // On a cold start the first definitions request can arrive before the
+        // index has made this directory active. Retry until one load succeeds;
+        // later index events only refresh derived metadata.
+        if (smartWorkspaceLoaded) void refreshSmartMeta()
+        else void loadSmartWorkspace().then(markSmartWorkspaceLoaded)
+        return
       } else if (kind === 'watcher-error') {
         toast(i18n.t(change.retrying ? 'opener.watcherInterrupted' : 'opener.couldNotWatch'))
       } else if (kind === 'watcher-recovered') {

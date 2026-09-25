@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
-import type { SmartVocab } from '@shared/types/smart'
+import { MAX_SMART_RULES, SMART_SORTS, type SmartSort, type SmartVocab } from '@shared/types/smart'
 import { SIcon } from './SmartIcon'
 import { useTranslation } from 'react-i18next'
 import { RULE_META, RULE_KEY_LIST, newRule, smartLabel, type Rule } from './smartData'
@@ -57,12 +57,25 @@ export function Menu({
   )
 }
 
-export function AddRuleMenu({ vocab, onAdd }: { vocab: SmartVocab; onAdd: (r: Rule) => void }) {
+export function AddRuleMenu({
+  vocab,
+  disabled,
+  onAdd,
+}: {
+  vocab: SmartVocab
+  disabled?: boolean
+  onAdd: (rule: Rule) => void
+}) {
   const { t } = useTranslation()
   return (
     <Menu
       trigger={({ toggle }) => (
-        <button className="rule-add" onClick={toggle}>
+        <button
+          className="rule-add"
+          disabled={disabled}
+          title={disabled ? t('smart.ruleLimit', { count: MAX_SMART_RULES }) : undefined}
+          onClick={toggle}
+        >
           <SIcon n="plus" s={12} />
           {t('smart.addRule')}
         </button>
@@ -90,16 +103,16 @@ export function AddRuleMenu({ vocab, onAdd }: { vocab: SmartVocab; onAdd: (r: Ru
   )
 }
 
-export const SORTS = ['Newest first', 'Oldest first', 'Name A–Z', 'Source']
+export const SORTS = SMART_SORTS
 
 export function SortMenu({
   sort,
   sorts,
   onSort,
 }: {
-  sort: string
-  sorts: string[]
-  onSort: (s: string) => void
+  sort: SmartSort
+  sorts: readonly SmartSort[]
+  onSort: (sort: SmartSort) => void
 }) {
   const { t } = useTranslation()
   return (

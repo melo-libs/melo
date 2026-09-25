@@ -3,7 +3,12 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/cn'
 import { IpcChannels } from '@shared/types/ipc'
-import type { SmartHit, SmartRule, SmartVocab } from '@shared/types/smart'
+import {
+  MAX_SMART_RULES,
+  type SmartHit,
+  type SmartRule,
+  type SmartVocab,
+} from '@shared/types/smart'
 import {
   activeSmartIdAtom,
   deleteSmartViewAtom,
@@ -14,6 +19,7 @@ import {
 } from '../../store/smart'
 import { SIcon } from './SmartIcon'
 import { toast } from '../Toaster'
+import { Button } from '../ui/Button'
 import { AddRuleMenu, SelBtn } from './SmartControls'
 import {
   RULE_META,
@@ -22,6 +28,7 @@ import {
   ruleValues,
   newRule,
   isTextRule,
+  smartViewName,
 } from './smartData'
 import './smart.scss'
 
@@ -52,7 +59,8 @@ export const SmartBuilder = () => {
       onDelete={
         draft.editId
           ? async () => {
-              const name = folders.find((f) => f.id === draft.editId)?.name ?? 'smart folder'
+              const view = folders.find((f) => f.id === draft.editId)
+              const name = view ? smartViewName(view) : 'smart folder'
               const ok = await deleteView(draft.editId!)
               if (!ok) {
                 toast(t('sidebar.couldNotDeleteSmart'))
@@ -66,7 +74,9 @@ export const SmartBuilder = () => {
       onCreate={async ({ name, glyph, rules }) => {
         const id = draft.editId ?? 'sf' + Date.now()
         const next = draft.editId
-          ? folders.map((f) => (f.id === draft.editId ? { ...f, name, glyph, rules } : f))
+          ? folders.map((f) =>
+              f.id === draft.editId ? { ...f, name, glyph, rules, preset: undefined } : f,
+            )
           : [...folders, { id, name, glyph: glyph || 'bookmark', rules }]
         const ok = await persistViews(next)
         if (!ok) {
@@ -131,25 +141,43 @@ function BuilderModal({
   // Live preview against the real index, lightly debounced per edit and
   // refreshed when the index moves under the open modal.
   const [preview, setPreview] = useState<SmartHit[]>([])
+  const [previewTotal, setPreviewTotal] = useState(0)
+  const [previewError, setPreviewError] = useState(false)
+  const [previewRetryVersion, setPreviewRetryVersion] = useState(0)
   const seq = useRef(0)
   useEffect(() => {
     const valid = rules.filter((r) => r.op === 'is empty' || r.val)
     const run = () => {
       const mySeq = ++seq.current
+      setPreviewError(false)
       window.api
         .invoke(IpcChannels.InvokeQuerySmartView, { rules: valid })
         .then((res) => {
-          if (seq.current === mySeq && res.success && res.data) setPreview(res.data.items)
+          if (seq.current !== mySeq) return
+          if (!res.success || !res.data) {
+            setPreview([])
+            setPreviewTotal(0)
+            setPreviewError(true)
+            return
+          }
+          setPreview(res.data.items)
+          setPreviewTotal(res.data.total)
         })
-        .catch(() => {})
+        .catch(() => {
+          if (seq.current !== mySeq) return
+          setPreview([])
+          setPreviewTotal(0)
+          setPreviewError(true)
+        })
     }
     const t = setTimeout(run, 200)
     const off = window.api.on(IpcChannels.OnWorkspaceChanged, run)
     return () => {
       clearTimeout(t)
+      seq.current += 1
       off()
     }
-  }, [rules])
+  }, [rules, previewRetryVersion])
 
   const setRule = (i: number, nr: SmartRule) => setRules(rules.map((r, j) => (j === i ? nr : r)))
 
@@ -189,6 +217,9 @@ function BuilderModal({
             {t('smart.allTrue')}
           </p>
           <div className="builder-rules">
+            {rules.length === 0 && (
+              <div className="builder-all-content">{t('smart.allContent')}</div>
+            )}
             {rules.map((r, i) => {
               const meta = RULE_META[r.key]
               const values = ruleValues(r.key, vocab)
@@ -247,16 +278,32 @@ function BuilderModal({
             })}
           </div>
           <div className="builder-add">
-            <AddRuleMenu vocab={vocab} onAdd={(r) => setRules([...rules, r])} />
+            <AddRuleMenu
+              vocab={vocab}
+              disabled={rules.length >= MAX_SMART_RULES}
+              onAdd={(rule) => setRules([...rules, rule])}
+            />
           </div>
 
           <div className="preview-box">
             <div className="preview-head">
-              {t('smart.livePreview')} · <b style={{ margin: '0 4px' }}>{preview.length}</b>{' '}
-              {preview.length === 1 ? t('smart.match') : t('smart.matches')}
+              {t('smart.livePreview')}
+              {!previewError && (
+                <>
+                  · <b style={{ margin: '0 4px' }}>{previewTotal}</b>{' '}
+                  {previewTotal === 1 ? t('smart.match') : t('smart.matches')}
+                </>
+              )}
             </div>
             <div className="preview-list">
-              {preview.length === 0 ? (
+              {previewError ? (
+                <div className="preview-empty preview-error" role="alert">
+                  <span>{t('smart.previewCouldNotLoad')}</span>
+                  <Button size="small" onClick={() => setPreviewRetryVersion((value) => value + 1)}>
+                    {t('smart.retry')}
+                  </Button>
+                </div>
+              ) : preview.length === 0 ? (
                 <div className="preview-empty">{t('smart.previewEmpty')}</div>
               ) : (
                 <>
@@ -267,9 +314,9 @@ function BuilderModal({
                       <span className="pi-time">{ago(it.days, t)}</span>
                     </div>
                   ))}
-                  {preview.length > 6 && (
+                  {previewTotal > 6 && (
                     <div className="preview-more">
-                      {t('smart.more', { count: preview.length - 6 })}
+                      {t('smart.more', { count: previewTotal - 6 })}
                     </div>
                   )}
                 </>
@@ -290,7 +337,7 @@ function BuilderModal({
           </button>
           <button
             className="btn"
-            disabled={!name.trim() || rules.length === 0}
+            disabled={!name.trim()}
             onClick={() => onCreate({ name: name.trim(), glyph, rules })}
           >
             {editing ? t('smart.saveChanges') : t('smart.create')}

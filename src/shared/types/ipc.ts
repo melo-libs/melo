@@ -1,4 +1,4 @@
-import type { SmartHit, SmartRule, SmartViewDef, SmartVocab } from './smart'
+import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 
 export enum IpcChannels {
@@ -460,8 +460,8 @@ export interface IpcChannelDefinitions {
     response: IpcResponse<void>
   }
   [IpcChannels.InvokeQuerySmartView]: {
-    args: { rules: SmartRule[]; sort?: 'Newest first' | 'Oldest first' | 'Name A–Z' | 'Source' }
-    response: IpcResponse<{ items: SmartHit[] }>
+    args: { rules: SmartRule[]; sort?: SmartSort; offset?: number; limit?: number }
+    response: IpcResponse<{ items: SmartHit[]; total: number; hasMore: boolean }>
   }
   [IpcChannels.InvokeCountSmartViews]: {
     args: { views: { id: string; rules: SmartRule[] }[] }

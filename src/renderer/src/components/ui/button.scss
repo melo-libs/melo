@@ -18,6 +18,12 @@
     transform 80ms var(--ease);
 }
 
+.ui-button-small {
+  min-width: 64px;
+  height: 28px;
+  padding: 0 10px;
+}
+
 .ui-button:focus-visible {
   outline: 2px solid var(--accent-line);
   outline-offset: 2px;
