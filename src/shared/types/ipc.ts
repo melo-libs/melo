@@ -1,6 +1,10 @@
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 
+export type UpdateCheckOutcome =
+  | { status: 'disabled' | 'busy' | 'up-to-date' | 'error' }
+  | { status: 'available'; version: string }
+
 export enum IpcChannels {
   // Send-only channels (renderer -> main)
   FileNew = 'file-new',
@@ -105,6 +109,7 @@ export enum IpcChannels {
   InvokeOpenSettingsWindow = 'invoke-open-settings-window',
   InvokeGetAppVersion = 'invoke-get-app-version',
   InvokeCheckForUpdates = 'invoke-check-for-updates',
+  InvokeDownloadUpdate = 'invoke-download-update',
   InvokeGetWorkspaceSize = 'invoke-get-workspace-size',
   InvokeExportPDF = 'invoke-export-pdf',
   InvokeImportImage = 'invoke-import-image',
@@ -521,6 +526,10 @@ export interface IpcChannelDefinitions {
     response: IpcResponse<{ version: string }>
   }
   [IpcChannels.InvokeCheckForUpdates]: {
+    args: undefined
+    response: IpcResponse<UpdateCheckOutcome>
+  }
+  [IpcChannels.InvokeDownloadUpdate]: {
     args: undefined
     response: IpcResponse<void>
   }

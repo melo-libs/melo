@@ -730,8 +730,18 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
   },
 
   [IpcChannels.InvokeCheckForUpdates]: async () => {
-    void updateManager.checkForUpdates(true)
-    return { success: true }
+    return { success: true, data: await updateManager.checkForUpdates(true, true) }
+  },
+
+  [IpcChannels.InvokeDownloadUpdate]: async (event) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) return { success: false, error: 'Settings window is closed' }
+      await updateManager.downloadAvailableUpdate(window)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
   },
 
   [IpcChannels.InvokeDownloadRemoteImage]: async (_, args) => {
