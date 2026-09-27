@@ -285,10 +285,8 @@ export async function loadTree(root: string): Promise<FileNode[]> {
 }
 
 /** Make sure the conventional Inbox folder exists (created on first open). */
-export async function ensureInbox(root: string): Promise<void> {
-  const res = await window.api.invoke(IpcChannels.InvokeListDirectory, { directoryPath: root })
-  const has = res.success && res.data?.files.some((f) => f.isDirectory && f.name === 'Inbox')
-  if (has) return
+async function ensureInbox(root: string, tree: FileNode[]): Promise<FileNode[]> {
+  if (tree.some((node) => node.system === 'inbox')) return tree
   const created = await window.api.invoke(IpcChannels.InvokeCreateDirectory, {
     parentPath: root,
     name: 'Inbox',
@@ -296,6 +294,7 @@ export async function ensureInbox(root: string): Promise<void> {
   // A workspace must be writable — surface the failure instead of opening
   // a half-initialized folder.
   if (!created.success) throw new Error(created.error || 'Could not create the Inbox folder')
+  return loadTree(root)
 }
 
 /** Open a workspace directory: ensure its Inbox, load the tree into the
@@ -307,8 +306,7 @@ export async function adoptWorkspace(dir: string): Promise<void> {
   // identity everywhere so a symlinked open matches its registry entry.
   const reg = await window.api.invoke(IpcChannels.InvokeRegisterWorkspace, { path: dir })
   const root = reg.success && reg.data ? reg.data.path : dir
-  await ensureInbox(root)
-  const tree = await loadTree(root)
+  const tree = await ensureInbox(root, await loadTree(root))
   appStore.set(workspaceTreeAtom, tree)
   appStore.set(workspacePathAtom, root)
   // Reopen this workspace's last session first — the first-use guide opens a tab,

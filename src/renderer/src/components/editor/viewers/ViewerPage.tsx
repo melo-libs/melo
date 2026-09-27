@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { formatSize } from '../../../lib/format'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAtomValue } from 'jotai'
 import { IpcChannels } from '@shared/types/ipc'
 import { workspacePathAtom } from '../../../store/workspace'
 import { FileTypeIcon, fileTypeLabel, type FileKind } from '../../FileTypeIcon'
-import { PdfViewer } from './PdfViewer'
 import './viewers.scss'
+
+const PdfViewer = lazy(() =>
+  import('./PdfViewer').then(({ PdfViewer }) => ({ default: PdfViewer })),
+)
 
 /* ============================================================
    ViewerPage — the editor column's view for non-editable files.
@@ -155,7 +158,11 @@ export const ViewerPage = ({ path, kind, name }: ViewerPageProps) => {
   }
 
   if (kind === 'pdf') {
-    return <PdfViewer path={path} name={name} />
+    return (
+      <Suspense fallback={<div className="viewer-page" />}>
+        <PdfViewer path={path} name={name} />
+      </Suspense>
+    )
   }
 
   if (kind === 'audio') {
