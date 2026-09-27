@@ -538,10 +538,14 @@
     border-color 120ms var(--ease),
     color 120ms var(--ease);
 }
-.prefs .s-btn:hover {
+.prefs .s-btn:hover:not(:disabled) {
   background: var(--paper-3);
   border-color: var(--hairline-2);
   color: var(--ink);
+}
+.prefs .s-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* ---------- Shortcuts ---------- */
@@ -677,6 +681,7 @@
 }
 .prefs .update-status {
   flex: 1;
+  min-width: 0;
 }
 .prefs .us-main {
   font-size: 13px;
@@ -685,6 +690,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.prefs .us-detail {
+  margin: 4px 0 0 16px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.4;
 }
 .prefs .up-dot {
   width: 8px;

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { IpcChannels, type LanguagePreference } from '@shared/types/ipc'
 import type { AppSettings } from '@shared/types/settings'
 import { settingsAtom, setSetting } from '../../store/settings'
+import { updateStatusAtom } from '../../store/updateStatus'
 import { MeloLogo } from '../MeloLogo'
 import { Icon } from '../Icon'
 import { SettingsIcon } from './SettingsIcon'
@@ -409,11 +410,72 @@ export function AboutPane() {
   const { t } = useTranslation()
   const [s] = useSet()
   const [version, setVersion] = useState('')
+  const [update, setUpdate] = useAtom(updateStatusAtom)
   useEffect(() => {
     window.api.invoke(IpcChannels.InvokeGetAppVersion, undefined).then((res) => {
       if (res.success && res.data) setVersion(res.data.version)
     })
   }, [])
+  const checkNow = async () => {
+    setUpdate({ status: 'checking' })
+    try {
+      const res = await window.api.invoke(IpcChannels.InvokeCheckForUpdates, undefined)
+      setUpdate(res.success && res.data ? res.data : { status: 'error' })
+    } catch {
+      setUpdate({ status: 'error' })
+    }
+  }
+  const downloadUpdate = async () => {
+    if (update.status !== 'available' && update.status !== 'download-error') return
+    const availableVersion = update.version
+    setUpdate({ status: 'downloading' })
+    try {
+      const res = await window.api.invoke(IpcChannels.InvokeDownloadUpdate, undefined)
+      setUpdate(
+        res.success
+          ? { status: 'downloaded' }
+          : { status: 'download-error', version: availableVersion },
+      )
+    } catch {
+      setUpdate({ status: 'download-error', version: availableVersion })
+    }
+  }
+  const canDownload = update.status === 'available' || update.status === 'download-error'
+  const busy = update.status === 'checking' || update.status === 'downloading'
+  let updateMessage: string | null = null
+  switch (update.status) {
+    case 'checking':
+      updateMessage = t('prefs.checkingNow')
+      break
+    case 'up-to-date':
+      updateMessage = t('prefs.latestVersion')
+      break
+    case 'available':
+      updateMessage = t('prefs.updateAvailable', { version: update.version })
+      break
+    case 'disabled':
+      updateMessage = t('prefs.checkUnavailable')
+      break
+    case 'busy':
+      updateMessage = t('prefs.checkBusy')
+      break
+    case 'error':
+      updateMessage = t('prefs.checkFailed')
+      break
+    case 'downloading':
+      updateMessage = t('prefs.downloadingUpdate')
+      break
+    case 'downloaded':
+      updateMessage = t('prefs.updateDownloaded')
+      break
+    case 'download-error':
+      updateMessage = t('prefs.downloadFailed')
+  }
+  let actionLabel = t('prefs.checkNow')
+  if (update.status === 'checking') actionLabel = t('prefs.checkingNow')
+  else if (update.status === 'downloading') actionLabel = t('prefs.downloadingUpdate')
+  else if (update.status === 'downloaded') actionLabel = t('prefs.updateDownloaded')
+  else if (canDownload) actionLabel = t('prefs.downloadUpdate')
   const links = [
     {
       icon: 'ext',
@@ -446,13 +508,26 @@ export function AboutPane() {
                   state: s.autoUpdate ? t('prefs.stateOn') : t('prefs.stateOff'),
                 })}
               </div>
+              {updateMessage && (
+                <div
+                  className="us-detail"
+                  role={
+                    update.status === 'error' || update.status === 'download-error'
+                      ? 'alert'
+                      : 'status'
+                  }
+                >
+                  {updateMessage}
+                </div>
+              )}
             </div>
             <button
               className="s-btn"
-              onClick={() => void window.api.invoke(IpcChannels.InvokeCheckForUpdates, undefined)}
+              disabled={busy || update.status === 'downloaded'}
+              onClick={() => void (canDownload ? downloadUpdate() : checkNow())}
             >
               <SettingsIcon name="refresh" size={14} />
-              {t('prefs.checkNow')}
+              {actionLabel}
             </button>
           </div>
         </div>

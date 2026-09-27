@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog } from 'electron'
 import type { AppUpdater, ProgressInfo } from 'electron-updater'
+import type { UpdateCheckOutcome } from '../shared/types/ipc'
 import { preferences } from './preferences'
 import { getSettings } from './settings'
 
@@ -12,6 +13,9 @@ export class UpdateManager {
   private checking = false
   private progressWin: BrowserWindow | null = null
   private isManualCheck = false
+  private inlineCheck = false
+  private availableVersion: string | null = null
+  private downloadWindow: BrowserWindow | null = null
   private updater: AppUpdater | null = null
 
   private constructor() {
@@ -35,7 +39,6 @@ export class UpdateManager {
 
     // Handle update events
     updater.on('error', () => {
-      this.checking = false
       this.closeProgressWindow()
       // Let the checkForUpdates method handle the error dialog
     })
@@ -45,7 +48,8 @@ export class UpdateManager {
     })
 
     updater.on('update-available', async (info) => {
-      this.checking = false
+      this.availableVersion = info.version
+      if (this.inlineCheck) return
 
       // Skip if this version is ignored and it's not a manual check
       const ignoredVersion = preferences.get<string>('ignoredVersion')
@@ -67,8 +71,9 @@ export class UpdateManager {
       })
 
       if (response === 0) {
-        this.createProgressWindow()
-        updater.downloadUpdate()
+        void this.downloadAvailableUpdate(this.getWindow()).catch((error) => {
+          this.showErrorDialog(error instanceof Error ? error : new Error('Unknown error'))
+        })
       } else if (response === 2) {
         // Store the ignored version
         preferences.set('ignoredVersion', info.version)
@@ -76,8 +81,7 @@ export class UpdateManager {
     })
 
     updater.on('update-not-available', () => {
-      this.checking = false
-      if (this.isManualCheck) {
+      if (this.isManualCheck && !this.inlineCheck) {
         this.showUpdateDialog({
           type: 'info',
           title: 'No Updates',
@@ -134,7 +138,7 @@ export class UpdateManager {
       resizable: false,
       minimizable: false,
       maximizable: false,
-      parent: this.mainWindow || undefined,
+      parent: this.getWindow(),
       modal: true,
       show: false,
       webPreferences: {
@@ -256,6 +260,9 @@ export class UpdateManager {
   }
 
   private getWindow(): BrowserWindow {
+    if (this.downloadWindow && !this.downloadWindow.isDestroyed()) return this.downloadWindow
+    const focusedWindow = BrowserWindow.getFocusedWindow()
+    if (focusedWindow) return focusedWindow
     if (!this.mainWindow) {
       throw new Error('Main window is not set')
     }
@@ -284,24 +291,44 @@ export class UpdateManager {
     })
   }
 
-  public async checkForUpdates(manual = false): Promise<void> {
+  public async checkForUpdates(manual = false, inline = false): Promise<UpdateCheckOutcome> {
     const updater = this.updater
-    if (!updaterEnabled || !updater) return
-    if (this.checking) {
-      console.log('Update check already in progress')
-      return
-    }
+    if (!updaterEnabled || !updater) return { status: 'disabled' }
+    if (this.checking) return { status: 'busy' }
 
     try {
       this.checking = true
       this.isManualCheck = manual
-      await updater.checkForUpdates()
+      this.inlineCheck = inline
+      this.availableVersion = null
+      const result = await updater.checkForUpdates()
+      if (!result) return { status: 'disabled' }
+      return this.availableVersion
+        ? { status: 'available', version: this.availableVersion }
+        : { status: 'up-to-date' }
     } catch (error) {
       console.error('Update check error:', error)
-      this.checking = false
-      if (manual) {
+      if (manual && !inline) {
         this.showErrorDialog(error instanceof Error ? error : new Error('Unknown error'))
       }
+      return { status: 'error' }
+    } finally {
+      this.checking = false
+      this.inlineCheck = false
+    }
+  }
+
+  public async downloadAvailableUpdate(window: BrowserWindow): Promise<void> {
+    if (!this.updater) throw new Error('Updates are unavailable')
+    this.downloadWindow = window
+    this.createProgressWindow()
+    try {
+      await this.updater.downloadUpdate()
+    } catch (error) {
+      this.closeProgressWindow()
+      throw error
+    } finally {
+      this.downloadWindow = null
     }
   }
 }
