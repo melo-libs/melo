@@ -55,7 +55,7 @@ export const Outline = () => {
     return () => {
       alive = false
     }
-  }, [activeTab?.path, wsPath, i18n.language])
+  }, [activeTab?.path, wsPath, i18n.language, t])
 
   const scrollTo = (id: string) => {
     const el = document.querySelector(`[data-toc-id="${id}"]`)

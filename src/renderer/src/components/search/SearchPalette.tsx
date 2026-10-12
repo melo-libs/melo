@@ -192,7 +192,7 @@ const PaletteRow = React.memo(function PaletteRow({
 })
 
 export const SearchPalette = () => {
-  const { i18n: i18nSub } = useTranslation()
+  const { t, i18n: i18nSub } = useTranslation()
   const [open, setOpen] = useAtom(searchOpenAtom)
   const tree = useAtomValue(workspaceTreeAtom)
   const workspacePath = useAtomValue(workspacePathAtom)
@@ -275,11 +275,11 @@ export const SearchPalette = () => {
     const rows: Row[] = []
     if (empty) {
       if (recentFiles.length) {
-        rows.push({ kind: 'head', label: i18n.t('search.groups.recent') })
+        rows.push({ kind: 'head', label: t('search.groups.recent') })
         recentFiles.slice(0, 5).forEach((f) => rows.push({ kind: 'file', file: f, nav: true }))
       }
       rows.push({ kind: 'asknotice', nav: false })
-      rows.push({ kind: 'head', label: i18n.t('search.groups.commands') })
+      rows.push({ kind: 'head', label: t('search.groups.commands') })
       ;['new-note', 'new-folder', 'settings'].forEach((cid) => {
         const c = COMMANDS.find((x) => x.id === cid)
         if (c) rows.push({ kind: 'command', cmd: c, nav: true })
@@ -293,7 +293,7 @@ export const SearchPalette = () => {
       if (!result.total && !urlMatch) rows.push({ kind: 'none', nav: false })
     }
     return rows
-  }, [empty, result, recentFiles, urlMatch, i18nSub.language])
+  }, [empty, result, recentFiles, urlMatch, t])
 
   const navIdx = useMemo(
     () => flat.map((r, i) => ('nav' in r && r.nav ? i : -1)).filter((i) => i >= 0),

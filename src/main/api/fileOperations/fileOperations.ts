@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import fs from 'fs-extra'
 import path from 'path'
@@ -333,6 +332,7 @@ export const quickPreviewFile = async (filePath: string): Promise<void> => {
   } catch (error) {
     throw new Error(
       `Failed to preview file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error },
     )
   }
 }

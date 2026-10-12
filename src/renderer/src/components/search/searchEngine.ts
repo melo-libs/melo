@@ -490,9 +490,8 @@ export async function runSearch(raw: string, tree: FileNode[]): Promise<SearchRe
       hidden: resultsHidden,
     })
 
-  let cmdFallback: SearchItem[] = []
   if (hasText && !results.length) {
-    cmdFallback = commandMatches(freeText).filter(
+    const cmdFallback = commandMatches(freeText).filter(
       (c) => c.type === 'command' && c.titlePositions.length > 0,
     )
     if (cmdFallback.length)

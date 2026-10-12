@@ -241,7 +241,7 @@ const App = () => {
       }
     })()
     // Boot-only on purpose.
-  }, []) // eslint-disable-line
+  }, [])
 
   // The main process always asks the renderer to flush before closing. If
   // Editor has not registered its guarded close listener yet (boot, opener,

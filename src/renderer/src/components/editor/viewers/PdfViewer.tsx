@@ -50,12 +50,14 @@ interface PageSlot {
   renderedScale: number | null
 }
 
+type PdfError = { message: string } | { key: 'viewer.couldNotReadFile' | 'viewer.couldNotOpenPdf' }
+
 export const PdfViewer = ({ path, name }: PdfViewerProps) => {
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const pagesRef = useRef<HTMLDivElement>(null)
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<PdfError | null>(null)
   // Base page sizes at scale 1; index 0 doubles as the estimate for
   // pages whose real size hasn't been discovered yet.
   const sizesRef = useRef<({ w: number; h: number } | null)[]>([])
@@ -73,7 +75,7 @@ export const PdfViewer = ({ path, name }: PdfViewerProps) => {
       const res = await window.api.invoke(IpcChannels.InvokeReadFileBinary, { filePath: path })
       if (!alive) return
       if (!res.success || !res.data) {
-        setError(res.error ?? t('viewer.couldNotReadFile'))
+        setError(res.error != null ? { message: res.error } : { key: 'viewer.couldNotReadFile' })
         return
       }
       try {
@@ -96,7 +98,8 @@ export const PdfViewer = ({ path, name }: PdfViewerProps) => {
         sizesRef.current[0] = { w: vp.width, h: vp.height }
         setDoc(loaded)
       } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : t('viewer.couldNotOpenPdf'))
+        if (alive)
+          setError(e instanceof Error ? { message: e.message } : { key: 'viewer.couldNotOpenPdf' })
       }
     })()
     return () => {
@@ -284,7 +287,9 @@ export const PdfViewer = ({ path, name }: PdfViewerProps) => {
       <div className="viewer-page">
         <div className="viewer-card">
           <div className="viewer-card-name">{name}</div>
-          <div className="viewer-card-note">{error}</div>
+          <div className="viewer-card-note">
+            {'message' in error ? error.message : t(error.key)}
+          </div>
           <div className="viewer-card-actions">
             <button
               className="viewer-btn primary"

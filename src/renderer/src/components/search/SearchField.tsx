@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import i18n from '../../i18n'
 import { cn } from '../../lib/cn'
 import { QIcon } from './SearchIcon'
 
@@ -183,17 +182,17 @@ export function SearchField({
     let items: { value: string; label: string; hint: string; op: string }[] = []
     if (kind === 'tag')
       items = allTags
-        .filter((t) => t.tag.includes(frag))
-        .map((t) => ({
-          value: t.tag,
-          label: '#' + t.tag,
-          hint: i18n.t('search.notesCount', { count: t.count }),
+        .filter((tag) => tag.tag.includes(frag))
+        .map((tag) => ({
+          value: tag.tag,
+          label: '#' + tag.tag,
+          hint: t('search.notesCount', { count: tag.count }),
           op: 'tag',
         }))
     else if (kind === 'kind')
       items = KIND_OPTIONS.filter(([v]) => v.includes(frag)).map(([v]) => ({
         value: v,
-        label: i18n.t(`search.kinds.${v}`),
+        label: t(`search.kinds.${v}`),
         hint: 'kind:' + v,
         op: 'kind',
       }))
