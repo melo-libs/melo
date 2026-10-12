@@ -4,6 +4,12 @@ Turn information into knowledge of your own.
 
 Melo is a personal knowledge workspace built around CODE: Collect, Organize, Distill, and Express. Your notes are plain `.md` files in a folder you choose, edited in a true WYSIWYG editor. No account, no lock-in — point it at an existing notes folder and everything just works. (Search runs on a small rebuildable index in `.melo/`; your notes never live inside it.)
 
+## Get Melo
+
+Download a macOS build for your Mac (Apple silicon or Intel) from [GitHub Releases](https://github.com/melo-libs/melo/releases). Choose a folder as your workspace, or open an individual Markdown file; Melo keeps your notes in their original location.
+
+The latest published release may be older than the features described here. Check the release notes for the version you download. Unsigned builds may require approval in macOS Privacy & Security before opening.
+
 ## What it does
 
 **Write**
@@ -33,15 +39,20 @@ Melo is a personal knowledge workspace built around CODE: Collect, Organize, Dis
 
 ## Development
 
+Use Node.js 24 and the pnpm version pinned in `package.json`.
+
 ```bash
 pnpm install
-pnpm dev            # start the app in dev mode
-pnpm run typecheck  # node + web typechecks
-pnpm test           # unit tests
-pnpm run build:mac  # package for macOS
+pnpm run dev                 # start the app in dev mode
+pnpm run lint                # read-only ESLint and Prettier checks
+pnpm run lint:fix            # apply ESLint fixes
+pnpm run typecheck           # main/preload and renderer typechecks
+pnpm test                    # unit tests
+pnpm run release:check       # lint, typechecks, tests, production build
+pnpm run build:mac:unsigned  # local unsigned macOS package
 ```
 
-Built with Electron 31, React 18, TypeScript, Tiptap, and Jotai. See `CLAUDE.md` for architecture notes.
+CI validates macOS arm64 and x64 builds; publishing a release is a separate manual step. Built with Electron 31, React 18, TypeScript, Tiptap, and Jotai. See [AGENTS.md](AGENTS.md) for architecture notes.
 
 ## License
 
