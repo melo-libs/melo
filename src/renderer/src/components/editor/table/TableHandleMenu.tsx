@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
 import type { Editor } from '@tiptap/react'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { TableMap } from '@tiptap/pm/tables'
@@ -63,7 +62,7 @@ function useTableActions(
   tablePos: number,
   tableNode: PMNode,
 ) {
-  const { i18n: i18nSub } = useTranslation()
+  const { t } = useTranslation()
   const isRow = orientation === 'row'
   const map = useMemo(() => TableMap.get(tableNode), [tableNode])
 
@@ -91,13 +90,13 @@ function useTableActions(
 
     return {
       icon: 'tableHeader',
-      label: i18n.t('table.setHeaderRow'),
+      label: t('table.setHeaderRow'),
       action: () => {
         selectRowOrColumn()
         editor.commands.toggleHeaderRow()
       },
     }
-  }, [editor, isRow, index, tableNode, selectRowOrColumn, i18nSub.language])
+  }, [editor, isRow, index, tableNode, selectRowOrColumn, t])
 
   const performMove = useCallback(
     (from: number, to: number) => {
@@ -125,32 +124,32 @@ function useTableActions(
     if (isRow) {
       items.push({
         icon: 'arrowUp',
-        label: i18n.t('table.moveRowUp'),
+        label: t('table.moveRowUp'),
         disabled: index === 0,
         action: () => performMove(index, index - 1),
       })
       items.push({
         icon: 'arrowDown',
-        label: i18n.t('table.moveRowDown'),
+        label: t('table.moveRowDown'),
         disabled: index === map.height - 1,
         action: () => performMove(index, index + 1),
       })
     } else {
       items.push({
         icon: 'arrowLeft',
-        label: i18n.t('table.moveColLeft'),
+        label: t('table.moveColLeft'),
         disabled: index === 0,
         action: () => performMove(index, index - 1),
       })
       items.push({
         icon: 'arrowRight',
-        label: i18n.t('table.moveColRight'),
+        label: t('table.moveColRight'),
         disabled: index === map.width - 1,
         action: () => performMove(index, index + 1),
       })
     }
     return items
-  }, [editor, isRow, index, map, performMove, i18nSub.language])
+  }, [isRow, index, map, performMove, t])
 
   // Add actions
   const addActions = useMemo((): ActionItem[] => {
@@ -160,7 +159,7 @@ function useTableActions(
       return [
         {
           icon: 'plus',
-          label: i18n.t('table.addRowAbove'),
+          label: t('table.addRowAbove'),
           action: () => {
             selectRowOrColumn()
             editor.commands.addRowBefore()
@@ -168,7 +167,7 @@ function useTableActions(
         },
         {
           icon: 'plus',
-          label: i18n.t('table.addRowBelow'),
+          label: t('table.addRowBelow'),
           action: () => {
             selectRowOrColumn()
             editor.commands.addRowAfter()
@@ -179,7 +178,7 @@ function useTableActions(
     return [
       {
         icon: 'plus',
-        label: i18n.t('table.addColLeft'),
+        label: t('table.addColLeft'),
         action: () => {
           selectRowOrColumn()
           editor.commands.addColumnBefore()
@@ -187,14 +186,14 @@ function useTableActions(
       },
       {
         icon: 'plus',
-        label: i18n.t('table.addColRight'),
+        label: t('table.addColRight'),
         action: () => {
           selectRowOrColumn()
           editor.commands.addColumnAfter()
         },
       },
     ]
-  }, [editor, isRow, index, selectRowOrColumn, i18nSub.language])
+  }, [editor, isRow, index, selectRowOrColumn, t])
 
   // Sort actions (column only)
   const sortActions = useMemo((): ActionItem[] => {
@@ -250,17 +249,17 @@ function useTableActions(
     }
 
     return [
-      { icon: 'sortAsc', label: i18n.t('table.sortAsc'), action: () => sortByColumn('asc') },
-      { icon: 'sortDesc', label: i18n.t('table.sortDesc'), action: () => sortByColumn('desc') },
+      { icon: 'sortAsc', label: t('table.sortAsc'), action: () => sortByColumn('asc') },
+      { icon: 'sortDesc', label: t('table.sortDesc'), action: () => sortByColumn('desc') },
     ]
-  }, [editor, isRow, index, tableNode, tablePos, map, i18nSub.language])
+  }, [editor, isRow, index, tableNode, tablePos, map, t])
 
   // Alignment actions
   const alignActions = useMemo((): ActionItem[] => {
     return [
       {
         icon: 'alignLeft',
-        label: i18n.t('table.alignLeft'),
+        label: t('table.alignLeft'),
         action: () => {
           selectRowOrColumn()
           setCellAttr('align', 'left')(editor.state, editor.view.dispatch)
@@ -268,7 +267,7 @@ function useTableActions(
       },
       {
         icon: 'alignCenter',
-        label: i18n.t('table.alignCenter'),
+        label: t('table.alignCenter'),
         action: () => {
           selectRowOrColumn()
           setCellAttr('align', 'center')(editor.state, editor.view.dispatch)
@@ -276,20 +275,20 @@ function useTableActions(
       },
       {
         icon: 'alignRight',
-        label: i18n.t('table.alignRight'),
+        label: t('table.alignRight'),
         action: () => {
           selectRowOrColumn()
           setCellAttr('align', 'right')(editor.state, editor.view.dispatch)
         },
       },
     ]
-  }, [editor, selectRowOrColumn, i18nSub.language])
+  }, [editor, selectRowOrColumn, t])
 
   // Clear content
   const clearAction = useMemo((): ActionItem => {
     return {
       icon: 'eraser',
-      label: isRow ? i18n.t('table.clearRow') : i18n.t('table.clearCol'),
+      label: isRow ? t('table.clearRow') : t('table.clearCol'),
       action: () => {
         selectRowOrColumn()
         const { state } = editor
@@ -304,7 +303,7 @@ function useTableActions(
         if (tr.docChanged) editor.view.dispatch(tr)
       },
     }
-  }, [editor, isRow, selectRowOrColumn, i18nSub.language])
+  }, [editor, isRow, selectRowOrColumn, t])
 
   // Duplicate — clone the row/column WITH its content by rebuilding the table
   // (reusing the existing cell nodes, so content + attrs carry over). Assumes
@@ -313,7 +312,7 @@ function useTableActions(
   const duplicateAction = useMemo((): ActionItem => {
     return {
       icon: 'duplicate',
-      label: isRow ? i18n.t('table.duplicateRow') : i18n.t('table.duplicateCol'),
+      label: isRow ? t('table.duplicateRow') : t('table.duplicateCol'),
       action: () => {
         if (!isValidPosition(index)) return
         const { state } = editor
@@ -339,14 +338,14 @@ function useTableActions(
         editor.view.dispatch(state.tr.replaceWith(tablePos, tablePos + table.nodeSize, newTable))
       },
     }
-  }, [editor, isRow, index, tablePos, i18nSub.language])
+  }, [editor, isRow, index, tablePos, t])
 
   // Delete
   const deleteAction = useMemo((): ActionItem => {
     const canDelete = isRow ? map.height > 1 : map.width > 1
     return {
       icon: 'trash',
-      label: isRow ? i18n.t('table.deleteRow') : i18n.t('table.deleteCol'),
+      label: isRow ? t('table.deleteRow') : t('table.deleteCol'),
       disabled: !canDelete,
       destructive: true,
       action: () => {
@@ -358,7 +357,7 @@ function useTableActions(
         }
       },
     }
-  }, [editor, isRow, map, selectRowOrColumn, i18nSub.language])
+  }, [editor, isRow, map, selectRowOrColumn, t])
 
   return {
     selectRowOrColumn,

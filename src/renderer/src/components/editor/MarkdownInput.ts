@@ -246,7 +246,7 @@ export const MarkdownInput = Extension.create({
       new InputRule({
         // URL part allows one level of balanced parens (CommonMark), so
         // wiki-style links like …/Function_(mathematics) convert too.
-        find: /(!?)\[([^\[\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)\)$/,
+        find: /(!?)\[([^[\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)\)$/,
         handler: ({ state, range, match }) => {
           const [, bang, text, rawUrl] = match
           const url = safeExternalUrl(rawUrl)

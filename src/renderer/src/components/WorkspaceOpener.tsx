@@ -46,22 +46,14 @@ export const WorkspaceOpener = ({
               <h2 id="ws-opener-folder-title">{t('opener.workspaceTitle')}</h2>
               <p>{t('opener.workspaceDesc')}</p>
             </div>
-            <button
-              type="button"
-              className="ws-opener-primary"
-              onClick={onOpenWorkspace}
-            >
+            <button type="button" className="ws-opener-primary" onClick={onOpenWorkspace}>
               {t('opener.openWorkspace')}
             </button>
           </div>
         </section>
 
         <div className="ws-opener-below-actions">
-          <button
-            type="button"
-            className="ws-opener-secondary"
-            onClick={onOpenFile}
-          >
+          <button type="button" className="ws-opener-secondary" onClick={onOpenFile}>
             {t('opener.openFile')}
           </button>
         </div>

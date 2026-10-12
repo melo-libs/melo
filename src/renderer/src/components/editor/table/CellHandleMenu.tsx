@@ -32,11 +32,11 @@ interface ActionItem {
 // tables, which cannot express col/rowspan — a merge would silently
 // shred on save (same "UI must not lie" call as multicolor highlight).
 function useCellActions(editor: Editor) {
-  const { i18n: i18nSub } = useTranslation()
+  const { t } = useTranslation()
   const clearAction = useMemo((): ActionItem => {
     return {
       icon: 'eraser',
-      label: i18n.t('table.clearContent'),
+      label: t('table.clearContent'),
       action: () => {
         const { state: s } = editor
         const { selection } = s
@@ -61,27 +61,27 @@ function useCellActions(editor: Editor) {
         if (tr.docChanged) editor.view.dispatch(tr)
       },
     }
-  }, [editor, i18nSub.language])
+  }, [editor, t])
 
   const alignActions = useMemo((): ActionItem[] => {
     return [
       {
         icon: 'alignLeft',
-        label: i18n.t('table.alignLeft'),
+        label: t('table.alignLeft'),
         action: () => setCellAttr('align', 'left')(editor.state, editor.view.dispatch),
       },
       {
         icon: 'alignCenter',
-        label: i18n.t('table.alignCenter'),
+        label: t('table.alignCenter'),
         action: () => setCellAttr('align', 'center')(editor.state, editor.view.dispatch),
       },
       {
         icon: 'alignRight',
-        label: i18n.t('table.alignRight'),
+        label: t('table.alignRight'),
         action: () => setCellAttr('align', 'right')(editor.state, editor.view.dispatch),
       },
     ]
-  }, [editor, i18nSub.language])
+  }, [editor, t])
 
   return { clearAction, alignActions }
 }

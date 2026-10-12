@@ -47,7 +47,7 @@ export function initTabSessionPersistence(): void {
 
 /** Reopen the saved tabs for `root` — files that vanished are skipped. */
 export async function restoreTabSession(root: string): Promise<void> {
-  let saved: { tabs?: string[]; active?: string | null } | null = null
+  let saved: { tabs?: string[]; active?: string | null } | null
   try {
     saved = JSON.parse(localStorage.getItem(key(root)) ?? 'null')
   } catch {

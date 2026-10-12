@@ -35,9 +35,7 @@ describe('move destination helpers', () => {
   it('does not allow moving into the current parent', () => {
     expect(canMoveToFolder(file, '/ws/notes')).toBe(false)
     expect(canMoveToFolder(file, '/ws/archive')).toBe(true)
-    expect(
-      canMoveToFolder({ ...file, id: 'C:\\a.md' } as FileNode, 'C:\\'),
-    ).toBe(false)
+    expect(canMoveToFolder({ ...file, id: 'C:\\a.md' } as FileNode, 'C:\\')).toBe(false)
   })
 
   it('searches names and complete paths while excluding invalid targets', () => {
