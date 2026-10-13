@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [2.0.0](https://github.com/melo-libs/melo/compare/v1.0.0...v2.0.0) (Unreleased)
+## [2.0.0](https://github.com/melo-libs/melo/compare/v1.0.0...v2.0.0) (2026-10-13)
 
 > The macOS downloads for this release are unsigned. macOS may require approval in
 > System Settings → Privacy & Security before the app can be opened. Melo can
