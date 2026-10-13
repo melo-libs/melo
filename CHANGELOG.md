@@ -2,11 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [2.0.0](https://github.com/melo-libs/melo-lite/compare/v1.0.0...v2.0.0) (2026-08-30)
+## [2.0.0](https://github.com/melo-libs/melo/compare/v1.0.0...v2.0.0) (Unreleased)
 
 > The macOS downloads for this release are unsigned. macOS may require approval in
-> System Settings → Privacy & Security before the app can be opened. Moving from
-> this release to a future signed build may require a manual reinstall.
+> System Settings → Privacy & Security before the app can be opened. Melo can
+> detect later updates, but they must be downloaded and installed manually from
+> GitHub Releases; the app will not install them automatically. To update, quit
+> Melo, open the DMG for your Mac, and drag Melo into Applications, choosing
+> Replace when prompted. Your workspace files are not part of the app bundle.
 
 ### Highlights
 

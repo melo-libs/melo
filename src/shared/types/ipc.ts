@@ -3,7 +3,7 @@ import type { AppSettings } from './settings'
 
 export type UpdateCheckOutcome =
   | { status: 'disabled' | 'busy' | 'up-to-date' | 'error' }
-  | { status: 'available'; version: string }
+  | { status: 'available'; version: string; install: 'manual' | 'in-app' }
 
 export enum IpcChannels {
   // Send-only channels (renderer -> main)
