@@ -9,7 +9,9 @@ All notable changes to this project will be documented in this file. See [standa
 > detect later updates, but they must be downloaded and installed manually from
 > GitHub Releases; the app will not install them automatically. To update, quit
 > Melo, open the DMG for your Mac, and drag Melo into Applications, choosing
-> Replace when prompted. Your workspace files are not part of the app bundle.
+> Replace when prompted. If you use 1.0.0, install 2.0.0 this way too; do not
+> rely on the older in-app updater to install this unsigned release. Your
+> workspace files are not part of the app bundle.
 
 ### Highlights
 
