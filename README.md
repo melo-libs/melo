@@ -8,7 +8,7 @@ Melo is a personal knowledge workspace built around CODE: Collect, Organize, Dis
 
 Download a macOS build for your Mac (Apple silicon or Intel) from [GitHub Releases](https://github.com/melo-libs/melo/releases). Choose a folder as your workspace, or open an individual Markdown file; Melo keeps your notes in their original location.
 
-The latest published release may be older than the features described here. Check the release notes for the version you download. Unsigned builds may require approval in macOS Privacy & Security before opening.
+The latest published release may be older than the features described here. Check the release notes for the version you download. Unsigned macOS builds may require approval in Privacy & Security before opening; they can check for updates, but new versions must be installed manually from GitHub Releases.
 
 ## What it does
 

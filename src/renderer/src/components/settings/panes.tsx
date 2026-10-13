@@ -426,7 +426,11 @@ export function AboutPane() {
     }
   }
   const downloadUpdate = async () => {
-    if (update.status !== 'available' && update.status !== 'download-error') return
+    if (
+      (update.status !== 'available' || update.install !== 'in-app') &&
+      update.status !== 'download-error'
+    )
+      return
     const availableVersion = update.version
     setUpdate({ status: 'downloading' })
     try {
@@ -440,7 +444,32 @@ export function AboutPane() {
       setUpdate({ status: 'download-error', version: availableVersion })
     }
   }
-  const canDownload = update.status === 'available' || update.status === 'download-error'
+  const openRelease = async () => {
+    if (
+      (update.status !== 'available' || update.install !== 'manual') &&
+      update.status !== 'release-error'
+    )
+      return
+    const availableVersion = update.version
+    try {
+      const res = await window.api.invoke(IpcChannels.InvokeOpenExternal, {
+        url: 'https://github.com/melo-libs/melo/releases/latest',
+      })
+      setUpdate(
+        res.success
+          ? { status: 'available', version: availableVersion, install: 'manual' }
+          : { status: 'release-error', version: availableVersion },
+      )
+    } catch {
+      setUpdate({ status: 'release-error', version: availableVersion })
+    }
+  }
+  const canDownload =
+    (update.status === 'available' && update.install === 'in-app') ||
+    update.status === 'download-error'
+  const canOpenRelease =
+    (update.status === 'available' && update.install === 'manual') ||
+    update.status === 'release-error'
   const busy = update.status === 'checking' || update.status === 'downloading'
   let updateMessage: string | null = null
   switch (update.status) {
@@ -451,7 +480,10 @@ export function AboutPane() {
       updateMessage = t('prefs.latestVersion')
       break
     case 'available':
-      updateMessage = t('prefs.updateAvailable', { version: update.version })
+      updateMessage = t(
+        update.install === 'manual' ? 'prefs.manualUpdateAvailable' : 'prefs.updateAvailable',
+        { version: update.version },
+      )
       break
     case 'disabled':
       updateMessage = t('prefs.checkUnavailable')
@@ -470,11 +502,15 @@ export function AboutPane() {
       break
     case 'download-error':
       updateMessage = t('prefs.downloadFailed')
+      break
+    case 'release-error':
+      updateMessage = t('prefs.releaseOpenFailed')
   }
   let actionLabel = t('prefs.checkNow')
   if (update.status === 'checking') actionLabel = t('prefs.checkingNow')
   else if (update.status === 'downloading') actionLabel = t('prefs.downloadingUpdate')
   else if (update.status === 'downloaded') actionLabel = t('prefs.updateDownloaded')
+  else if (canOpenRelease) actionLabel = t('prefs.openReleasePage')
   else if (canDownload) actionLabel = t('prefs.downloadUpdate')
   const links = [
     {
@@ -512,7 +548,9 @@ export function AboutPane() {
                 <div
                   className="us-detail"
                   role={
-                    update.status === 'error' || update.status === 'download-error'
+                    update.status === 'error' ||
+                    update.status === 'download-error' ||
+                    update.status === 'release-error'
                       ? 'alert'
                       : 'status'
                   }
@@ -524,7 +562,9 @@ export function AboutPane() {
             <button
               className="s-btn"
               disabled={busy || update.status === 'downloaded'}
-              onClick={() => void (canDownload ? downloadUpdate() : checkNow())}
+              onClick={() =>
+                void (canOpenRelease ? openRelease() : canDownload ? downloadUpdate() : checkNow())
+              }
             >
               <SettingsIcon name="refresh" size={14} />
               {actionLabel}

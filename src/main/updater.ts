@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import type { AppUpdater, ProgressInfo } from 'electron-updater'
 import type { UpdateCheckOutcome } from '../shared/types/ipc'
 import { preferences } from './preferences'
@@ -6,6 +6,10 @@ import { getSettings } from './settings'
 
 const updaterTestMode = !app.isPackaged && process.env.MELO_UPDATER_TEST === '1'
 const updaterEnabled = app.isPackaged || updaterTestMode
+// The 2.0 macOS builds have no Developer ID signature, so Squirrel.Mac cannot
+// safely install later updates. Keep checks, but send users to the release page.
+const manualUpdateInstall = process.platform === 'darwin' && !updaterTestMode
+const releasesUrl = 'https://github.com/melo-libs/melo/releases/latest'
 
 export class UpdateManager {
   private static instance: UpdateManager
@@ -31,7 +35,7 @@ export class UpdateManager {
 
     // Configure autoUpdater
     updater.autoDownload = false
-    updater.autoInstallOnAppQuit = !updaterTestMode
+    updater.autoInstallOnAppQuit = !updaterTestMode && !manualUpdateInstall
     updater.forceDevUpdateConfig = updaterTestMode
     updater.logger = console
     updater.allowDowngrade = false
@@ -63,17 +67,34 @@ export class UpdateManager {
         message: `Version ${info.version} is available.`,
         detail: updaterTestMode
           ? 'Download it to test the update flow? Installation is disabled in test mode.'
-          : 'Would you like to download and install it now?',
+          : manualUpdateInstall
+            ? 'Download and install it manually from GitHub Releases.'
+            : 'Would you like to download and install it now?',
         buttons: updaterTestMode
           ? ['Download', 'Cancel', 'Ignore this version']
-          : ['Yes', 'No', 'Ignore this version'],
+          : manualUpdateInstall
+            ? ['Open Downloads', 'Later', 'Ignore this version']
+            : ['Yes', 'No', 'Ignore this version'],
         cancelId: 1,
       })
 
       if (response === 0) {
-        void this.downloadAvailableUpdate(this.getWindow()).catch((error) => {
-          this.showErrorDialog(error instanceof Error ? error : new Error('Unknown error'))
-        })
+        if (manualUpdateInstall) {
+          try {
+            await shell.openExternal(releasesUrl)
+          } catch (error) {
+            this.showUpdateDialog({
+              type: 'error',
+              title: 'Update Error',
+              message: 'Could not open GitHub Releases.',
+              detail: error instanceof Error ? error.message : 'Unknown error',
+            })
+          }
+        } else {
+          void this.downloadAvailableUpdate(this.getWindow()).catch((error) => {
+            this.showErrorDialog(error instanceof Error ? error : new Error('Unknown error'))
+          })
+        }
       } else if (response === 2) {
         // Store the ignored version
         preferences.set('ignoredVersion', info.version)
@@ -304,7 +325,11 @@ export class UpdateManager {
       const result = await updater.checkForUpdates()
       if (!result) return { status: 'disabled' }
       return this.availableVersion
-        ? { status: 'available', version: this.availableVersion }
+        ? {
+            status: 'available',
+            version: this.availableVersion,
+            install: manualUpdateInstall ? 'manual' : 'in-app',
+          }
         : { status: 'up-to-date' }
     } catch (error) {
       console.error('Update check error:', error)
@@ -319,6 +344,7 @@ export class UpdateManager {
   }
 
   public async downloadAvailableUpdate(window: BrowserWindow): Promise<void> {
+    if (manualUpdateInstall) throw new Error('Install this update from GitHub Releases')
     if (!this.updater) throw new Error('Updates are unavailable')
     this.downloadWindow = window
     this.createProgressWindow()
