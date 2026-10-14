@@ -52,6 +52,8 @@ pnpm run release:check       # lint, typechecks, tests, production build
 pnpm run build:mac:unsigned  # local unsigned macOS package
 ```
 
+Development builds use a persistent `Melo Dev` profile in the system app-data directory, separate from the installed app. Select your workspace on the first development launch. Set `MELO_USER_DATA` to use a different profile for tests.
+
 CI validates macOS arm64 and x64 builds; publishing a release is a separate manual step. Built with Electron 31, React 18, TypeScript, Tiptap, and Jotai. See [AGENTS.md](AGENTS.md) for architecture notes.
 
 ## License
