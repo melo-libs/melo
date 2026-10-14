@@ -14,11 +14,17 @@ import {
   smartVocabAtom,
 } from '../../store/smart'
 import { activeTabIdAtom, closeTabAtom, openFileAtom, tabsAtom } from '../../store/editor'
+import { workspaceTreeAtom } from '../../store/workspace'
 import { SIcon } from './SmartIcon'
 import { SortMenu, SORTS } from './SmartControls'
 import { bucketOf, smartViewName } from './smartData'
 import { Button } from '../ui/Button'
 import { toast } from '../Toaster'
+import { kindOf } from '../../lib/workspace'
+import { FileContextMenu, type ContextAction } from '../sidebar/FileContextMenu'
+import { NameInput } from '../sidebar/NameInput'
+import { useFileActions } from '../sidebar/useFileActions'
+import type { FileNode } from '../sidebar/types'
 import './smart.scss'
 
 const PAGE_SIZE = 50
@@ -36,6 +42,18 @@ const sortItems = (items: SmartHit[], sort: SmartSort) => {
 }
 
 const isTimeSort = (sort: SmartSort) => sort === 'Newest first' || sort === 'Oldest first'
+
+const fileNodeForHit = (item: SmartHit): FileNode => {
+  const name = item.path.split(/[\\/]/).pop() ?? item.title
+  return {
+    id: item.path,
+    name,
+    kind: kindOf(name),
+    source: item.sourceUrl
+      ? { url: item.sourceUrl, host: item.sourceHost ?? undefined }
+      : undefined,
+  }
+}
 
 type ResultEntry =
   | { type: 'group'; key: string; label: string }
@@ -73,37 +91,61 @@ function briefAge(
 
 function ResultRow({
   it,
+  node,
   selected,
   divider,
   onSelect,
+  renaming,
+  onAction,
+  onRenameCommit,
 }: {
   it: SmartHit
+  node: FileNode
   selected: boolean
   divider: boolean
   onSelect: () => void
+  renaming: boolean
+  onAction: (action: ContextAction, node: FileNode) => void
+  onRenameCommit: (node: FileNode, name: string | null) => void
 }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   return (
-    <div
-      className={cn('res-row', divider && 'with-divider', selected && 'sel')}
-      data-path={it.path}
-      onClick={onSelect}
-    >
-      <span className="res-main">
-        <div className="res-name">{it.title}</div>
-        <div className="res-meta">
-          <span className="res-where">{it.sourceHost || it.folderTop}</span>
-          <span className="dot-sep" />
-          <span>{briefAge(it.days, t, lang)}</span>
-          {it.tags.map((t) => (
-            <span key={t} className="res-tag">
-              #{t}
-            </span>
-          ))}
-        </div>
-      </span>
-    </div>
+    <FileContextMenu node={node} onAction={onAction}>
+      <div
+        className={cn(
+          'res-row',
+          divider && 'with-divider',
+          selected && 'sel',
+          renaming && 'renaming',
+        )}
+        data-path={it.path}
+        onClick={() => !renaming && onSelect()}
+      >
+        <span className="res-main">
+          <div className="res-name">
+            {renaming ? (
+              <NameInput
+                defaultValue={node.name}
+                onCommit={(value) => onRenameCommit(node, value)}
+              />
+            ) : (
+              it.title
+            )}
+          </div>
+          <div className="res-meta">
+            <span className="res-where">{it.sourceHost || it.folderTop}</span>
+            <span className="dot-sep" />
+            <span>{briefAge(it.days, t, lang)}</span>
+            {it.tags.map((tag) => (
+              <span key={tag} className="res-tag">
+                #{tag}
+              </span>
+            ))}
+          </div>
+        </span>
+      </div>
+    </FileContextMenu>
   )
 }
 
@@ -144,9 +186,21 @@ export const SmartView = () => {
   const closeTab = useSetAtom(closeTabAtom)
   const tabs = useAtomValue(tabsAtom)
   const activeTabId = useAtomValue(activeTabIdAtom)
+  const tree = useAtomValue(workspaceTreeAtom)
+  const smartTabRef = useRef<string | null>(null)
+  const fileActions = useFileActions({
+    onPathChanged: (oldPath, newPath) => {
+      if (smartTabRef.current === oldPath) smartTabRef.current = newPath
+    },
+  })
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const renameIdRef = useRef<string | null>(null)
+  const pendingRefreshRef = useRef(false)
 
   const [sort, setSort] = useState<SmartSort>('Newest first')
   const [items, setItems] = useState<SmartHit[] | null>(null)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -209,10 +263,18 @@ export const SmartView = () => {
 
   // Track the tab created by smart folder browsing so we can replace it
   // on the next click instead of accumulating tabs.
-  const smartTabRef = useRef<string | null>(null)
   useEffect(() => {
     smartTabRef.current = null
+    renameIdRef.current = null
+    pendingRefreshRef.current = false
+    setRenameId(null)
   }, [activeId])
+
+  useEffect(() => {
+    const previous = smartTabRef.current
+    if (!previous || tabs.some((tab) => tab.id === previous)) return
+    smartTabRef.current = null
+  }, [tabs])
 
   const openResult = (path: string) => {
     const prev = smartTabRef.current
@@ -224,48 +286,90 @@ export const SmartView = () => {
     smartTabRef.current = path
   }
 
+  const onResultAction = (action: ContextAction, node: FileNode) => {
+    if (action === 'rename') {
+      renameIdRef.current = node.id
+      setRenameId(node.id)
+    } else void fileActions.onAction(action, node)
+  }
+
+  const commitResultRename = async (node: FileNode, name: string | null) => {
+    renameIdRef.current = null
+    setRenameId(null)
+    try {
+      await fileActions.commitRename(node, name)
+    } finally {
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false
+        setRetryVersion((version) => version + 1)
+      }
+    }
+  }
+
   const seq = useRef(0)
+  const hasLoadedRef = useRef(false)
   useEffect(() => {
     if (!activeId) return
     let alive = true
-    const run = () => {
+    const run = async (reset: boolean) => {
       const mySeq = ++seq.current
       loadingRef.current = true
-      setItems(null)
-      setTotal(0)
-      setHasMore(false)
+      const targetCount = reset ? PAGE_SIZE : Math.max(PAGE_SIZE, itemsRef.current?.length ?? 0)
+      if (reset) {
+        hasLoadedRef.current = false
+        itemsRef.current = null
+        setItems(null)
+        setTotal(0)
+        setHasMore(false)
+        scrollRef.current?.scrollTo({ top: 0 })
+      }
       setLoadingMore(false)
       setQueryError(null)
-      scrollRef.current?.scrollTo({ top: 0 })
-      window.api
-        .invoke(IpcChannels.InvokeQuerySmartView, {
-          rules: validRules,
-          sort,
-          offset: 0,
-          limit: PAGE_SIZE,
-        })
-        .then((res) => {
-          if (!alive || seq.current !== mySeq) return
-          if (!res.success || !res.data) {
-            setItems([])
-            setQueryError({ key: queryKey, phase: 'initial' })
-            return
-          }
-          setItems(res.data.items)
-          setTotal(res.data.total)
-          setHasMore(res.data.hasMore)
-        })
-        .catch(() => {
-          if (!alive || seq.current !== mySeq) return
+      const showError = () => {
+        if (reset || !hasLoadedRef.current) {
           setItems([])
           setQueryError({ key: queryKey, phase: 'initial' })
-        })
-        .finally(() => {
-          if (alive && seq.current === mySeq) loadingRef.current = false
-        })
+        } else {
+          toast(i18n.t('smart.couldNotLoad'))
+        }
+      }
+      try {
+        const refreshed: SmartHit[] = []
+        let nextTotal = 0
+        let nextHasMore = false
+        while (refreshed.length < targetCount) {
+          const res = await window.api.invoke(IpcChannels.InvokeQuerySmartView, {
+            rules: validRules,
+            sort,
+            offset: refreshed.length,
+            limit: Math.min(PAGE_SIZE, targetCount - refreshed.length),
+          })
+          if (!alive || seq.current !== mySeq) return
+          if (!res.success || !res.data) {
+            showError()
+            return
+          }
+          refreshed.push(...res.data.items)
+          nextTotal = res.data.total
+          nextHasMore = res.data.hasMore
+          if (!nextHasMore || res.data.items.length === 0) break
+        }
+        hasLoadedRef.current = true
+        itemsRef.current = refreshed
+        setItems(refreshed)
+        setTotal(nextTotal)
+        setHasMore(nextHasMore)
+      } catch {
+        if (alive && seq.current === mySeq) showError()
+      } finally {
+        if (alive && seq.current === mySeq) loadingRef.current = false
+      }
     }
-    run()
-    const off = window.api.on(IpcChannels.OnWorkspaceChanged, run)
+    void run(true)
+    const off = window.api.on(IpcChannels.OnWorkspaceChanged, () => {
+      if (renameIdRef.current) pendingRefreshRef.current = true
+      else void run(false)
+    })
     return () => {
       alive = false
       seq.current += 1
@@ -315,6 +419,17 @@ export const SmartView = () => {
   }, [activeId, hasMore, items, queryKey, sort, validRules])
 
   const results = useMemo(() => sortItems(items ?? [], sort), [items, sort])
+  const nodesByPath = useMemo(() => {
+    const nodes = new Map<string, FileNode>()
+    const add = (children: FileNode[]) => {
+      for (const node of children) {
+        nodes.set(node.id, node)
+        if (node.children) add(node.children)
+      }
+    }
+    add(tree)
+    return nodes
+  }, [tree])
   const selectedIdx = activeTabId ? results.findIndex((r) => r.path === activeTabId) : -1
 
   const autoOpened = useRef<string | null>(null)
@@ -473,9 +588,13 @@ export const SmartView = () => {
                   ) : (
                     <ResultRow
                       it={entry.item}
+                      node={nodesByPath.get(entry.item.path) ?? fileNodeForHit(entry.item)}
                       selected={entry.item.path === activeTabId}
                       divider={entry.divider}
                       onSelect={() => openResult(entry.item.path)}
+                      renaming={entry.item.path === renameId}
+                      onAction={onResultAction}
+                      onRenameCommit={commitResultRename}
                     />
                   )}
                 </div>
@@ -484,6 +603,7 @@ export const SmartView = () => {
           </div>
         </div>
       )}
+      {fileActions.dialogs}
       <div
         className="sv-resize"
         onPointerDown={startResize}

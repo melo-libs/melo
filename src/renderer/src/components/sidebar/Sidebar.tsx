@@ -6,11 +6,8 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { IpcChannels } from '@shared/types/ipc'
 import { Icon } from '../Icon'
 import { toast } from '../Toaster'
-import { safeExternalUrl } from '../../lib/url'
 import { setSetting, settingsAtom } from '../../store/settings'
 import { formatSize } from '../../lib/format'
-import { copyText } from '../../lib/clipboard'
-import { loadTree, workspaceName } from '../../lib/workspace'
 import { SIcon } from '../smart/SmartIcon'
 import { newRule, smartViewName } from '../smart/smartData'
 import {
@@ -32,21 +29,17 @@ import {
   workspacePathAtom,
   workspaceTreeAtom,
 } from '../../store/workspace'
-import { activeTabIdAtom, closeTabAtom } from '../../store/editor'
-import { closeSession, flush, reviveFromDisk } from '../../store/documentSession'
+import { activeTabIdAtom } from '../../store/editor'
 import { appStore } from '../../store/appStore'
-import { tabsAtom } from '../../store/editor'
 import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 import { TreeNode } from './TreeNode'
-import { PropertiesCard } from './PropertiesCard'
-import { MoveDestinationDialog } from './MoveDestinationDialog'
 import { NameInput } from './NameInput'
 import { FileTypeIcon } from '../FileTypeIcon'
-import { ancestorChain, findNode, flattenFolders, sortNodes, type TreeSortRule } from './treeOps'
+import { ancestorChain, findNode, sortNodes, type TreeSortRule } from './treeOps'
 import type { ContextAction } from './FileContextMenu'
 import type { FileNode } from './types'
 import { safeName } from '../../lib/safeName'
-import { isInsidePath } from './moveDestination'
+import { useFileActions } from './useFileActions'
 import './sidebar.scss'
 
 interface SidebarProps {
@@ -57,16 +50,13 @@ interface SidebarProps {
 export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
   const { t } = useTranslation()
   const workspacePath = useAtomValue(workspacePathAtom)
-  const [tree, setTree] = useAtom(workspaceTreeAtom)
+  const tree = useAtomValue(workspaceTreeAtom)
   const activeTabId = useAtomValue(activeTabIdAtom)
   const [, setActiveId] = useAtom(activeNoteAtom)
   const [selectedId, setSelectedId] = useAtom(treeSelectionAtom)
   const pushRecent = useSetAtom(recentNotesAtom)
   const setSearchOpen = useSetAtom(searchOpenAtom)
-  const closeTab = useSetAtom(closeTabAtom)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [propsNode, setPropsNode] = useState<FileNode | null>(null)
-  const [moveSource, setMoveSource] = useState<FileNode | null>(null)
   const [creating, setCreating] = useAtom(treeCreatingAtom)
   const [creatingFolder, setCreatingFolder] = useAtom(treeCreatingFolderAtom)
   const [inlineCreate, setInlineCreate] = useAtom(inlineCreateAtom)
@@ -117,38 +107,6 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
     // eslint-disable-next-line
   }, [activeTabId])
 
-  const wsName = workspacePath ? workspaceName(workspacePath) : t('ws.fallbackName')
-  // The workspace top level is a valid Move-to target even though it has no
-  // row of its own in the tree.
-  const folders = useMemo(
-    () =>
-      workspacePath
-        ? [{ id: workspacePath, name: wsName, path: wsName }, ...flattenFolders(tree)]
-        : flattenFolders(tree),
-    [tree, workspacePath, wsName],
-  )
-  const inboxId = useMemo(() => folders.find((f) => f.system === 'inbox')?.id, [folders])
-
-  /** Surface a failed operation and re-scan — the most common cause is a
-      tree that drifted from disk, and a fresh scan realigns it. */
-  const fail = async (msg?: string | null, fallback?: string) => {
-    toast(msg || fallback || t('sidebar.somethingWrong'))
-    await reload()
-  }
-
-  /** Re-scan the workspace from disk (after any mutation). */
-  const reload = async () => {
-    if (!workspacePath) return tree
-    try {
-      const next = await loadTree(workspacePath)
-      setTree(next)
-      return next
-    } catch {
-      toast(t('sidebar.rereadFailed'))
-      return tree
-    }
-  }
-
   // Reveal a folder by expanding it and every ancestor on the way down.
   const revealFolder = (nextTree: FileNode[], folderId: string) => {
     const chain = ancestorChain(nextTree, folderId)
@@ -159,12 +117,8 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
     })
   }
 
-  /** Drop selection / properties pointing at paths that no longer exist. */
-  const reconcile = (next: FileNode[]) => {
-    setPropsNode((p) => (p && !findNode(next, p.id) ? null : p))
-    setActiveId((id) => (id && !findNode(next, id) ? null : id))
-    setSelectedId((id) => (id && !findNode(next, id) ? null : id))
-  }
+  const fileActions = useFileActions({ onRevealFolder: revealFolder })
+  const { reload, fail, reconcile, inboxId } = fileActions
 
   const onAction = async (action: ContextAction, node: FileNode) => {
     if (action === 'new-note-in') {
@@ -216,124 +170,17 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
               : t('sidebar.pastedPartial', { count: n, failed: failedCount }),
       )
       if (n > 0) await reload()
-    } else if (action === 'duplicate') {
-      const res = await window.api.invoke(IpcChannels.InvokeCopyFile, { sourcePath: node.id })
-      if (!res.success) return fail(res.error, t('sidebar.couldNotDuplicate'))
-      await reload()
-    } else if (action === 'move-picker') {
-      setMoveSource(findNode(tree, node.id))
-    } else if (action.startsWith('move:')) {
-      const destId = action.slice(5)
-      const openTabs = appStore
-        .get(tabsAtom)
-        .filter(
-          (tab) => tab.id === node.id || (node.kind === 'folder' && isInsidePath(tab.id, node.id)),
-        )
-      for (const tab of openTabs) {
-        if (!(await flush(tab.id))) return
-      }
-      const res = await window.api.invoke(IpcChannels.InvokeMoveFile, {
-        sourcePath: node.id,
-        targetPath: destId,
-      })
-      if (!res.success || !res.data) return fail(res.error, t('sidebar.couldNotMove'))
-      for (const tab of openTabs) await closeSession(tab.id, { discard: true })
-      const newPath = res.data.newPath
-      const remap = (id: string) =>
-        id === node.id
-          ? newPath
-          : isInsidePath(id, node.id)
-            ? newPath + id.slice(node.id.length)
-            : id
-      if (openTabs.length) {
-        const openIds = new Set(openTabs.map((tab) => tab.id))
-        appStore.set(
-          tabsAtom,
-          appStore.get(tabsAtom).map((tab) => {
-            if (!openIds.has(tab.id)) return tab
-            const id = remap(tab.id)
-            const basename = id.split(/[\\/]/).pop() ?? id
-            return {
-              ...tab,
-              id,
-              path: id,
-              title: basename.replace(/\.(md|markdown)$/i, ''),
-              dirty: false,
-              saveStatus: 'saved' as const,
-            }
-          }),
-        )
-        const active = appStore.get(activeTabIdAtom)
-        if (active && openIds.has(active)) appStore.set(activeTabIdAtom, remap(active))
-      }
-      setActiveId((id) => (id ? remap(id) : id))
-      setSelectedId((id) => (id ? remap(id) : id))
-      const next = await reload()
-      setPropsNode((value) => (value ? findNode(next, remap(value.id)) : value))
-      revealFolder(next, destId)
-      reconcile(next)
-    } else if (action === 'delete') {
-      if (!window.confirm(t('sidebar.confirmTrash', { name: node.name }))) return
-      // Close the session first (drops pending save timers, awaits any
-      // in-flight write) so a timer can't resurrect the deleted file.
-      await closeSession(node.id, { discard: true })
-      const res = await window.api.invoke(IpcChannels.InvokeDeleteFile, { path: node.id })
-      if (!res.success) {
-        // The file survived but its session was discarded — rebuild it
-        // from disk if the tab is still open, or edits become unsavable.
-        if (appStore.get(tabsAtom).some((t) => t.id === node.id)) void reviveFromDisk(node.id)
-        return fail(res.error, t('sidebar.couldNotTrash'))
-      }
-      closeTab(node.id)
-      const next = await reload()
-      reconcile(next)
-    } else if (action === 'reveal') {
-      window.api.invoke(IpcChannels.InvokeRevealInFinder, { path: node.id })
-    } else if (action === 'copy-path') {
-      copyText(node.id)
-    } else if (action === 'copy-link') {
-      // Captured pages copy their source URL; notes copy their wikilink.
-      if (node.source?.url) copyText(node.source.url)
-      else {
-        const res = await window.api.invoke(IpcChannels.InvokeGetFileMeta, { path: node.id })
-        const title =
-          (res.success && res.data?.meta?.title) || node.name.replace(/\.(md|markdown)$/i, '')
-        copyText(`[[${title}]]`)
-      }
-    } else if (action === 'info') {
-      setPropsNode(findNode(tree, node.id))
     } else if (action === 'rename') {
       setRenameId(node.id)
-    } else if (action === 'open-source') {
-      // Frontmatter is file content — validate the scheme before handing
-      // it to the system browser.
-      const url = node.source?.url && safeExternalUrl(node.source.url)
-      if (url) window.open(url, '_blank')
+    } else {
+      await fileActions.onAction(action, node)
     }
   }
 
-  const commitRename = async (id: string, raw: string | null) => {
+  const commitRename = (id: string, raw: string | null) => {
     setRenameId(null)
-    const name = raw ? safeName(raw) : ''
     const node = findNode(tree, id)
-    if (!name || !node || name === node.name) return
-    const res = await window.api.invoke(IpcChannels.InvokeRenameFile, {
-      oldPath: id,
-      newName: name,
-    })
-    if (!res.success) return fail(res.error, t('sidebar.couldNotRename'))
-    // Success is judged on `success` alone; if data is missing (e.g. a stale
-    // main process during dev), derive the new path from the old one.
-    const cut = Math.max(id.lastIndexOf('/'), id.lastIndexOf('\\'))
-    const newPath = res.data?.newPath ?? id.slice(0, cut + 1) + name
-    const next = await reload()
-    // Renaming a folder shifts every descendant path — remap by prefix so
-    // the active row and the open Properties card follow along.
-    const remap = (cur: string) =>
-      cur === id ? newPath : cur.startsWith(id + '/') ? newPath + cur.slice(id.length) : cur
-    setActiveId((cur) => (cur ? remap(cur) : cur))
-    setSelectedId((cur) => (cur ? remap(cur) : cur))
-    setPropsNode((p) => (p ? findNode(next, remap(p.id)) : p))
+    if (node) void fileActions.commitRename(node, raw)
   }
 
   // Target folder for new note/folder: selected folder → selected file's
@@ -756,21 +603,7 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
         </button>
       </div>
 
-      <PropertiesCard node={propsNode} onClose={() => setPropsNode(null)} />
-      {moveSource && workspacePath && (
-        <MoveDestinationDialog
-          key={moveSource.id}
-          source={moveSource}
-          folders={folders}
-          workspaceId={workspacePath}
-          onClose={() => setMoveSource(null)}
-          onMove={(folderId) => {
-            const source = moveSource
-            setMoveSource(null)
-            void onAction(`move:${folderId}`, source)
-          }}
-        />
-      )}
+      {fileActions.dialogs}
       <div
         className="sb-resize"
         onPointerDown={onResizeStart}

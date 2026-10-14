@@ -234,5 +234,9 @@ const initializeApp = () => {
   })
 }
 
-if (app.requestSingleInstanceLock()) initializeApp()
-else app.quit()
+if (app.requestSingleInstanceLock()) {
+  initializeApp()
+} else {
+  console.info('Melo is already running for this profile. Forwarding to the existing instance.')
+  app.quit()
+}

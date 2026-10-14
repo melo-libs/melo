@@ -21,7 +21,6 @@ export const zhCN: LocaleDict = {
     learnMore: '了解更多',
   },
   ctx: {
-    open: '打开',
     newNoteHere: '在此新建笔记',
     newFolderHere: '在此新建文件夹',
     pasteFiles: '粘贴文件',

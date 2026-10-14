@@ -361,6 +361,14 @@
   text-overflow: ellipsis;
   line-height: 1.4;
 }
+.res-row.renaming .res-name {
+  overflow: visible;
+}
+.res-name .tree-name-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+}
 .res-meta {
   display: flex;
   align-items: center;

@@ -26,7 +26,6 @@ export const en = {
     learnMore: 'Learn More',
   },
   ctx: {
-    open: 'Open',
     newNoteHere: 'New note here',
     newFolderHere: 'New folder here',
     pasteFiles: 'Paste files',
