@@ -2,6 +2,7 @@ appId: com.melolib.lite
 productName: Melo
 directories:
   buildResources: build
+icon: build/icon.png
 afterPack: scripts/afterPack.cjs
 files:
   - out/**/*
