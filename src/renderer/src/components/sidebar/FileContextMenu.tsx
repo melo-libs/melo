@@ -32,7 +32,7 @@ export interface FileContextMenuProps {
   children: ReactNode
 }
 
-/** Right-click menu for a file-tree row (Radix ContextMenu). */
+/** Shared right-click menu for workspace files and Smart Folder results. */
 export const FileContextMenu = ({ node, onAction, children }: FileContextMenuProps) => {
   const { t } = useTranslation()
   const isFolder = node.kind === 'folder'
@@ -71,15 +71,6 @@ export const FileContextMenu = ({ node, onAction, children }: FileContextMenuPro
               <span className="ctx-head-name">{node.name}</span>
             </div>
             <ContextMenu.Separator className="ctx-sep" />
-
-            {/* Folders hide the whole Open group — its separator goes with it,
-              otherwise the header's divider doubles up. */}
-            {!isFolder && (
-              <>
-                <Item icon="arrowRight" label={t('ctx.open')} kbd="↵" onSelect={act('open')} />
-                <ContextMenu.Separator className="ctx-sep" />
-              </>
-            )}
 
             {isFolder && (
               <>
