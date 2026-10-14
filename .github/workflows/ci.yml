@@ -49,3 +49,5 @@ jobs:
         run: pnpm exec electron-builder --mac --${{ matrix.arch }} --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Smoke-test packaged app
+        run: node scripts/e2e-packaged-startup.mjs ${{ matrix.arch }}
