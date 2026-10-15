@@ -9,7 +9,8 @@ import electronPath from 'electron'
 import { _electron as electron } from 'playwright-core'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'melo-watcher-e2e-'))
+// Workspace registration uses realpath; /var is a symlink on macOS.
+const testRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'melo-watcher-e2e-')))
 const workspace = path.join(testRoot, 'workspace')
 const profile = path.join(testRoot, 'profile')
 const LARGE_FOLDER_COUNT = Number(process.env.MELO_E2E_FOLDER_COUNT ?? 2500)
