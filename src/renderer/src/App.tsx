@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -55,13 +56,13 @@ const savedSidebarWidth = (): number => {
 /**
  * App shell — three-column grid (sidebar | editor | outline).
  * Boot restores the last workspace (a plain folder); without one the
- * opener page shows instead. Selecting a smart folder swaps the center
- * column for the SmartView results page (the editor stays mounted so
- * in-progress edits survive); opening a note returns to the editor.
+ * opener page shows instead. Smart Folders add a results list beside the
+ * editor; the outline follows the active document in either browsing mode.
  */
 const App = () => {
   const settings = useAtomValue(settingsAtom)
   const [sidebarShown, setSidebarShown] = useState(true)
+  const [sidebarFits, setSidebarFits] = useState(true)
   const appRef = useRef<HTMLDivElement>(null)
   const sidebarWidthRef = useRef(0)
   if (sidebarWidthRef.current === 0) sidebarWidthRef.current = savedSidebarWidth()
@@ -73,7 +74,7 @@ const App = () => {
     stopSidebarResizeRef.current?.()
 
     const startX = event.clientX
-    const startWidth = sidebarWidthRef.current
+    const startWidth = Math.round(event.currentTarget.parentElement!.getBoundingClientRect().width)
     const previousCursor = document.body.style.cursor
     const previousUserSelect = document.body.style.userSelect
     document.body.style.cursor = 'col-resize'
@@ -146,13 +147,57 @@ const App = () => {
   const workspacePath = useAtomValue(workspacePathAtom)
   const setTree = useSetAtom(workspaceTreeAtom)
   const smart = useAtomValue(activeSmartIdAtom) != null
+  const setActiveSmartId = useSetAtom(activeSmartIdAtom)
   const hasTabs = useAtomValue(tabsAtom).length > 0
+  const showOutline = outlineShown && hasTabs
   const openFile = useSetAtom(openFileAtom)
   const setSearchOpen = useSetAtom(searchOpenAtom)
   const setTreeCreating = useSetAtom(treeCreatingAtom)
   const setTreeCreatingFolder = useSetAtom(treeCreatingFolderAtom)
   const loadSmartWorkspace = useSetAtom(loadSmartWorkspaceAtom)
   const refreshSmartMeta = useSetAtom(refreshSmartMetaAtom)
+
+  useLayoutEffect(() => {
+    if (!smart) {
+      setSidebarFits(true)
+      return
+    }
+    const shell = appRef.current
+    if (!shell) return
+    const style = getComputedStyle(shell)
+    const minimumWidth =
+      SIDEBAR_WIDTH_MIN +
+      parseFloat(style.getPropertyValue('--smart-list-min-w')) +
+      parseFloat(style.getPropertyValue('--editor-min-w')) +
+      (showOutline ? parseFloat(style.getPropertyValue('--outline-w')) : 0)
+    // Observe the shell, not its panes, so hiding the sidebar cannot make
+    // the observer alternately show and hide it as the center grows.
+    const update = () => setSidebarFits(shell.clientWidth >= minimumWidth)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(shell)
+    return () => observer.disconnect()
+  }, [booting, smart, showOutline, workspacePath])
+
+  const revealSidebar = useCallback(() => {
+    // At narrow widths, the pane explicitly requested by the user wins.
+    if (!sidebarFits) {
+      setOutlineShown(false)
+      const shell = appRef.current!
+      const style = getComputedStyle(shell)
+      const minimumWidth =
+        SIDEBAR_WIDTH_MIN +
+        parseFloat(style.getPropertyValue('--smart-list-min-w')) +
+        parseFloat(style.getPropertyValue('--editor-min-w'))
+      // Zoom can make the CSS viewport smaller than the native window minimum.
+      if (shell.clientWidth < minimumWidth) setActiveSmartId(null)
+    }
+    setSidebarShown(true)
+  }, [sidebarFits, setActiveSmartId])
+  const toggleSidebar = useCallback(() => {
+    if (!sidebarFits) revealSidebar()
+    else setSidebarShown((shown) => !shown)
+  }, [sidebarFits, revealSidebar])
 
   // Boot restoration and Editor listener registration are both async. Keep
   // their lifecycle state explicit so menu commands and close requests never
@@ -426,7 +471,7 @@ const App = () => {
           setSearchOpen(true)
         } else if (mod && key === '\\') {
           e.preventDefault()
-          setSidebarShown((v) => !v)
+          toggleSidebar()
         }
       }
     }
@@ -435,32 +480,38 @@ const App = () => {
         'theme',
         resolveTheme(appStore.get(settingsAtom).theme) === 'dark' ? 'light' : 'dark',
       )
-    const onSidebar = () => setSidebarShown((v) => !v)
     // These need the sidebar mounted — reveal it first, then set the atom.
     const onNew = () => {
-      setSidebarShown(true)
+      revealSidebar()
       setTreeCreating(true)
     }
     const onNewFolder = () => {
-      setSidebarShown(true)
+      revealSidebar()
       setTreeCreatingFolder(true)
     }
     const onSettings = () => void window.api.invoke(IpcChannels.InvokeOpenSettingsWindow, undefined)
     window.addEventListener('keydown', onKey)
     window.addEventListener('melo:settings', onSettings)
     window.addEventListener('melo:toggle-theme', onTheme)
-    window.addEventListener('melo:toggle-sidebar', onSidebar)
+    window.addEventListener('melo:toggle-sidebar', toggleSidebar)
     window.addEventListener('melo:new-note', onNew)
     window.addEventListener('melo:new-folder', onNewFolder)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('melo:settings', onSettings)
       window.removeEventListener('melo:toggle-theme', onTheme)
-      window.removeEventListener('melo:toggle-sidebar', onSidebar)
+      window.removeEventListener('melo:toggle-sidebar', toggleSidebar)
       window.removeEventListener('melo:new-note', onNew)
       window.removeEventListener('melo:new-folder', onNewFolder)
     }
-  }, [workspacePath, setSearchOpen, setTreeCreating, setTreeCreatingFolder])
+  }, [
+    workspacePath,
+    setSearchOpen,
+    setTreeCreating,
+    setTreeCreatingFolder,
+    revealSidebar,
+    toggleSidebar,
+  ])
 
   const openSingleFile = async () => {
     try {
@@ -482,7 +533,8 @@ const App = () => {
     )
   }
 
-  const showSidebar = !!workspacePath && sidebarShown
+  const sidebarRequested = !!workspacePath && sidebarShown
+  const showSidebar = sidebarRequested && sidebarFits
 
   return (
     <div
@@ -490,10 +542,10 @@ const App = () => {
       className="app"
       style={{ '--sidebar-w': `${sidebarWidthRef.current}px` } as CSSProperties}
       data-sidebar={showSidebar ? 'shown' : 'hidden'}
-      data-outline={outlineShown && !smart && hasTabs ? 'shown' : 'hidden'}
+      data-outline={showOutline ? 'shown' : 'hidden'}
       data-smart={smart || undefined}
     >
-      {showSidebar ? (
+      {sidebarRequested ? (
         <Sidebar onResizeStart={startSidebarResize} onResetWidth={resetSidebarWidth} />
       ) : (
         <div className="app-region" />
@@ -505,13 +557,13 @@ const App = () => {
             theme={theme}
             sidebarAvailable={!!workspacePath}
             onLifecycleReadyChange={handleEditorReadyChange}
-            onToggleSidebar={() => setSidebarShown((v) => !v)}
+            onToggleSidebar={toggleSidebar}
             onToggleOutline={toggleOutline}
             onToggleTheme={() => setSetting('theme', theme === 'dark' ? 'light' : 'dark')}
           />
         </div>
       </div>
-      {outlineShown && !smart && hasTabs ? <Outline /> : <div className="app-region" />}
+      {showOutline ? <Outline /> : <div className="app-region" />}
       <SmartBuilder />
       <SearchPalette />
       <Toaster />

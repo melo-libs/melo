@@ -4,22 +4,43 @@
    ============================================================ */
 
 .app {
+  --sidebar-layout-w: var(--sidebar-w);
+  --outline-layout-w: var(--outline-w);
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr var(--outline-w);
+  grid-template-columns: var(--sidebar-layout-w) minmax(0, 1fr) var(--outline-layout-w);
   height: 100vh;
   background: transparent;
 }
 
 .app[data-sidebar='hidden'] {
-  grid-template-columns: 0 1fr var(--outline-w);
+  --sidebar-layout-w: 0px;
 }
 
 .app[data-outline='hidden'] {
-  grid-template-columns: var(--sidebar-w) 1fr 0;
+  --outline-layout-w: 0px;
 }
 
-.app[data-sidebar='hidden'][data-outline='hidden'] {
-  grid-template-columns: 0 1fr 0;
+/* Keep an automatically collapsed sidebar mounted: it owns document-action
+   listeners and may hold an open dialog. Visibility also removes tab stops. */
+.app[data-sidebar='hidden'] > .sidebar {
+  visibility: hidden;
+}
+
+/* Preserve the preferred widths while reserving room for both center panes.
+   App collapses the sidebar when even its minimum width cannot fit. */
+.app[data-smart][data-sidebar='shown'] {
+  --sidebar-layout-w: min(
+    var(--sidebar-w),
+    calc(100% - var(--outline-layout-w) - var(--smart-list-min-w) - var(--editor-min-w))
+  );
+}
+.app[data-smart] .smart-view {
+  min-width: var(--smart-list-min-w);
+  max-width: calc(100% - var(--editor-min-w));
+}
+.app[data-smart] .center-pane {
+  /* Zoom can reduce the CSS viewport below the native window minimum. */
+  min-width: min(var(--editor-min-w), max(0px, calc(100% - var(--smart-list-min-w))));
 }
 
 /* Region placeholders — replaced by real components per phase.

@@ -217,7 +217,7 @@ export const SmartView = () => {
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault()
     const startX = e.clientX
-    const startW = widthRef.current
+    const startW = Math.round(e.currentTarget.parentElement!.getBoundingClientRect().width)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const move = (ev: PointerEvent) => {

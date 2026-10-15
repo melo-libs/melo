@@ -9,7 +9,8 @@ import electronPath from 'electron'
 import { _electron as electron } from 'playwright-core'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'melo-watcher-e2e-'))
+// Workspace registration uses realpath; /var is a symlink on macOS.
+const testRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'melo-watcher-e2e-')))
 const workspace = path.join(testRoot, 'workspace')
 const profile = path.join(testRoot, 'profile')
 const LARGE_FOLDER_COUNT = Number(process.env.MELO_E2E_FOLDER_COUNT ?? 2500)
@@ -17,6 +18,7 @@ const screenshotPath = process.env.MELO_E2E_SCREENSHOT
 const browseScreenshotPath = process.env.MELO_E2E_BROWSE_SCREENSHOT
 const clipScreenshotPath = process.env.MELO_E2E_CLIP_SCREENSHOT
 const smartScreenshotPath = process.env.MELO_E2E_SMART_SCREENSHOT
+const outlineScreenshotPath = process.env.MELO_E2E_OUTLINE_SCREENSHOT
 const smartBuilderScreenshotPath = process.env.MELO_E2E_SMART_BUILDER_SCREENSHOT
 const logs = []
 let app
@@ -121,6 +123,133 @@ async function run() {
   const smartResults = page.locator('.sf-results')
   await smartResults.waitFor({ state: 'visible', timeout: 30000 })
   await page.locator('.res-row').first().waitFor({ state: 'visible', timeout: 30000 })
+
+  await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
+  const smartNote = page.locator(`.res-row[data-path="${path.join(workspace, 'captured.md')}"]`)
+  await smartNote.click()
+  const outlineToggle = page.getByRole('button', { name: 'Toggle outline', exact: true })
+  const outline = page.locator('.outline')
+  await outlineToggle.click()
+  await outline.waitFor({ state: 'visible' })
+  await waitUntil('the outline should follow the open Smart Folder result', async () =>
+    (await outline.locator('.ol-label').allTextContents()).includes('Captured'),
+  )
+  assert(await smartResults.isVisible(), 'showing the outline should keep the results visible')
+  assert.equal(await page.locator('.app').getAttribute('data-outline'), 'shown')
+
+  await outlineToggle.click()
+  await outline.waitFor({ state: 'detached' })
+  assert.equal(await page.locator('.app').getAttribute('data-outline'), 'hidden')
+  await outlineToggle.click()
+  await outline.waitFor({ state: 'visible' })
+
+  await treeRow(page, 'delete-me').first().click()
+  await page.locator('.smart-view').waitFor({ state: 'detached' })
+  await waitUntil(
+    'workspace browsing should preserve the outline and update its headings',
+    async () => (await outline.locator('.ol-label').allTextContents()).includes('Delete Me'),
+  )
+  await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
+  await smartResults.waitFor({ state: 'visible' })
+  await waitUntil('returning to Smart Folders should preserve the visible outline', async () =>
+    (await outline.locator('.ol-label').allTextContents()).includes('Captured'),
+  )
+
+  const originalWindowSize = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getSize(),
+  )
+  const originalListWidth = (await page.locator('.smart-view').boundingBox()).width
+  const preferredWidths = await page.evaluate(() => ({
+    sidebar: localStorage.getItem('melo.sidebarWidth'),
+    smartList: localStorage.getItem('melo.smartListWidth'),
+  }))
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 860))
+  await waitUntil(
+    'a narrow Smart Folder should collapse the sidebar',
+    async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'hidden',
+  )
+  assert(
+    (await page.locator('.center-pane').boundingBox()).width >= 320,
+    'showing the outline at 800px should preserve usable editor space',
+  )
+  assert(
+    (await page.locator('.smart-view').boundingBox()).width >= 240,
+    'the Smart Folder list should retain its minimum width',
+  )
+  assert(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    'the narrow layout should fit without horizontal overflow',
+  )
+
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.25),
+  )
+  await waitUntil('the zoomed layout should fit beside the outline', async () => {
+    const editor = await page.locator('.center-pane').boundingBox()
+    const outlineBox = await outline.boundingBox()
+    return (
+      editor.width > 0 &&
+      editor.x + editor.width <= outlineBox.x &&
+      (await page.evaluate(() => window.innerWidth < 800))
+    )
+  })
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1),
+  )
+  await waitUntil('resetting zoom should restore the CSS viewport', () =>
+    page.evaluate(() => window.innerWidth >= 800),
+  )
+
+  await page.getByRole('button', { name: 'Toggle files', exact: true }).click()
+  await outline.waitFor({ state: 'detached' })
+  await waitUntil(
+    'explicitly opening the sidebar should make room by closing the outline',
+    async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'shown',
+  )
+
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.25),
+  )
+  await waitUntil(
+    'zooming in should adapt to the smaller CSS viewport',
+    async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'hidden',
+  )
+  await page.getByRole('button', { name: 'Toggle files', exact: true }).click()
+  await page.locator('.smart-view').waitFor({ state: 'detached' })
+  await page.locator('.sidebar').waitFor({ state: 'visible' })
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1),
+  )
+  await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
+  await smartResults.waitFor({ state: 'visible' })
+  await outlineToggle.click()
+  await outline.waitFor({ state: 'visible' })
+  await app.evaluate(
+    ({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setSize(width, height),
+    originalWindowSize,
+  )
+  await waitUntil(
+    'widening the window should restore the sidebar',
+    async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'shown',
+  )
+  assert.equal((await page.locator('.smart-view').boundingBox()).width, originalListWidth)
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      sidebar: localStorage.getItem('melo.sidebarWidth'),
+      smartList: localStorage.getItem('melo.smartListWidth'),
+    })),
+    preferredWidths,
+    'responsive layout should not overwrite preferred pane widths',
+  )
+  if (outlineScreenshotPath) {
+    await page.screenshot({ path: outlineScreenshotPath, fullPage: true })
+  }
+  await outlineToggle.click()
+  await outline.waitFor({ state: 'detached' })
+
+  await page.locator('.sf-row', { hasText: 'Recent' }).click()
+  await smartResults.waitFor({ state: 'visible' })
+  await page.locator('.res-row').first().waitFor({ state: 'visible' })
 
   const sortButton = page.locator('.sf-sort')
   await sortButton.click()
