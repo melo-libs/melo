@@ -36,7 +36,10 @@ try {
 
   const page = await app.firstWindow({ timeout: 30000 })
   page.on('pageerror', (error) => logs.push(`[renderer:pageerror] ${error.stack ?? error}\n`))
-  await page.getByText('Open a folder. Make it your space.').waitFor({ timeout: 30000 })
+  await page.locator('.ws-opener[data-step="welcome"]').waitFor({ timeout: 30000 })
+  await page.locator('.ob-welcome').getByRole('heading', { level: 1 }).waitFor()
+  assert(await page.locator('.ob-continue').isVisible(), 'the welcome action must be visible')
+  assert(await page.locator('.ob-continue').isEnabled(), 'the welcome action must be enabled')
   assert.equal(await app.evaluate(({ app: electronApp }) => electronApp.getVersion()), '2.0.0')
   assert.equal(app.windows().length, 1)
   assert(!/renderer:pageerror/.test(logs.join('')))
