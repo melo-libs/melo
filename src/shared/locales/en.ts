@@ -460,14 +460,100 @@ export const en = {
     close: 'Close',
     minutes: '{{count}} min',
   },
+  onboarding: {
+    welcomeTitle: 'Hello, I’m Melo',
+    welcomeDescription: 'Turn reading and reflection into knowledge of your own.',
+    replayScene: 'Replay this step',
+    continue: 'Continue',
+    startUsing: 'Get started',
+    replay: 'Replay the introduction',
+    sampleOnly: 'A quick tour · Your files stay untouched',
+    navigation: 'Explore Melo',
+    goToFeature: '{{feature}} demo',
+    opening: 'Opening…',
+    couldNotCreate: 'Could not create the folder. Try another location.',
+    startTitle: 'Choose a folder for your notes',
+    startDescription: 'Your notes stay on your device as Markdown files. Open them in any editor.',
+    chooseFolder: 'Choose a folder',
+    newFolder: 'New notes folder',
+    openFile: 'Open a single file',
+    features: {
+      collect: {
+        label: 'Collect',
+        title: '{{shortcut}}. Keep the whole article.',
+        description:
+          'Paste a link to save the text and images as a local Markdown note—not just another bookmark.',
+        result: 'Text and images saved',
+      },
+      organize: {
+        label: 'Organize',
+        title: 'Familiar folders. More ways to organize.',
+        description:
+          'Keep your folders, group notes with Smart Folders, and search titles and content with {{shortcut}}.',
+        upcoming: 'AI-powered organization is on the way.',
+      },
+      distill: {
+        label: 'Distill',
+        title: 'Write it down. Shape it as you go.',
+        description:
+          'Text, images, tables, equations, and code—all in one note. Type / to add what you need.',
+      },
+      express: {
+        label: 'Express',
+        title: 'Good ideas, ready to share.',
+        description:
+          'Turn a passage into a card worth sharing. Copy the image and paste it into a chat or social post.',
+        result: 'Image copied. Paste it to share.',
+      },
+    },
+    demo: {
+      sourceExamples: 'e.g.',
+      // Official article; the short excerpt is paraphrased, not a verbatim quote.
+      // https://www.anthropic.com/engineering/building-effective-agents
+      articleTitle: 'Building effective agents',
+      articleByline: 'Anthropic · Dec 19, 2024',
+      articleSection: 'The routing workflow',
+      articleExcerpt:
+        'Classify the request, then route it to a specialized model or tool. Refunds and technical support can follow different workflows.',
+      articleImageAlt: 'An LLM router directs an input to one of three specialized LLM calls.',
+      organize: {
+        workspace: 'My notes',
+        folders: 'Local folders',
+        technology: 'Technology',
+        life: 'Life',
+        today: 'Today’s notes',
+        topic: 'AI agents',
+        todayRule: 'Created · Today',
+        topicRule: 'Tag · AI',
+        searchHint: 'Search titles and content',
+        searchQuery: 'tool',
+        campingNote: 'Camping gear and tools',
+        campingExcerpt:
+          'Pack the tent, sleeping bags, stove and headlamps. Keep rain gear and a first-aid kit easy to reach.',
+      },
+      noteTitle: 'Choosing my work',
+      saved: 'Saved',
+      editor: {
+        title: 'The normal distribution',
+        lead: 'Values cluster around the mean. ',
+        highlight: 'Farther from the center, the probability density falls',
+        end: '.',
+        parameter: 'Parameter',
+        value: 'Value',
+        meaning: 'Meaning',
+        mean: 'Mean',
+        deviation: 'Standard deviation',
+        imageAlt: 'A symmetric bell curve centered on μ, with ticks at μ minus 2σ and μ plus 2σ.',
+        figureCaption: 'The standard normal distribution',
+        task: 'Compare curves with different standard deviations',
+      },
+      shortThought: 'Good work begins where curiosity meets experience.',
+      shareThought:
+        'The best path isn’t always the most popular. Choose work that draws on your strengths, sparks your curiosity, and keeps you engaged.',
+    },
+  },
   opener: {
-    headline: 'Open a folder. Make it your space.',
-    intro: 'No moving, no reorganizing. Choose a folder you already know, and Melo starts there.',
-    workspaceTab: 'Your workspace',
-    workspaceTitle: 'Choose your folder',
     openWorkspace: 'Open folder',
-    workspaceDesc:
-      'It becomes your Melo workspace for writing, organizing, searching and collecting.',
     openFile: 'Open just one file',
     hint: 'Melo won’t move or convert your existing files.',
     couldNotOpen: 'Could not open that folder',
