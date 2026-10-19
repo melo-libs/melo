@@ -1,0 +1,275 @@
+.ob-art.ob-art-editor {
+  height: clamp(400px, 44vh, 420px);
+}
+.ob-art-scene.ob-editor-art {
+  bottom: 28px;
+}
+.ob-editor-document {
+  height: 100%;
+  text-align: left;
+  overflow: hidden;
+}
+.ob-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--hairline-3);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.ob-editor-toolbar > svg {
+  flex-shrink: 0;
+}
+.ob-editor-save {
+  margin-left: auto;
+  margin-right: 12px;
+}
+.ob-editor-save::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--tour-success);
+}
+.ob-editor-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 36px;
+  padding: 22px 32px;
+}
+.ob-editor-main,
+.ob-editor-supporting {
+  min-width: 0;
+}
+.ob-editor-main h2 {
+  font-size: 26px;
+  line-height: 34px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.ws-opener .ob-editor-lead {
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 22px;
+}
+.ob-editor-lead mark {
+  // The text is complete at entry; only its emphasis moves, not the editing process.
+  background: linear-gradient(var(--hl-mark), var(--hl-mark)) left / 100% 100% no-repeat;
+  color: var(--ink);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  animation: ob-highlight 720ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+.ob-editor-equation {
+  margin: 18px 0;
+  font-size: 20px;
+}
+.ob-editor-equation .katex-display {
+  margin: 0;
+}
+.ob-editor-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 20px;
+}
+.ob-editor-table th,
+.ob-editor-table td {
+  border: 1px solid var(--hairline);
+  padding: 3px 10px;
+  text-align: left;
+}
+.ob-editor-table th {
+  background: var(--paper-2);
+  font-weight: 550;
+}
+.ob-editor-table td:first-child {
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+.ob-editor-figure {
+  margin: 0;
+}
+.ob-editor-figure > svg {
+  display: block;
+  width: 100%;
+  height: 142px;
+}
+.ob-editor-curve-area {
+  fill: var(--accent-soft);
+}
+.ob-editor-axis {
+  fill: none;
+  stroke: var(--hairline-2);
+  stroke-width: 1;
+}
+.ob-editor-curve {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ob-editor-axis-labels {
+  fill: var(--ink-3);
+  font-family: var(--font-serif);
+  font-size: 11px;
+}
+.ob-editor-figure figcaption {
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+.ob-editor-code {
+  position: relative;
+  margin-top: 12px;
+  padding: 24px 14px 12px;
+  border-radius: var(--r-md);
+  background: var(--code-bg);
+}
+.ob-editor-code-language {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  color: var(--ink-3);
+  font-size: 9px;
+  line-height: 14px;
+}
+.ob-editor-code pre {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+}
+.ob-editor-code code {
+  font: inherit;
+}
+.ob-editor-keyword {
+  color: var(--accent);
+}
+.ob-editor-number {
+  color: var(--tour-success);
+}
+.ws-opener .ob-editor-checklist {
+  margin-top: 10px;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 18px;
+}
+.ob-editor-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ob-editor-checkbox {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 1px solid var(--hairline-2);
+  border-radius: 2px;
+}
+
+@media (max-height: 820px), (max-width: 900px) {
+  .ob-art.ob-art-editor {
+    height: 320px;
+  }
+  .ob-art-scene.ob-editor-art {
+    bottom: 12px;
+  }
+  .ob-editor-toolbar {
+    height: 28px;
+    padding-inline: 14px;
+    font-size: 10px;
+  }
+  .ob-editor-content {
+    gap: 24px;
+    padding: 16px 22px;
+  }
+  .ob-editor-main h2 {
+    font-size: 20px;
+    line-height: 26px;
+  }
+  .ws-opener .ob-editor-lead {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 18px;
+  }
+  .ob-editor-equation {
+    margin: 12px 0;
+    font-size: 16px;
+  }
+  .ob-editor-table {
+    font-size: 10px;
+    line-height: 16px;
+  }
+  .ob-editor-table th,
+  .ob-editor-table td {
+    padding: 3px 8px;
+  }
+  .ob-editor-figure > svg {
+    height: 96px;
+  }
+  .ob-editor-code {
+    margin-top: 8px;
+    padding: 22px 10px 10px;
+  }
+  .ob-editor-code pre {
+    font-size: 10px;
+    line-height: 16px;
+  }
+  .ws-opener .ob-editor-checklist {
+    margin-top: 8px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 680px) {
+  .ob-art.ob-art-editor {
+    height: auto;
+    padding-bottom: 24px;
+  }
+  .ob-art-scene.ob-editor-art {
+    position: relative;
+    inset: auto;
+  }
+  .ob-editor-content {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 20px;
+  }
+  .ob-editor-main h2 {
+    font-size: 22px;
+  }
+  .ob-editor-supporting {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: center;
+    gap: 12px;
+  }
+  .ob-editor-code {
+    margin-top: 0;
+  }
+  .ob-editor-checklist {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .ob-editor-supporting {
+    display: block;
+  }
+  .ob-editor-code {
+    margin-top: 12px;
+  }
+}

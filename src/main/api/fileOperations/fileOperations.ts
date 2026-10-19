@@ -45,7 +45,7 @@ export async function openDirectoryDialog(
 
   try {
     const { canceled, filePaths } = await dialog.showOpenDialog(curWindow, {
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
     })
 
     return canceled || filePaths.length === 0 ? null : filePaths[0]

@@ -73,6 +73,23 @@
   --sel-row: #ebf0fb;
   --sel-row-hover: #e0e8fa;
 
+  /* CODE onboarding — four quiet colors, independent of the AI accent. */
+  --code-collect: #ffdf38;
+  --code-collect-ink: #5c4700;
+  --code-organize: #c5d8ff;
+  --code-organize-ink: #254b88;
+  --code-distill: #ccebd8;
+  --code-distill-ink: #216342;
+  --code-express: #ffd3dc;
+  --code-express-ink: #852b42;
+  --tour-canvas: #f7f8fa;
+  --tour-image: #d7e9f4;
+  --tour-success: #20a464;
+  --tour-card: #211e19;
+  --tour-card-ink: #f5eee2;
+  --tour-card-accent: #c59a65;
+  --tour-chat: #a0e66b;
+
   /* Layout */
   --sidebar-w: 260px;
   --outline-w: 240px;
@@ -132,6 +149,22 @@
   --quote-bar: oklch(0.4 0.008 250);
   --sel-row: oklch(0.33 0.062 262);
   --sel-row-hover: oklch(0.365 0.07 262);
+
+  --code-collect: #d7b932;
+  --code-collect-ink: #302700;
+  --code-organize: #849eca;
+  --code-organize-ink: #142a4c;
+  --code-distill: #85b89c;
+  --code-distill-ink: #153b29;
+  --code-express: #cb91a0;
+  --code-express-ink: #481728;
+  --tour-canvas: #20242a;
+  --tour-image: #354c5d;
+  --tour-success: #65c894;
+  --tour-card: #191713;
+  --tour-card-ink: #f5eee2;
+  --tour-card-accent: #d2ac7c;
+  --tour-chat: #67a43e;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);

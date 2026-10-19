@@ -523,11 +523,31 @@ const App = () => {
     }
   }
 
+  const createWorkspace = async () => {
+    if (openWorkspaceBusyRef.current) return
+    openWorkspaceBusyRef.current = true
+    try {
+      const result = await window.api.invoke(IpcChannels.InvokeCreateWorkspace, undefined)
+      if (result.success && result.data) await adoptWorkspace(result.data.path)
+      else if (!result.success && result.error !== 'Operation cancelled') {
+        toast(i18n.t('onboarding.couldNotCreate'))
+      }
+    } catch {
+      toast(i18n.t('onboarding.couldNotCreate'))
+    } finally {
+      openWorkspaceBusyRef.current = false
+    }
+  }
+
   if (booting) return null
   if (!workspacePath && !hasTabs) {
     return (
       <>
-        <WorkspaceOpener onOpenWorkspace={openWorkspace} onOpenFile={openSingleFile} />
+        <WorkspaceOpener
+          onOpenWorkspace={openWorkspace}
+          onCreateWorkspace={createWorkspace}
+          onOpenFile={openSingleFile}
+        />
         <Toaster />
       </>
     )
