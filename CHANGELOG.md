@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.1](https://github.com/melo-libs/melo/compare/v2.0.0...v2.0.1) (2026-10-21)
+
+> These macOS builds are unsigned and not notarized. macOS may require approval
+> in System Settings → Privacy & Security before opening Melo. Updates must be
+> installed manually: quit Melo, open the DMG for your Mac, drag Melo into
+> Applications, and choose Replace. Your workspace files are not part of the
+> app bundle.
+
+### Improvements
+
+- Added a redesigned first-run introduction with English and Simplified Chinese language selection and demonstrations of clipping, organization, editing, and sharing.
+- Expanded the starter note into an English and Chinese user guide, accessible through Help → User Guide. Existing user-owned guides are preserved.
+- Added file-management context menus to Smart Folder results, including rename, move, and Move to Trash.
+
+### Fixes
+
+- Fixed outline controls when opening and editing notes from Smart Folders.
+- Removed redundant Open actions from workspace and Smart Folder context menus.
+- Isolated development app data from installed Melo builds.
+- Updated packaged-startup checks to verify the current app version.
+
 ## [2.0.0](https://github.com/melo-libs/melo/compare/v1.0.0...v2.0.0) (2026-10-14)
 
 > The macOS downloads for this release are unsigned. macOS may require approval in

@@ -1,6 +1,6 @@
 {
   "name": "melo-lite",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "packageManager": "pnpm@11.28.4",
   "description": "A personal knowledge workspace built around CODE.",
   "main": "./out/main/index.js",

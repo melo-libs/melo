@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright-core'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const expectedVersion = JSON.parse(
+  fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'),
+).version
 const arch = process.argv[2]
 if (arch !== 'arm64' && arch !== 'x64') {
   throw new Error('Usage: node scripts/e2e-packaged-startup.mjs <arm64|x64> [app path]')
@@ -40,7 +43,10 @@ try {
   await page.locator('.ob-welcome').getByRole('heading', { level: 1 }).waitFor()
   assert(await page.locator('.ob-continue').isVisible(), 'the welcome action must be visible')
   assert(await page.locator('.ob-continue').isEnabled(), 'the welcome action must be enabled')
-  assert.equal(await app.evaluate(({ app: electronApp }) => electronApp.getVersion()), '2.0.0')
+  assert.equal(
+    await app.evaluate(({ app: electronApp }) => electronApp.getVersion()),
+    expectedVersion,
+  )
   assert.equal(app.windows().length, 1)
   assert(!/renderer:pageerror/.test(logs.join('')))
   console.log(JSON.stringify({ ok: true, arch, appPath }))
