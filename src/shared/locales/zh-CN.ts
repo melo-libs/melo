@@ -14,7 +14,7 @@ export const zhCN: LocaleDict = {
     window: '窗口',
     help: '帮助',
     openFolder: '打开文件夹…',
-    codeGuide: 'Melo 的 CODE 理念',
+    codeGuide: '使用指南',
     settings: '设置…',
     checkUpdates: '检查更新',
     reportIssue: '反馈问题',
@@ -551,8 +551,8 @@ export const zhCN: LocaleDict = {
     watcherInterrupted: '文件监测暂时中断，Melo 正在重新连接…',
   },
   codeGuide: {
-    needsWorkspace: '请先打开文件夹，再将 CODE 指南添加到 Inbox',
-    couldNotOpen: '无法打开 CODE 指南',
+    needsWorkspace: '请先打开文件夹，再将使用指南添加到 Inbox',
+    couldNotOpen: '无法打开使用指南',
   },
   search: {
     commands: {
