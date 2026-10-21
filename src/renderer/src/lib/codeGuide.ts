@@ -49,7 +49,7 @@ const activateGuide = async (filePath: string): Promise<void> => {
   await markOpened()
 }
 
-/** Open Melo's editable CODE guide in the current workspace.
+/** Open Melo's editable user guide in the current workspace.
  *
  * The automatic path is global and versioned: exactly one workspace gets
  * the first-use copy. Help calls with `firstUseOnly: false`, so the current

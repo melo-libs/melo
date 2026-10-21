@@ -19,7 +19,7 @@ export const en = {
     window: 'Window',
     help: 'Help',
     openFolder: 'Open Folder…',
-    codeGuide: 'Melo’s CODE Idea',
+    codeGuide: 'User Guide',
     settings: 'Settings…',
     checkUpdates: 'Check for Updates',
     reportIssue: 'Report Issue',
@@ -563,8 +563,8 @@ export const en = {
     watcherInterrupted: 'File monitoring was interrupted. Melo is reconnecting…',
   },
   codeGuide: {
-    needsWorkspace: 'Open a folder first to add the CODE guide to its Inbox',
-    couldNotOpen: 'Could not open the CODE guide',
+    needsWorkspace: 'Open a folder first to add the user guide to its Inbox',
+    couldNotOpen: 'Could not open the user guide',
   },
   search: {
     commands: {

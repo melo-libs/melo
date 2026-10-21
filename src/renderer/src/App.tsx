@@ -321,7 +321,7 @@ const App = () => {
     window.api.send(IpcChannels.RendererReady, undefined)
   }, [booting])
 
-  // Help → Melo's CODE Idea opens (or creates) the guide in the current
+  // Help → User Guide opens (or creates) the guide in the current
   // workspace. With no workspace, explain the prerequisite instead of
   // silently doing nothing or writing beside a standalone file.
   useEffect(() => {
