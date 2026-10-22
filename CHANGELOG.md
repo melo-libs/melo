@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.2](https://github.com/melo-libs/melo/compare/v2.0.1...v2.0.2) (2026-10-22)
+
+- Redesigned the update window with release notes, download progress, retry, and Ignore This Version.
+- Coalesced update checks and prompts; automatic checks run 60 seconds after launch and every 24 hours.
+- Added verified in-app downloads with cached-installer recovery.
+- Added a fixed-certificate macOS release build and verified Draft Release workflow. Users on 2.0.1 or earlier must install this version manually once before using future native updates.
+
 ## [2.0.1](https://github.com/melo-libs/melo/compare/v2.0.0...v2.0.1) (2026-10-21)
 
 > These macOS builds are unsigned and not notarized. macOS may require approval

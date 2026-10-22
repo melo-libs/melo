@@ -65,7 +65,7 @@ export default defineConfig({
       }),
       visualizer({
         filename: 'stats.html',
-        open: true,
+        open: process.env.MELO_BUILD_ANALYZE === '1',
         gzipSize: true,
         brotliSize: true,
         template: 'treemap',
