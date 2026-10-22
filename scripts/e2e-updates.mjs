@@ -221,7 +221,8 @@ try {
     env,
     timeout: 30000,
   })
-  await app.firstWindow()
+  const main = await app.firstWindow()
+  await main.locator('.ws-opener').waitFor()
   // Exercise the real window/menu/preload; fixtures replace only update data.
   // No network download, app quit, or installation is allowed in this suite.
   await app.evaluate(({ ipcMain }, fixture) => {
@@ -229,20 +230,21 @@ try {
     ipcMain.handle('invoke-get-update-state', () => ({ success: true, data: fixture }))
   }, state)
   const open = () =>
-    app.evaluate(({ Menu, BrowserWindow }) => {
+    app.evaluate(({ Menu }) => {
       const help = Menu.getApplicationMenu().items.find((item) => item.role === 'help')
       const check = help.submenu.items.find((item) => item.label === '检查更新')
       check.click()
-      // The fixture contains a release, while the dev manager is intentionally disabled.
-      const window = BrowserWindow.getAllWindows().find((item) =>
-        item.webContents.getURL().endsWith('#updates'),
-      )
-      window.setMinimumSize(520, 460)
-      window.setSize(560, 520)
     })
-  const promise = app.waitForEvent('window')
-  await open()
-  const page = await promise
+  const [page] = await Promise.all([app.waitForEvent('window'), open()])
+  await page.waitForURL('**#updates')
+  // The fixture contains a release, while the dev manager is intentionally disabled.
+  await app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find((item) =>
+      item.webContents.getURL().endsWith('#updates'),
+    )
+    window.setMinimumSize(520, 460)
+    window.setSize(560, 520)
+  })
   page.on('pageerror', (error) => errors.push(error.message))
   await page.locator('.updates-notes-text').waitFor()
   assert.match(await page.locator('.updates-status').innerText(), /42%/)
