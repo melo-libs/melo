@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { IpcChannels, type LanguagePreference } from '@shared/types/ipc'
 import type { AppSettings } from '@shared/types/settings'
 import { settingsAtom, setSetting } from '../../store/settings'
-import { updateStatusAtom } from '../../store/updateStatus'
+import { useUpdateState } from '../../hooks/useUpdateState'
 import { MeloLogo } from '../MeloLogo'
 import { Icon } from '../Icon'
 import { SettingsIcon } from './SettingsIcon'
+import { toast } from '../Toaster'
 import { Row, Section, Segmented, Select, Toggle } from './controls'
 import { loadTree } from '../../lib/workspace'
 
@@ -410,108 +411,43 @@ export function AboutPane() {
   const { t } = useTranslation()
   const [s] = useSet()
   const [version, setVersion] = useState('')
-  const [update, setUpdate] = useAtom(updateStatusAtom)
+  const update = useUpdateState()
   useEffect(() => {
-    window.api.invoke(IpcChannels.InvokeGetAppVersion, undefined).then((res) => {
+    void window.api.invoke(IpcChannels.InvokeGetAppVersion, undefined).then((res) => {
       if (res.success && res.data) setVersion(res.data.version)
     })
   }, [])
+  const hasUpdate = update.release !== null || update.ready !== null
   const checkNow = async () => {
-    setUpdate({ status: 'checking' })
     try {
-      const res = await window.api.invoke(IpcChannels.InvokeCheckForUpdates, undefined)
-      setUpdate(res.success && res.data ? res.data : { status: 'error' })
+      const result = await window.api.invoke(
+        hasUpdate ? IpcChannels.InvokeShowUpdateWindow : IpcChannels.InvokeCheckForUpdates,
+        undefined,
+      )
+      if (!result.success) toast(t('updates.checkFailed'))
     } catch {
-      setUpdate({ status: 'error' })
+      toast(t('updates.checkFailed'))
     }
   }
-  const downloadUpdate = async () => {
-    if (
-      (update.status !== 'available' || update.install !== 'in-app') &&
-      update.status !== 'download-error'
-    )
-      return
-    const availableVersion = update.version
-    setUpdate({ status: 'downloading' })
-    try {
-      const res = await window.api.invoke(IpcChannels.InvokeDownloadUpdate, undefined)
-      setUpdate(
-        res.success
-          ? { status: 'downloaded' }
-          : { status: 'download-error', version: availableVersion },
-      )
-    } catch {
-      setUpdate({ status: 'download-error', version: availableVersion })
-    }
-  }
-  const openRelease = async () => {
-    if (
-      (update.status !== 'available' || update.install !== 'manual') &&
-      update.status !== 'release-error'
-    )
-      return
-    const availableVersion = update.version
-    try {
-      const res = await window.api.invoke(IpcChannels.InvokeOpenExternal, {
-        url: 'https://github.com/melo-libs/melo/releases/latest',
-      })
-      setUpdate(
-        res.success
-          ? { status: 'available', version: availableVersion, install: 'manual' }
-          : { status: 'release-error', version: availableVersion },
-      )
-    } catch {
-      setUpdate({ status: 'release-error', version: availableVersion })
-    }
-  }
-  const canDownload =
-    (update.status === 'available' && update.install === 'in-app') ||
-    update.status === 'download-error'
-  const canOpenRelease =
-    (update.status === 'available' && update.install === 'manual') ||
-    update.status === 'release-error'
-  const busy = update.status === 'checking' || update.status === 'downloading'
-  let updateMessage: string | null = null
-  switch (update.status) {
-    case 'checking':
-      updateMessage = t('prefs.checkingNow')
-      break
-    case 'up-to-date':
-      updateMessage = t('prefs.latestVersion')
-      break
-    case 'available':
-      updateMessage = t(
-        update.install === 'manual' ? 'prefs.manualUpdateAvailable' : 'prefs.updateAvailable',
-        { version: update.version },
-      )
-      break
-    case 'disabled':
-      updateMessage = t('prefs.checkUnavailable')
-      break
-    case 'busy':
-      updateMessage = t('prefs.checkBusy')
-      break
-    case 'error':
-      updateMessage = t('prefs.checkFailed')
-      break
-    case 'downloading':
-      updateMessage = t('prefs.downloadingUpdate')
-      break
-    case 'downloaded':
-      updateMessage = t('prefs.updateDownloaded')
-      break
-    case 'download-error':
-      updateMessage = t('prefs.downloadFailed')
-      break
-    case 'release-error':
-      updateMessage = t('prefs.releaseOpenFailed')
-  }
-  let actionLabel = t('prefs.checkNow')
-  if (update.status === 'checking') actionLabel = t('prefs.checkingNow')
-  else if (update.status === 'downloading') actionLabel = t('prefs.downloadingUpdate')
-  else if (update.status === 'downloaded') actionLabel = t('prefs.updateDownloaded')
-  else if (canOpenRelease) actionLabel = t('prefs.openReleasePage')
-  else if (canDownload) actionLabel = t('prefs.downloadUpdate')
+  const updateMessage =
+    update.download.status === 'downloading'
+      ? t('prefs.downloadProgress', {
+          version: update.download.version,
+          percent: update.download.percent,
+        })
+      : update.ready
+        ? t('prefs.updateDownloaded', { version: update.ready.release.version })
+        : update.release
+          ? t('prefs.updateAvailable', { version: update.release.version })
+          : update.check === 'checking'
+            ? t('prefs.checkingNow')
+            : update.check === 'error'
+              ? t('prefs.checkFailed')
+              : update.check === 'up-to-date'
+                ? t('prefs.latestVersion')
+                : update.check === 'disabled'
+                  ? t('prefs.checkUnavailable')
+                  : null
   const links = [
     {
       icon: 'ext',
@@ -548,9 +484,7 @@ export function AboutPane() {
                 <div
                   className="us-detail"
                   role={
-                    update.status === 'error' ||
-                    update.status === 'download-error' ||
-                    update.status === 'release-error'
+                    update.check === 'error' || update.download.status === 'error'
                       ? 'alert'
                       : 'status'
                   }
@@ -559,15 +493,13 @@ export function AboutPane() {
                 </div>
               )}
             </div>
-            <button
-              className="s-btn"
-              disabled={busy || update.status === 'downloaded'}
-              onClick={() =>
-                void (canOpenRelease ? openRelease() : canDownload ? downloadUpdate() : checkNow())
-              }
-            >
-              <SettingsIcon name="refresh" size={14} />
-              {actionLabel}
+            <button className="s-btn" onClick={() => void checkNow()}>
+              {hasUpdate ? (
+                <Icon name="folder" size={14} />
+              ) : (
+                <SettingsIcon name="refresh" size={14} />
+              )}
+              {t(hasUpdate ? 'updates.viewUpdate' : 'prefs.checkNow')}
             </button>
           </div>
         </div>

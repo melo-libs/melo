@@ -1,384 +1,414 @@
-import { app, BrowserWindow, dialog, shell } from 'electron'
-import type { AppUpdater, ProgressInfo } from 'electron-updater'
-import type { UpdateCheckOutcome } from '../shared/types/ipc'
+import path from 'node:path'
+import { app, autoUpdater as nativeUpdater, BrowserWindow, Menu, net, shell } from 'electron'
+import type { AppUpdater, UpdateCheckResult, UpdateInfo } from 'electron-updater'
+import { INITIAL_UPDATE_STATE, IpcChannels, type UpdateState } from '../shared/types/ipc'
+import { en } from '../shared/locales/en'
+import { zhCN } from '../shared/locales/zh-CN'
+import { resolveLanguage } from './language'
+import {
+  downloadMacUpdate,
+  loadPendingMacUpdate,
+  savePendingMacUpdate,
+  selectMacUpdate,
+  verifyMacUpdate,
+  type DownloadedMacUpdate,
+} from './macUpdate'
 import { preferences } from './preferences'
 import { getSettings } from './settings'
+import { scheduleUpdateChecks } from './updateSchedule'
+import { isNewerVersion, updateRelease } from './updateRelease'
+import { supportsNativeMacUpdates } from './updateInstallMode'
+import { openUpdateWindow, resizeUpdateWindow } from './updateWindow'
 
 const updaterTestMode = !app.isPackaged && process.env.MELO_UPDATER_TEST === '1'
 const updaterEnabled = app.isPackaged || updaterTestMode
-// The 2.0 macOS builds have no Developer ID signature, so Squirrel.Mac cannot
-// safely install later updates. Keep checks, but send users to the release page.
-const manualUpdateInstall = process.platform === 'darwin' && !updaterTestMode
-const releasesUrl = 'https://github.com/melo-libs/melo/releases/latest'
+// Only the certificate-signed packaging entry point sets this in the app manifest.
+// Runtime environment variables must not enable native installation for ad-hoc builds.
+const nativeMacUpdates = app.isPackaged && supportsNativeMacUpdates(app.getAppPath())
+const manualUpdateInstall = process.platform === 'darwin' && !updaterTestMode && !nativeMacUpdates
+const PROMPTED_VERSION_KEY = 'updatePromptedVersion'
 
 export class UpdateManager {
-  private static instance: UpdateManager
   private mainWindow: BrowserWindow | null = null
-  private checking = false
-  private progressWin: BrowserWindow | null = null
-  private isManualCheck = false
-  private inlineCheck = false
-  private availableVersion: string | null = null
-  private downloadWindow: BrowserWindow | null = null
-  private updater: AppUpdater | null = null
+  private check: Promise<void> | null = null
+  private ignoreRevision = 0
+  private checkingRevision = 0
+  private manualCheckRequested = false
+  private initialization: Promise<void> | null = null
+  private availableInfo: UpdateInfo | null = null
+  private state: UpdateState = { ...INITIAL_UPDATE_STATE }
+  private download: Promise<void> | null = null
+  private downloadAbort: AbortController | null = null
+  private cancellationToken: UpdateCheckResult['cancellationToken']
+  private opening: Promise<void> | null = null
+  private installer: DownloadedMacUpdate | null = null
+  private promptedVersion = preferences.get<string>(PROMPTED_VERSION_KEY)
 
-  private constructor() {
-    // Normal dev sessions must not contact the release channel. The explicit
-    // test mode exercises update checks and downloads without ever installing.
-    if (!updaterEnabled) return
-
-    // Keep this require after the mode guard: ordinary dev runs should not
-    // initialize electron-updater or any of its platform-specific machinery.
-    const { autoUpdater: updater } =
-      require('electron-updater') as typeof import('electron-updater')
-    this.updater = updater
-
-    // Configure autoUpdater
+  public constructor(
+    private readonly updater: AppUpdater | null,
+    private readonly manualInstall = manualUpdateInstall,
+  ) {
+    if (!updater) return
     updater.autoDownload = false
-    updater.autoInstallOnAppQuit = !updaterTestMode && !manualUpdateInstall
+    updater.autoInstallOnAppQuit = false
     updater.forceDevUpdateConfig = updaterTestMode
     updater.logger = console
     updater.allowDowngrade = false
     updater.allowPrerelease = false
-
-    // Handle update events
-    updater.on('error', () => {
-      this.closeProgressWindow()
-      // Let the checkForUpdates method handle the error dialog
+    updater.on('error', (error) => {
+      console.error('Update error:', error)
+      if (this.state.installation === 'opening') this.failInstallation()
     })
-
-    updater.on('checking-for-update', () => {
-      console.log('Checking for updates...')
-    })
-
-    updater.on('update-available', async (info) => {
-      this.availableVersion = info.version
-      if (this.inlineCheck) return
-
-      // Skip if this version is ignored and it's not a manual check
-      const ignoredVersion = preferences.get<string>('ignoredVersion')
-      if (!this.isManualCheck && ignoredVersion === info.version) {
-        return
-      }
-
-      const { response } = await dialog.showMessageBox(this.getWindow(), {
-        type: 'info',
-        title: 'Update Available',
-        message: `Version ${info.version} is available.`,
-        detail: updaterTestMode
-          ? 'Download it to test the update flow? Installation is disabled in test mode.'
-          : manualUpdateInstall
-            ? 'Download and install it manually from GitHub Releases.'
-            : 'Would you like to download and install it now?',
-        buttons: updaterTestMode
-          ? ['Download', 'Cancel', 'Ignore this version']
-          : manualUpdateInstall
-            ? ['Open Downloads', 'Later', 'Ignore this version']
-            : ['Yes', 'No', 'Ignore this version'],
-        cancelId: 1,
-      })
-
-      if (response === 0) {
-        if (manualUpdateInstall) {
-          try {
-            await shell.openExternal(releasesUrl)
-          } catch (error) {
-            this.showUpdateDialog({
-              type: 'error',
-              title: 'Update Error',
-              message: 'Could not open GitHub Releases.',
-              detail: error instanceof Error ? error.message : 'Unknown error',
-            })
-          }
-        } else {
-          void this.downloadAvailableUpdate(this.getWindow()).catch((error) => {
-            this.showErrorDialog(error instanceof Error ? error : new Error('Unknown error'))
-          })
-        }
-      } else if (response === 2) {
-        // Store the ignored version
-        preferences.set('ignoredVersion', info.version)
-      }
-    })
-
-    updater.on('update-not-available', () => {
-      if (this.isManualCheck && !this.inlineCheck) {
-        this.showUpdateDialog({
-          type: 'info',
-          title: 'No Updates',
-          message: 'You are using the latest version.',
-        })
-      }
-    })
-
-    updater.on('download-progress', (progress: ProgressInfo) => {
-      if (this.mainWindow) {
-        this.mainWindow.setProgressBar(progress.percent / 100)
-      }
-      this.updateProgressWindow(progress)
-    })
-
-    updater.on('update-downloaded', async () => {
-      this.closeProgressWindow()
-
-      if (updaterTestMode) {
-        await dialog.showMessageBox(this.getWindow(), {
-          type: 'info',
-          title: 'Update Test Complete',
-          message: 'The update was downloaded successfully.',
-          detail: 'Installation and restart are disabled in updater test mode.',
-          buttons: ['OK'],
-        })
-        return
-      }
-
-      const { response } = await dialog.showMessageBox(this.getWindow(), {
-        type: 'info',
-        title: 'Update Ready',
-        message: 'Update has been downloaded',
-        detail: 'The application will quit and update now',
-        buttons: ['Restart', 'Later'],
-        cancelId: 1,
-      })
-
-      if (response === 0) {
-        updater.quitAndInstall(false, true)
-      }
+    updater.on('download-progress', (progress) => {
+      if (this.state.download.status !== 'downloading') return
+      this.setState({ download: { ...this.state.download, percent: Math.floor(progress.percent) } })
     })
   }
 
-  private createProgressWindow() {
-    this.closeProgressWindow()
+  private get copy() {
+    return (resolveLanguage() === 'zh-CN' ? zhCN : en).updates
+  }
 
-    this.progressWin = new BrowserWindow({
-      width: 400,
-      height: 150,
-      useContentSize: true,
-      titleBarStyle: 'hidden',
-      trafficLightPosition: { x: 8, y: 6 },
-      resizable: false,
-      minimizable: false,
-      maximizable: false,
-      parent: this.getWindow(),
-      modal: true,
-      show: false,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-      },
+  private get cacheDirectory() {
+    return path.join(app.getPath('userData'), 'updates')
+  }
+
+  private failInstallation(): void {
+    const version = this.state.ready?.release.version
+    this.setState({
+      installation: 'error',
+      ...(!this.manualInstall && version
+        ? { ready: null, download: { status: 'error' as const, version } }
+        : {}),
     })
-
-    // Create HTML content for the progress window
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Downloading Update</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-              margin: 0;
-              padding: 20px;
-              user-select: none;
-              -webkit-user-select: none;
-              background: #ffffff;
-              color: #333333;
-            }
-            #title {
-              font-size: 14px;
-              margin-bottom: 10px;
-              -webkit-app-region: drag;
-            }
-            #progressBar {
-              width: 100%;
-              height: 8px;
-              background-color: #f0f0f0;
-              border-radius: 4px;
-              overflow: hidden;
-            }
-            #progressFill {
-              width: 0%;
-              height: 100%;
-              background-color: #007AFF;
-              border-radius: 4px;
-              transition: width 0.3s ease;
-            }
-            #status {
-              font-size: 12px;
-              margin-top: 10px;
-              color: #666666;
-            }
-          </style>
-        </head>
-        <body>
-          <div id="title">Downloading Update...</div>
-          <div id="progressBar">
-            <div id="progressFill"></div>
-          </div>
-          <div id="status">Starting download...</div>
-          <script>
-            window.updateProgress = function(percent, speed, transferred, total) {
-              document.getElementById('progressFill').style.width = percent + '%';
-              document.getElementById('status').textContent =
-                'Downloaded ' + transferred + ' of ' + total + ' (' + speed + ')';
-            };
-          </script>
-        </body>
-      </html>
-    `
-
-    // Load the HTML content
-    this.progressWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent))
-
-    this.progressWin.once('ready-to-show', () => {
-      if (this.progressWin) {
-        this.progressWin.show()
-      }
-    })
-  }
-
-  private updateProgressWindow(progressInfo: ProgressInfo) {
-    if (!this.progressWin) return
-
-    const percent = progressInfo.percent || 0
-    const transferred = this.formatBytes(progressInfo.transferred)
-    const total = this.formatBytes(progressInfo.total)
-    const speed = this.formatBytes(progressInfo.bytesPerSecond) + '/s'
-
-    this.progressWin.webContents.executeJavaScript(
-      `updateProgress(${percent}, "${speed}", "${transferred}", "${total}")`,
-    )
-  }
-
-  private formatBytes(bytes: number, decimals = 2): string {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const dm = decimals < 0 ? 0 : decimals
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
-  }
-
-  private closeProgressWindow() {
-    if (this.progressWin) {
-      this.progressWin.destroy()
-      this.progressWin = null
-    }
-    if (this.mainWindow) {
-      this.mainWindow.setProgressBar(-1) // Remove progress bar
-    }
-  }
-
-  public static getInstance(): UpdateManager {
-    if (!UpdateManager.instance) {
-      UpdateManager.instance = new UpdateManager()
-    }
-    return UpdateManager.instance
   }
 
   public setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window
   }
 
-  private getWindow(): BrowserWindow {
-    if (this.downloadWindow && !this.downloadWindow.isDestroyed()) return this.downloadWindow
-    const focusedWindow = BrowserWindow.getFocusedWindow()
-    if (focusedWindow) return focusedWindow
-    if (!this.mainWindow) {
-      throw new Error('Main window is not set')
-    }
-    return this.mainWindow
+  public getState(): UpdateState {
+    return this.state
   }
 
-  private showUpdateDialog(options: Electron.MessageBoxOptions): void {
-    dialog.showMessageBox(this.getWindow(), options)
+  private setState(patch: Partial<UpdateState>): void {
+    this.state = { ...this.state, ...patch, revision: this.state.revision + 1 }
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.setProgressBar(
+        this.state.download.status === 'downloading' ? this.state.download.percent / 100 : -1,
+      )
+    }
+    const item = Menu.getApplicationMenu()?.getMenuItemById('install-update')
+    if (item) item.visible = this.state.ready !== null
+    resizeUpdateWindow(this.state.release !== null || this.state.ready !== null)
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(IpcChannels.OnUpdateState, this.state)
+    }
   }
 
-  private showErrorDialog(error: Error): void {
-    let errorMessage = 'Failed to check for updates'
-    let errorDetail = error.message
+  public initialize(): Promise<void> {
+    this.initialization ??= (async () => {
+      if (!this.updater || !this.manualInstall) return
+      try {
+        const pending = await loadPendingMacUpdate(
+          this.cacheDirectory,
+          app.getVersion(),
+          process.arch,
+        )
+        const ignored = preferences.get<string>('ignoredVersion')
+        if (pending && (!ignored || isNewerVersion(pending.release.version, ignored))) {
+          this.installer = pending.installer
+          this.setState({ ready: { release: pending.release, install: 'manual' } })
+        }
+      } catch (error) {
+        // An unreadable cache must not prevent checking or downloading a fresh copy.
+        console.error('Could not restore the pending update:', error)
+      }
+    })()
+    return this.initialization
+  }
 
-    // Handle specific error cases
-    if (error.message.includes('404')) {
-      errorMessage = 'Update server is not reachable'
-      errorDetail = 'Please try again later or check our website for updates.'
+  public showUpdateWindow(): void {
+    openUpdateWindow(true, this.state.release !== null || this.state.ready !== null)
+  }
+
+  public ignoreVersion(version: string): void {
+    const release = this.state.release ?? this.state.ready?.release
+    if (!release || release.version !== version || this.state.installation === 'opening') {
+      throw new Error(this.copy.ignoreUnavailable)
     }
-
-    this.showUpdateDialog({
-      type: 'error',
-      title: 'Update Error',
-      message: errorMessage,
-      detail: errorDetail,
+    const ignored = preferences.get<string>('ignoredVersion')
+    if (!ignored || isNewerVersion(version, ignored)) preferences.set('ignoredVersion', version)
+    this.ignoreRevision++
+    if (this.download) {
+      this.downloadAbort?.abort()
+      this.cancellationToken?.cancel()
+    }
+    this.availableInfo = null
+    this.installer = null
+    this.setState({
+      check: 'idle',
+      release: null,
+      ready: null,
+      download: { status: 'idle' },
+      installation: 'idle',
     })
   }
 
-  public async checkForUpdates(manual = false, inline = false): Promise<UpdateCheckOutcome> {
-    const updater = this.updater
-    if (!updaterEnabled || !updater) return { status: 'disabled' }
-    if (this.checking) return { status: 'busy' }
-
-    try {
-      this.checking = true
-      this.isManualCheck = manual
-      this.inlineCheck = inline
-      this.availableVersion = null
-      const result = await updater.checkForUpdates()
-      if (!result) return { status: 'disabled' }
-      return this.availableVersion
-        ? {
-            status: 'available',
-            version: this.availableVersion,
-            install: manualUpdateInstall ? 'manual' : 'in-app',
-          }
-        : { status: 'up-to-date' }
-    } catch (error) {
-      console.error('Update check error:', error)
-      if (manual && !inline) {
-        this.showErrorDialog(error instanceof Error ? error : new Error('Unknown error'))
+  public async checkForUpdates(manual = false): Promise<UpdateState> {
+    if (manual) this.showUpdateWindow()
+    if (!this.updater) {
+      this.setState({ check: 'disabled' })
+      return this.state
+    }
+    if (this.state.installation === 'opening') return this.state
+    // A manual request joins the existing task; it still opens/focuses the window above.
+    if (this.check) {
+      if (this.checkingRevision !== this.ignoreRevision) {
+        await this.check
+        return this.checkForUpdates(manual)
       }
-      return { status: 'error' }
+      if (manual) this.manualCheckRequested = true
+      await this.check
+      return this.state
+    }
+    if (this.download && !this.downloadAbort?.signal.aborted) return this.state
+    this.manualCheckRequested = manual
+    this.checkingRevision = this.ignoreRevision
+    this.check = this.performCheck()
+    try {
+      await this.check
     } finally {
-      this.checking = false
-      this.inlineCheck = false
+      this.check = null
+      this.manualCheckRequested = false
+    }
+    return this.state
+  }
+
+  private async performCheck(): Promise<void> {
+    const ignoreRevision = this.ignoreRevision
+    // Keep this wait inside the shared check task so simultaneous retries still coalesce.
+    if (this.downloadAbort?.signal.aborted && this.download) await this.download
+    this.setState({
+      check: 'checking',
+      installation: this.state.installation === 'error' ? 'idle' : this.state.installation,
+      ...(!this.state.ready ? { download: { status: 'idle' as const } } : {}),
+    })
+    await this.initialize()
+    try {
+      let available = false
+      const onAvailable = (): void => {
+        available = true
+      }
+      this.updater!.once('update-available', onAvailable)
+      let result: Awaited<ReturnType<AppUpdater['checkForUpdates']>>
+      try {
+        result = await this.updater!.checkForUpdates()
+      } finally {
+        this.updater!.removeListener('update-available', onAvailable)
+      }
+      if (ignoreRevision !== this.ignoreRevision) {
+        this.setState({ check: 'idle' })
+        return
+      }
+      if (!result) {
+        this.setState({ check: 'disabled' })
+        return
+      }
+      const info = result.updateInfo
+      if (!available || !isNewerVersion(info.version, app.getVersion())) {
+        this.availableInfo = null
+        this.setState({
+          check: 'up-to-date',
+          release: null,
+          ...(!this.state.ready
+            ? { installation: 'idle', download: { status: 'idle' as const } }
+            : {}),
+        })
+        return
+      }
+      const manual = this.manualCheckRequested
+      const ignored = preferences.get<string>('ignoredVersion')
+      if (!manual && ignored && !isNewerVersion(info.version, ignored)) {
+        this.setState({ check: 'idle' })
+        return
+      }
+      this.availableInfo = info
+      this.cancellationToken = result.cancellationToken
+      const release = updateRelease(info)
+      this.setState({ check: 'idle', release })
+      if (!this.promptedVersion || isNewerVersion(info.version, this.promptedVersion)) {
+        this.promptedVersion = info.version
+        preferences.set(PROMPTED_VERSION_KEY, info.version)
+        if (!manual) openUpdateWindow(false, true)
+      }
+      if (getSettings().autoUpdate && this.state.ready?.release.version !== info.version) {
+        void this.downloadAvailableUpdate().catch((error) => {
+          console.error('Update download failed:', error)
+        })
+      }
+    } catch (error) {
+      if (ignoreRevision !== this.ignoreRevision) return
+      console.error('Update check failed:', error)
+      this.setState({ check: 'error' })
     }
   }
 
-  public async downloadAvailableUpdate(window: BrowserWindow): Promise<void> {
-    if (manualUpdateInstall) throw new Error('Install this update from GitHub Releases')
-    if (!this.updater) throw new Error('Updates are unavailable')
-    this.downloadWindow = window
-    this.createProgressWindow()
+  public async downloadAvailableUpdate(): Promise<void> {
+    if (this.download) return this.download
+    const ignoreRevision = this.ignoreRevision
+    // A metadata check may replace the offered version; choose the artifact only after it settles.
+    if (this.check) await this.check
+    await this.initialize()
+    // Ignore supersedes requests that were queued before any actual download started.
+    if (ignoreRevision !== this.ignoreRevision) return
+    // initialize() yields, so a second caller may already have started the job.
+    if (this.download) return this.download
+    if (this.state.installation === 'opening') throw new Error(this.copy.installationInProgress)
+    if (!this.updater || !this.availableInfo) throw new Error(this.copy.checkFirst)
+    const info = this.availableInfo
+    if (this.state.ready?.release.version === info.version) return
+    const release = updateRelease(info)
+    const controller = new AbortController()
+    this.downloadAbort = controller
+    this.setState({
+      download: { status: 'downloading', version: info.version, percent: 0 },
+      installation: 'idle',
+      // electron-updater replaces its previous native installer cache when downloading again.
+      ready: this.manualInstall ? this.state.ready : null,
+    })
+    this.download = (async () => {
+      try {
+        if (this.manualInstall) {
+          const installer = await downloadMacUpdate(
+            selectMacUpdate(info, process.arch),
+            this.cacheDirectory,
+            (url, init) => net.fetch(url, init),
+            (percent) => {
+              if (controller.signal.aborted) return
+              this.setState({
+                download: { status: 'downloading', version: info.version, percent },
+              })
+            },
+            controller.signal,
+          )
+          if (controller.signal.aborted) return
+          // An open/reveal action holds a snapshot of the old package until it finishes.
+          if (this.opening) {
+            await this.opening.catch((error) => {
+              // Failure to open the previous package does not invalidate the new download.
+              console.warn('Previous installer action failed:', error)
+            })
+          }
+          await savePendingMacUpdate(installer, release, this.cacheDirectory)
+          if (controller.signal.aborted) return
+          this.installer = installer
+        } else {
+          await this.updater!.downloadUpdate(this.cancellationToken)
+        }
+        if (controller.signal.aborted) return
+        this.setState({
+          download: { status: 'idle' },
+          ready: { release, install: this.manualInstall ? 'manual' : 'in-app' },
+          installation: 'idle',
+        })
+      } catch (error) {
+        if (controller.signal.aborted) return
+        this.setState({ download: { status: 'error', version: info.version } })
+        throw error
+      }
+    })()
     try {
-      await this.updater.downloadUpdate()
-    } catch (error) {
-      this.closeProgressWindow()
-      throw error
+      await this.download
     } finally {
-      this.downloadWindow = null
+      this.download = null
+      this.downloadAbort = null
     }
+  }
+
+  public async openInstaller(version: string, reveal = false): Promise<void> {
+    await this.initialize()
+    if (this.download) throw new Error(this.copy.downloadInProgress)
+    if (this.state.ready?.release.version !== version) throw new Error(this.copy.installerChanged)
+    if (this.opening) return this.opening
+    // Native quit can still be pending after the preparation task has resolved.
+    if (this.state.installation === 'opening') return
+    this.setState({ installation: 'opening' })
+    this.opening = (async () => {
+      try {
+        if (!this.manualInstall) {
+          if (updaterTestMode) throw new Error(this.copy.testReadyDetail)
+          if (process.platform === 'darwin') await this.prepareNativeMacUpdate()
+          this.updater!.quitAndInstall(false, true)
+          return
+        }
+        const installer = this.installer
+        if (!installer || !(await verifyMacUpdate(installer))) {
+          this.installer = null
+          this.setState({ ready: null, download: { status: 'error', version } })
+          throw new Error(this.copy.invalidInstaller)
+        }
+        if (reveal) shell.showItemInFolder(installer.filePath)
+        else {
+          const error = await shell.openPath(installer.filePath)
+          if (error) throw new Error(error)
+        }
+        this.setState({ installation: 'opened' })
+      } catch (error) {
+        this.failInstallation()
+        throw error
+      }
+    })()
+    try {
+      await this.opening
+    } finally {
+      this.opening = null
+    }
+  }
+
+  private prepareNativeMacUpdate(): Promise<void> {
+    // MacUpdater.quitAndInstall() leaves a persistent callback if Squirrel is not ready.
+    // Prepare through Electron's public API first, so a failed attempt leaves no install callback.
+    return new Promise((resolve, reject) => {
+      const complete = (): void => {
+        cleanup()
+        resolve()
+      }
+      const failed = (error: Error): void => {
+        cleanup()
+        reject(error)
+      }
+      const unavailable = (): void => failed(new Error(this.copy.invalidInstaller))
+      const cleanup = (): void => {
+        nativeUpdater.removeListener('update-downloaded', complete)
+        nativeUpdater.removeListener('update-not-available', unavailable)
+        this.updater!.removeListener('error', failed)
+      }
+      nativeUpdater.once('update-downloaded', complete)
+      nativeUpdater.once('update-not-available', unavailable)
+      this.updater!.once('error', failed)
+      try {
+        nativeUpdater.checkForUpdates()
+      } catch (error) {
+        cleanup()
+        reject(error)
+      }
+    })
   }
 }
 
-// Initialize update manager
-export const updateManager = UpdateManager.getInstance()
+// Keep the require behind the mode guard so ordinary dev runs never initialize it.
+export const updateManager = new UpdateManager(
+  updaterEnabled
+    ? (require('electron-updater') as typeof import('electron-updater')).autoUpdater
+    : null,
+)
 
-// Start checking for updates when app is ready
 app.whenReady().then(() => {
   if (!updaterEnabled) return
-
-  // Check for updates every 6 hours
-  setInterval(
-    () => {
-      // For automatic checks, only proceed if enabled and not already checking
-      if (getSettings().autoUpdate && !updateManager['checking']) {
-        updateManager.checkForUpdates(false)
-      }
-    },
-    6 * 60 * 60 * 1000,
-  )
-
-  // Initial check after app is ready
-  setTimeout(() => {
-    if (getSettings().autoUpdate) updateManager.checkForUpdates()
-  }, 60000) // Check after 60 seconds to allow app to fully load
+  void updateManager.initialize()
+  const stop = scheduleUpdateChecks(() => {
+    if (getSettings().autoUpdate) void updateManager.checkForUpdates()
+  })
+  app.once('will-quit', stop)
 })

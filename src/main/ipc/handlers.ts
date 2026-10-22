@@ -80,6 +80,7 @@ import { getSettings, updateSettings } from '../settings'
 import { openSettingsWindow } from '../settingsWindow'
 import { getMainWindow } from '../windows'
 import { updateManager } from '../updater'
+import { closeUpdateWindow } from '../updateWindow'
 
 const LAST_DIRECTORY_KEY = 'lastDirectory'
 const CODE_GUIDE_VERSION_KEY = 'codeGuideVersion'
@@ -730,14 +731,56 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
   },
 
   [IpcChannels.InvokeCheckForUpdates]: async () => {
-    return { success: true, data: await updateManager.checkForUpdates(true, true) }
+    return { success: true, data: await updateManager.checkForUpdates(true) }
   },
 
   [IpcChannels.InvokeDownloadUpdate]: async (event) => {
     try {
       const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window) return { success: false, error: 'Settings window is closed' }
-      await updateManager.downloadAvailableUpdate(window)
+      if (!window) return { success: false, error: 'Update window is closed' }
+      await updateManager.downloadAvailableUpdate()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  },
+
+  [IpcChannels.InvokeGetUpdateState]: async () => {
+    await updateManager.initialize()
+    return { success: true, data: updateManager.getState() }
+  },
+
+  [IpcChannels.InvokeOpenUpdateInstaller]: async (_, args) => {
+    try {
+      await updateManager.openInstaller(args.version)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  },
+
+  [IpcChannels.InvokeShowUpdateInstaller]: async (_, args) => {
+    try {
+      await updateManager.openInstaller(args.version, true)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  },
+
+  [IpcChannels.InvokeShowUpdateWindow]: async () => {
+    updateManager.showUpdateWindow()
+    return { success: true }
+  },
+
+  [IpcChannels.InvokeCloseUpdateWindow]: async () => {
+    closeUpdateWindow()
+    return { success: true }
+  },
+
+  [IpcChannels.InvokeIgnoreUpdate]: async (_, args) => {
+    try {
+      updateManager.ignoreVersion(args.version)
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }

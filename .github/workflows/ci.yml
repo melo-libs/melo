@@ -43,6 +43,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run release:check
       - run: node scripts/e2e-single-instance.mjs
+      - run: node scripts/e2e-updates.mjs
       - run: node scripts/e2e-onboarding.mjs
         if: matrix.arch == 'x64'
       - run: node scripts/e2e-workspace-watcher.mjs

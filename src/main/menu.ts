@@ -154,8 +154,14 @@ export default function createMenu(
         {
           label: m.checkUpdates,
           click: () => {
-            updateManager.checkForUpdates(true)
+            void updateManager.checkForUpdates(true)
           },
+        },
+        {
+          id: 'install-update',
+          label: m.installUpdate,
+          visible: updateManager.getState().ready !== null,
+          click: () => updateManager.showUpdateWindow(),
         },
         { type: 'separator' },
         {

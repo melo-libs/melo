@@ -11,8 +11,10 @@ import { Provider } from 'jotai'
 import { appStore } from './store/appStore'
 import { resolveTheme, settingsAtom, syncSettings } from './store/settings'
 import { SettingsRoot } from './components/settings/SettingsRoot'
+import { UpdatesRoot } from './components/updates/UpdatesRoot'
 
 const isSettingsWindow = window.location.hash === '#settings'
+const isUpdateWindow = window.location.hash === '#updates'
 
 // Settings must be present at first paint (theme, outline default) — one
 // IPC roundtrip before render beats a light-to-dark flash after it.
@@ -24,6 +26,8 @@ void Promise.all([syncLanguageFromPreference(), syncSettings()]).then(() => {
     resolveTheme(appStore.get(settingsAtom).theme),
   )
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-    <Provider store={appStore}>{isSettingsWindow ? <SettingsRoot /> : <App />}</Provider>,
+    <Provider store={appStore}>
+      {isSettingsWindow ? <SettingsRoot /> : isUpdateWindow ? <UpdatesRoot /> : <App />}
+    </Provider>,
   )
 })
