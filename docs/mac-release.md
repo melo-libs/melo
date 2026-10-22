@@ -1,52 +1,52 @@
-# macOS 发布
+# macOS releases
 
-正式包使用固定自签证书，更新继续交给 electron-updater / Squirrel.Mac。
-证书不是 Apple Developer ID，不能替代 notarization；首次下载仍可能需要在 macOS「隐私与安全性」中允许打开。
+Release builds use a fixed self-signed certificate with electron-updater / Squirrel.Mac.
+This is not an Apple Developer ID certificate and does not provide notarization. macOS may still require approval in Privacy & Security on first launch.
 
-## 签名材料
+## Signing credentials
 
-默认目录：`~/Library/Application Support/Melo Release Signing/`。
+Default directory: `~/Library/Application Support/Melo Release Signing/`.
 
-- `melo.keychain-db`：专用 Keychain。
-- `password`：Keychain 密码，仅当前用户可读。
-- `certificate.p12`：加密的证书和私钥备份。
-- `certificate.pem`：公开证书。
+- `melo.keychain-db`: Dedicated signing Keychain.
+- `password`: Keychain password, readable only by the current user.
+- `certificate.p12`: Encrypted certificate and private-key backup.
+- `certificate.pem`: Public certificate.
 
-固定 SHA-1 fingerprint：`125C912085E6A07277A8F679B26F8628D6826E09`。
-后续版本必须使用同一张证书。请另外保管加密的 P12 和密码，不要将它们提交到 Git 或上传为 Release 附件。
+Pinned SHA-1 fingerprint: `125C912085E6A07277A8F679B26F8628D6826E09`.
+Future releases must use the same certificate. Keep a separate backup of the encrypted P12 and its password; never commit them to Git or upload them as release assets.
 
-换机器时可导入同一份 P12，并设置 `MELO_MAC_SIGNING_KEYCHAIN` 指向专用 Keychain。
-`MELO_MAC_SIGNING_PASSWORD_FILE` 可指定密码文件；没有密码文件时，先手动解锁 Keychain。
-构建不更改系统信任，临时加入的 Keychain search list 条目会在结束时移除。
+On another Mac, import the same P12 and set `MELO_MAC_SIGNING_KEYCHAIN` to the dedicated Keychain path.
+Use `MELO_MAC_SIGNING_PASSWORD_FILE` to specify a password file, or unlock the Keychain manually before building.
+The build does not change system trust settings. Any Keychain search-list entry added temporarily is removed when the build finishes.
 
-## 构建候选包
+## Build a candidate
 
-更新 `package.json` 版本号，并准备 `docs/releases/<版本>.md`，然后运行：
+Update the version in `package.json`, prepare `docs/releases/<version>.md`, then run:
 
 ```sh
 pnpm run build:mac
 ```
 
-此命令执行 lint、typecheck、tests，然后只编译一次，在独立临时目录构建，不覆盖开发实例的 `out`。
-产物位于 `dist/macos-<版本>/`，含 arm64 / x64 的 DMG、ZIP、blockmap 和更新 feed。
-已存在的候选目录不会被覆盖；需要重建时，先保存或移走旧产物。
+This runs lint, typechecks, and tests, then compiles once into an isolated temporary directory without overwriting the development app's `out` directory.
+Artifacts are written to `dist/macos-<version>/`: arm64 and x64 DMGs, ZIPs, blockmaps, and an update feed.
+Existing candidate directories are never overwritten. Save or move an earlier candidate before rebuilding.
 
-脚本检查 ZIP 内应用的签名、版本、更新源，逐文件比对编译内容，校验 DMG 和 feed 的大小及 SHA-512，并生成 `verified-release.json`。
-正式包在 manifest 中启用 native updates；证书缺失或签名不匹配会终止构建。
+The script verifies each ZIP's app signature, version, and update source; compares every compiled file; validates the DMGs and update-feed sizes and SHA-512 checksums; and writes `verified-release.json`.
+Signed builds enable native updates in the app manifest. A missing certificate or mismatched signature fails the build.
 
-CI 和本地无证书检查可用 `pnpm run build:mac:unsigned`。这类包使用 ad-hoc 签名，不启用 native updates，也不能通过正式发布入口上传。
+Use `pnpm run build:mac:unsigned` for CI or local checks without a certificate. These ad-hoc-signed builds do not enable native updates and cannot be uploaded through the release command.
 
-## 验证与上传
+## Verify and upload
 
-用已有的隔离 profile 启动检查，不安装到 Applications：
+Run the existing startup checks with isolated profiles, without installing into Applications:
 
 ```sh
-node scripts/e2e-packaged-startup.mjs arm64 dist/macos-<版本>/mac-arm64/Melo.app
-node scripts/e2e-packaged-startup.mjs x64 dist/macos-<版本>/mac/Melo.app
+node scripts/e2e-packaged-startup.mjs arm64 dist/macos-<version>/mac-arm64/Melo.app
+node scripts/e2e-packaged-startup.mjs x64 dist/macos-<version>/mac/Melo.app
 ```
 
-安装测试确认完成后，再运行 `pnpm run deploy:mac`。它重新检查现有候选包，不重新编译，创建 **GitHub Draft Release**，不会直接对用户发布。
-上传前确认 PR 已合并、CI 通过，并检查 Draft 的 tag / target 和更新说明，最后手动发布。
-DMG、ZIP、blockmap、`latest-mac.yml` 必须来自同一批构建，不要混用不同候选包的 feed。
+After installation testing, run `pnpm run deploy:mac`. It rechecks the existing candidate without recompiling and creates a **GitHub Draft Release**, not a public release.
+Before uploading, confirm that the PR is merged and CI is green. Review the draft's tag, target, and release notes before publishing manually.
+The DMGs, ZIPs, blockmaps, and `latest-mac.yml` must come from the same build. Never mix update feeds from different candidates.
 
-2.0.1 及以前的 ad-hoc 版本需要手动安装一次新包；从本次固定证书签名的版本开始，后续同证书版本才能通过应用内重启完成更新。
+Users on ad-hoc-signed 2.0.1 or earlier must install the new app manually once. Subsequent releases signed with the same fixed certificate can then be installed by restarting Melo from the update window.

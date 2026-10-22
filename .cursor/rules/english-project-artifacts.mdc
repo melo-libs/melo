@@ -1,0 +1,9 @@
+---
+description: Use English for project documentation and GitHub metadata
+alwaysApply: true
+---
+
+# Project artifact language
+
+- Write project documentation, commit messages (including bodies and footers), PR titles and descriptions, and release notes in English.
+- Preserve intentionally localized application content, including locale resources, in-app user guides, and localization test fixtures.

@@ -1,6 +1,8 @@
-# Commit Message 规范指南
+# Commit message guidelines
 
-## 格式
+Write all commit messages in English, including the subject, body, and footers.
+
+## Format
 
 ```
 <type>(<scope>): <description>
@@ -10,21 +12,22 @@
 [optional footer(s)]
 ```
 
-## Type 类型
+## Types
 
-- `feat`: ✨ 新功能
-- `fix`: 🐛 修复 bug
-- `docs`: 📝 文档更新
-- `style`: 💄 代码格式（不影响代码运行的变动）
-- `refactor`: ♻️ 重构（既不是新增功能，也不是修改 bug 的代码变动）
-- `perf`: ⚡️ 性能优化
-- `test`: ✅ 增加测试
-- `chore`: 🔧 构建过程或辅助工具的变动
-- `revert`: ⏪️ 回滚到上一个版本
+- `feat`: ✨ New functionality
+- `fix`: 🐛 Bug fixes
+- `docs`: 📝 Documentation updates
+- `style`: 💄 Formatting changes with no effect on behavior
+- `refactor`: ♻️ Code changes that neither add features nor fix bugs
+- `perf`: ⚡️ Performance improvements
+- `test`: ✅ Added or updated tests
+- `chore`: 🔧 Build or tooling changes
+- `revert`: ⏪️ Reverts of earlier commits
 
-## Scope 范围
+## Scope
 
-根据项目模块定义，例如：
+Use the affected project module, for example:
+
 - `editor`
 - `ui`
 - `core`
@@ -32,43 +35,43 @@
 - `build`
 - `deps`
 
-## Description 描述
+## Description
 
-- 使用祈使句（命令式）
-- 第一个字母小写
-- 句尾不加句号
+- Use the imperative mood.
+- Start with a lowercase letter.
+- Do not end the subject with a period.
 
-## 示例
+## Examples
 
 ```bash
-# 新功能
+# Feature
 feat(editor): add image drag and drop support
 
-# Bug 修复
+# Bug fix
 fix(core): resolve file saving issue in Windows
 
-# 文档更新
+# Documentation
 docs(readme): update installation guide
 
-# 代码格式
+# Formatting
 style(ui): format code according to prettier rules
 
-# 代码重构
+# Refactoring
 refactor(editor): simplify markdown parsing logic
 
-# 性能优化
+# Performance
 perf(editor): improve rendering performance for large files
 
-# 测试相关
+# Tests
 test(core): add unit tests for file operations
 
-# 构建相关
+# Tooling
 chore(deps): update dependencies
 
-# 回滚提交
+# Revert
 revert: feat(editor): add image drag and drop support
 
-# 包含详细说明的提交
+# Commit with a detailed body
 feat(editor): implement auto-save feature
 
 - Add auto-save functionality that triggers every 5 minutes
@@ -78,11 +81,11 @@ feat(editor): implement auto-save feature
 Closes #123
 ```
 
-## 特殊说明
+## Additional conventions
 
 ### Breaking Changes
 
-当有破坏性更新时，在 footer 中说明：
+Describe breaking changes in a footer:
 
 ```bash
 feat(api): add new authentication system
@@ -90,9 +93,9 @@ feat(api): add new authentication system
 BREAKING CHANGE: `auth.login()` now returns a Promise instead of a callback
 ```
 
-### 关联 Issue
+### Linked issues
 
-在 footer 中关联 issue：
+Reference related issues in a footer:
 
 ```bash
 fix(core): resolve file saving issue
@@ -100,16 +103,16 @@ fix(core): resolve file saving issue
 Fixes #123
 ```
 
-### 多个类型
+### Multiple change types
 
-如果一个提交同时包含多个类型的修改，优先使用 `feat` 或 `fix`：
+When a change spans multiple types, prefer `feat` or `fix` if either applies:
 
 ```bash
 feat(editor): add new theme system and fix styling issues
 ```
 
-## 实用工具
+## Tools
 
-- 使用 `git commit` 命令（不带 -m）打开编辑器，可以编写更详细的提交信息
-- 使用 `git commit --amend` 修改最后一次提交
-- 使用 `npm run commit` 启动交互式提交（如果配置了 commitizen）
+- Run `git commit` without `-m` to write a detailed message in your editor.
+- Use `git commit --amend` to revise the latest commit.
+- Use an interactive commit tool if one is configured for the project.
