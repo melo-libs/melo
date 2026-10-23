@@ -13,6 +13,7 @@ const workspace = path.join(testRoot, 'new-notes')
 const screenshotDir = process.env.MELO_E2E_ONBOARDING_SCREENSHOTS
 const logs = []
 const requests = []
+const features = ['collect', 'organize', 'distill', 'express', 'files']
 let app
 
 async function waitUntil(label, check, timeout = 10000) {
@@ -113,6 +114,27 @@ async function run() {
     })
     assert.deepEqual(overflow, [], 'the complete editor example must fit inside its document')
   }
+  const expectFilesFit = async () => {
+    assert.equal(await page.locator('.ob-files-item').count(), 6)
+    const fits = await page.locator('.ob-files-art').evaluate((scene) => {
+      const bounds = scene.getBoundingClientRect()
+      return [...scene.querySelectorAll('.ob-file-tag')].every((tag) => {
+        const rect = tag.getBoundingClientRect()
+        return (
+          rect.left >= bounds.left &&
+          rect.right <= bounds.right &&
+          rect.top >= bounds.top &&
+          rect.bottom <= bounds.bottom
+        )
+      })
+    })
+    assert(fits, 'all six format labels must remain visible above the illustration fade')
+    assert.equal(
+      await page.locator('.ob-files-art input, .ob-files-art button, .ob-files-art a').count(),
+      0,
+    )
+    assert.equal(await page.locator('.ob-replay-scene').count(), 0)
+  }
 
   const language = page.getByRole('combobox', { name: '语言 / Language', exact: true })
   await expectStep('welcome')
@@ -169,7 +191,7 @@ async function run() {
   const headingTop = await page
     .locator('.ob-feature h1')
     .evaluate((title) => title.getBoundingClientRect().top)
-  for (const feature of ['collect', 'organize', 'distill', 'express']) {
+  for (const feature of features) {
     await expectStep(feature)
     await page.evaluate(() => document.fonts.ready)
     const typography = await page.locator('.ob-feature h1').evaluate((title) => {
@@ -211,7 +233,11 @@ async function run() {
         }),
       motionTarget ?? ':not(*)',
     )
-    assert.equal(motions.length, feature === 'organize' ? 0 : 1, 'one motion per scene at most')
+    assert.equal(
+      motions.length,
+      feature === 'organize' || feature === 'files' ? 0 : 1,
+      'one motion per scene at most',
+    )
     for (const motion of motions) {
       assert(motion.isTarget)
       assert(motion.duration >= 400 && motion.duration <= 900, 'keep a natural single beat')
@@ -260,6 +286,7 @@ async function run() {
       assert.equal(await page.locator('.ob-replay-scene').count(), 0)
       await expectStep('organize')
     }
+    if (feature === 'files') await expectFilesFit()
     await screenshot(`02-${feature}-en`)
     await continueAt(navigation)
   }
@@ -285,7 +312,7 @@ async function run() {
   await expectStep('collect')
   await page.keyboard.press('Escape')
   await expectStep('collect')
-  for (let index = 0; index < 4; index += 1) await next.click()
+  for (let index = 0; index < features.length; index += 1) await next.click()
   await expectStep('start')
 
   await language.selectOption('zh-CN')
@@ -305,13 +332,14 @@ async function run() {
     '微信公众号',
     '知乎',
   ])
-  for (const feature of ['collect', 'organize', 'distill', 'express']) {
+  for (const feature of features) {
     await expectStep(feature)
     const animatedTarget = {
       collect: '.ob-captured',
       organize: '.ob-organize-search',
       distill: '.ob-editor-lead mark',
       express: '.ob-chat-preview > div',
+      files: '.ob-files-stack',
     }[feature]
     assert.equal(
       await page
@@ -320,6 +348,7 @@ async function run() {
       'none',
     )
     if (feature === 'distill') await expectEditorFits()
+    if (feature === 'files') await expectFilesFit()
     await screenshot(`04-${feature}-zh`)
     await continueAt(chineseNavigation)
   }
@@ -332,6 +361,14 @@ async function run() {
     page.evaluate(() => document.documentElement.dataset.theme === 'dark'),
   )
   await screenshot('06-dark-zh')
+  await page.getByRole('button', { name: '再看一遍介绍', exact: true }).click()
+  await next.click()
+  await page.locator('.ob-page-dot').last().click()
+  await expectStep('files')
+  await expectFilesFit()
+  await screenshot('06-files-dark-zh')
+  await next.click()
+  await expectStep('start')
   await page.evaluate(async () => {
     await window.api.invoke(window.api.channels.InvokeSetSettings, { patch: { theme: 'light' } })
   })
@@ -345,6 +382,10 @@ async function run() {
   await expectEditorFits()
   await screenshot('07-compact-editor-zh')
   await next.click()
+  await next.click()
+  await expectStep('files')
+  await expectFilesFit()
+  await screenshot('07-compact-files-zh')
   await next.click()
   await expectStep('start')
   await app.evaluate(({ BrowserWindow }) =>
@@ -361,7 +402,7 @@ async function run() {
   )
   const zoomedNavigation = await navigationGeometry()
   await continueAt(zoomedNavigation)
-  for (const feature of ['collect', 'organize', 'distill', 'express']) {
+  for (const feature of features) {
     await expectStep(feature)
     assert(
       await page
@@ -370,6 +411,10 @@ async function run() {
       'the demo must not overflow horizontally',
     )
     if (feature === 'distill') await expectEditorFits()
+    if (feature === 'files') {
+      await expectFilesFit()
+      await screenshot('08-files-zoom-zh')
+    }
     await page.locator('.ob-main').evaluate((main) => {
       main.scrollTop = main.scrollHeight
     })

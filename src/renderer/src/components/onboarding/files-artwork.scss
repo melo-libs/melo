@@ -1,0 +1,243 @@
+.ob-files-art {
+  --file-inset: 18px;
+  --file-title-size: 15px;
+  --file-tag-size: 11px;
+  --file-tag-height: 20px;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  // The supplied composition lets the papers disappear into the canvas.
+  mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
+}
+.ob-files-stack {
+  position: relative;
+  width: 82%;
+  max-width: 600px;
+  height: 95%;
+  align-self: flex-end;
+  text-align: left;
+}
+.ob-files-item {
+  --file-accent: var(--ink-2);
+  position: absolute;
+  overflow: hidden;
+  padding: var(--file-inset);
+  border: 1px solid var(--hairline-3);
+  border-radius: var(--r-xl);
+  background: var(--paper);
+  box-shadow: var(--shadow-md);
+}
+.ob-file-tag {
+  display: inline-flex;
+  align-items: center;
+  height: var(--file-tag-height);
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--file-accent);
+  color: var(--paper);
+  font-size: var(--file-tag-size);
+  line-height: var(--file-tag-height);
+  font-weight: 650;
+}
+.ob-files-item > strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-size: var(--file-title-size);
+  line-height: 22px;
+  font-weight: 600;
+}
+.ob-file-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.ob-file-lines > span {
+  height: 5px;
+  border-radius: var(--r-sm);
+  background: var(--paper-3);
+}
+.ob-file-lines > span:nth-child(2) {
+  width: 82%;
+}
+.ob-file-lines > span:last-child {
+  width: 66%;
+}
+.ob-file-photo {
+  --file-accent: var(--tour-file-photo);
+  left: 1%;
+  top: 9%;
+  width: 36%;
+  height: 108%;
+  background: color-mix(in srgb, var(--file-accent) 14%, var(--paper));
+  transform: rotate(-4deg);
+}
+.ob-file-landscape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ob-file-photo > .ob-file-tag {
+  position: relative;
+}
+.ob-file-sun {
+  fill: var(--tour-file-sun);
+}
+.ob-file-hill-back {
+  fill: color-mix(in srgb, var(--tour-file-landscape) 65%, var(--paper));
+}
+.ob-file-hill-front {
+  fill: var(--tour-file-landscape);
+}
+.ob-file-slides {
+  --file-accent: var(--tour-file-slides);
+  left: 35%;
+  top: 3%;
+  width: 36%;
+  height: 100%;
+  transform: rotate(2deg);
+}
+.ob-file-slides > strong,
+.ob-file-slides > .ob-file-lines {
+  max-width: 62%;
+}
+.ob-file-donut {
+  position: absolute;
+  top: var(--file-inset);
+  right: 30%;
+  width: 44px;
+  height: 44px;
+  fill: none;
+  stroke-width: 9;
+}
+.ob-file-donut-track {
+  stroke: color-mix(in srgb, var(--file-accent) 22%, var(--paper));
+}
+.ob-file-donut-value {
+  stroke: color-mix(in srgb, var(--file-accent) 74%, var(--paper));
+}
+.ob-file-video {
+  --file-accent: var(--tour-file-video);
+  left: 64%;
+  top: 11%;
+  width: 36%;
+  height: 108%;
+  background: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--file-accent) 18%, var(--paper)),
+    color-mix(in srgb, var(--file-accent) 26%, var(--paper))
+  );
+  transform: rotate(4deg);
+}
+.ob-file-duration {
+  position: absolute;
+  top: var(--file-inset);
+  right: var(--file-inset);
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  color: var(--file-accent);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.ob-file-play {
+  position: absolute;
+  top: 19%;
+  left: calc(50% - 24px);
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+.ob-file-play > svg {
+  width: 22px;
+  height: 22px;
+  fill: var(--file-accent);
+}
+.ob-file-pdf {
+  --file-accent: var(--tour-file-pdf);
+  left: 13%;
+  top: 45%;
+  width: 29%;
+  height: 84%;
+  transform: rotate(4deg);
+}
+.ob-file-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 85%;
+  height: 36px;
+  margin-top: 16px;
+}
+.ob-file-bars > span {
+  flex: 1;
+  height: 18px;
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--file-accent) 18%, var(--paper));
+}
+.ob-file-bars > span:nth-child(2) {
+  height: 28px;
+}
+.ob-file-bars > span:nth-child(3) {
+  height: 22px;
+}
+.ob-file-bars > span:last-child {
+  height: 36px;
+  background: color-mix(in srgb, var(--file-accent) 55%, var(--paper));
+}
+.ob-file-note {
+  left: 36%;
+  top: 42%;
+  width: 27%;
+  height: 90%;
+  transform: rotate(-2deg);
+}
+.ob-file-word {
+  --file-accent: var(--tour-file-word);
+  left: 65%;
+  top: 49%;
+  width: 27%;
+  height: 84%;
+  transform: rotate(3deg);
+}
+
+@media (max-height: 740px), (max-width: 900px) {
+  .ob-files-art {
+    --file-inset: 12px;
+    --file-title-size: 12px;
+    --file-tag-size: 10px;
+    --file-tag-height: 18px;
+  }
+  .ob-files-item > strong {
+    margin-top: 8px;
+    line-height: 18px;
+  }
+  .ob-file-lines {
+    gap: 5px;
+    margin-top: 8px;
+  }
+  .ob-file-lines > span {
+    height: 4px;
+  }
+  .ob-file-donut {
+    width: 34px;
+    height: 34px;
+  }
+  .ob-file-bars {
+    gap: 6px;
+    height: 34px;
+    margin-top: 18px;
+  }
+  .ob-file-play {
+    left: calc(50% - 20px);
+    width: 40px;
+    height: 40px;
+  }
+}

@@ -5,12 +5,14 @@ export const TOUR_FEATURES = [
   { id: 'express', letter: 'E', english: 'Express' },
 ] as const
 
-export type TourFeature = (typeof TOUR_FEATURES)[number]['id']
+export const TOUR_PAGES = [...TOUR_FEATURES, { id: 'files' }] as const
+
+export type TourFeature = (typeof TOUR_PAGES)[number]['id']
 export type TourStep = 'welcome' | TourFeature | 'start'
 export const TOUR_COMPLETED_KEY = 'melo.onboarding.completed'
 export const TOUR_STEPS: readonly TourStep[] = [
   'welcome',
-  ...TOUR_FEATURES.map((feature) => feature.id),
+  ...TOUR_PAGES.map((feature) => feature.id),
   'start',
 ]
 

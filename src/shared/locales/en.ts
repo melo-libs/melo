@@ -509,8 +509,20 @@ export const en = {
           'Turn a passage into a card worth sharing. Copy the image and paste it into a chat or social post.',
         result: 'Image copied. Paste it to share.',
       },
+      files: {
+        label: 'Files',
+        title: 'Beyond notes. No more scattered files.',
+        description:
+          'Markdown, PDFs, Word documents, presentations, images, and videos—all your files in one place.',
+      },
     },
     demo: {
+      files: {
+        note: 'Reading notes',
+        pdf: 'Annual report',
+        slides: 'Q3 plan',
+        word: 'Agreement',
+      },
       sourceExamples: 'e.g.',
       // Official article; the short excerpt is paraphrased, not a verbatim quote.
       // https://www.anthropic.com/engineering/building-effective-agents
