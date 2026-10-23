@@ -35,7 +35,7 @@ The latest published release may be older than the features described here. Chec
 
 - Everything is a file on your disk; edits made outside Melo are picked up live
 - Export any note as Markdown, standalone HTML (a single self-contained file) or PDF
-- English and 简体中文 interface; light / dark / system theme
+- English and Simplified Chinese interface; light / dark / system theme
 
 ## Development
 

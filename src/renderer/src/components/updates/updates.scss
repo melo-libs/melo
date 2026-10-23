@@ -1,0 +1,279 @@
+.updates-window {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+
+  .updates-titlebar {
+    flex: 0 0 48px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: var(--ink-2);
+    font-size: 12px;
+    -webkit-app-region: drag;
+  }
+
+  .updates-heading {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 24px 28px;
+
+    svg {
+      flex-shrink: 0;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 650;
+      line-height: 26px;
+    }
+
+    p {
+      display: flex;
+      flex-wrap: wrap;
+      column-gap: 12px;
+      margin: 0;
+      color: var(--ink-3);
+      font-size: 12px;
+      line-height: 20px;
+    }
+
+    strong {
+      color: var(--ink-2);
+      font-weight: 600;
+    }
+  }
+
+  .updates-heading-text {
+    min-width: 0;
+  }
+
+  // Version and release date describe the same release; keep them together when the row wraps.
+  .updates-release-meta {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  h2 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 600;
+  }
+
+  .updates-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 24px 24px;
+    scrollbar-gutter: stable;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--hairline-2);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent-line);
+      outline-offset: -2px;
+    }
+  }
+
+  .updates-notes-heading {
+    margin-bottom: 12px;
+  }
+
+  .updates-notes-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--ink-2);
+    line-height: 22px;
+    user-select: text;
+  }
+
+  .updates-notes a {
+    display: inline-block;
+    margin-top: 16px;
+    color: var(--ink-2);
+    font-size: 12px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+
+    &:hover {
+      color: var(--ink);
+    }
+  }
+
+  .updates-guide {
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--hairline);
+
+    ol {
+      list-style: decimal;
+      margin: 12px 0;
+      padding-left: 20px;
+      color: var(--ink-2);
+      line-height: 24px;
+    }
+
+    li {
+      padding-left: 4px;
+    }
+    p {
+      margin: 0;
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+  }
+
+  .updates-result-detail {
+    margin: 0;
+    color: var(--ink-2);
+    line-height: 24px;
+  }
+
+  .updates-footer {
+    position: relative;
+    flex-shrink: 0;
+    padding: 16px 24px 20px;
+
+    &::before {
+      position: absolute;
+      inset: 0 24px auto;
+      height: 1px;
+      background: var(--hairline);
+      content: '';
+    }
+
+    p {
+      margin: 0 0 12px;
+      line-height: 20px;
+    }
+    progress {
+      display: block;
+      width: 100%;
+      height: 4px;
+      margin: 0 0 16px;
+      accent-color: var(--ink);
+    }
+  }
+
+  .updates-status {
+    color: var(--ink-2);
+    font-size: 12px;
+  }
+  .updates-error {
+    color: var(--ink);
+  }
+
+  .updates-actions,
+  .updates-primary-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .updates-actions {
+    justify-content: space-between;
+    column-gap: 16px;
+  }
+
+  .updates-primary-actions {
+    flex-shrink: 0;
+  }
+
+  .updates-dismiss {
+    min-width: 64px;
+    border-color: transparent;
+    font-weight: 500;
+  }
+
+  // The approved update-window design uses Melo's quiet ink CTA, not the blue settings action.
+  .updates-confirm:not(:disabled) {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+
+    &:hover {
+      border-color: var(--ink-2);
+      background: var(--ink-2);
+    }
+  }
+
+  .updates-text-action {
+    display: block;
+    min-width: 0;
+    height: 28px;
+    margin: 12px 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 20px;
+    cursor: pointer;
+
+    &:not(:disabled):hover {
+      background: transparent;
+      color: var(--ink);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    &:focus-visible {
+      outline: 2px solid var(--accent-line);
+      outline-offset: 4px;
+    }
+    &:disabled {
+      border: 0;
+      background: transparent;
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
+  .updates-ignore {
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  // A check result has no release notes; keep it in the same visual family without a blank panel.
+  &.updates-window-compact {
+    .updates-heading {
+      padding-bottom: 16px;
+    }
+
+    .updates-content {
+      flex: 0 1 auto;
+      padding: 0 24px 0 78px;
+      scrollbar-gutter: auto;
+    }
+
+    .updates-footer {
+      margin-top: auto;
+
+      &::before {
+        content: none;
+      }
+    }
+
+    .updates-result-actions {
+      justify-content: flex-end;
+    }
+
+    .updates-result-close {
+      min-width: 72px;
+    }
+  }
+}

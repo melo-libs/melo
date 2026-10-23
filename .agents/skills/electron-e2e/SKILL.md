@@ -1,6 +1,6 @@
 ---
 name: electron-e2e
-description: Run Melo Electron E2E and live UI checks with clear process ownership. Use for Playwright suites, tmux-managed dev inspection, CUA/CDP automation, screenshots, or duplicate-instance diagnosis. Do not use for unit tests or design decisions.
+description: Decide when Melo needs Electron E2E or live UI inspection, then reuse the appropriate scripts, builds, and dev sessions. Use for end-to-end regression, Playwright/CUA/CDP checks, screenshots, or duplicate-instance diagnosis. Do not use for unit tests or design decisions.
 ---
 
 # Electron E2E
@@ -9,30 +9,95 @@ Choose the lightest test mode that provides credible evidence. Preserve these in
 
 - Every Electron process tree has one clear owner and cleanup path.
 - Inspect existing sessions, processes, and relevant ports before launching or retrying.
-- Keep at most one interactive dev process tree. Isolated automated suites may own their own short-lived processes.
+- Keep at most one agent-owned interactive dev process tree; do not duplicate a usable existing instance. Isolated automated suites may own their own short-lived processes.
 - Do not mutate unrelated processes or replace the user's installed app without explicit authorization.
 - A visual change is not verified until the rendered UI has been inspected.
 
-## Choose the mode
+## Decide whether and when to run E2E
+
+Do not start Electron merely because code changed or unit tests passed. First
+identify the behavior that needs evidence and whether it requires the real app:
+
+- Pure logic, copy, configuration, or a narrow component behavior: use the
+  relevant unit tests and typecheck. No E2E unless a specific integration risk
+  remains.
+- Layout, styling, or a local interaction: inspect the affected states in a
+  usable current dev instance. A visual check is not a reason to rebuild and
+  launch a separate automated suite.
+- A workflow crossing renderer, IPC, main process, filesystem, or native window
+  lifecycle: use a focused E2E when unit/component tests cannot establish the
+  behavior. This includes startup, file handoff, persistence, and update flows.
+- Packaged startup, signing, installation, or release artifacts: verify the
+  packaged build only when that behavior is in scope; do not substitute a dev
+  check for release evidence or pull release testing into ordinary UI work.
+
+During implementation, use targeted tests and reuse the dev session for visual
+feedback. Run the relevant automated regression after the implementation and
+code review have settled, not after every edit. An early E2E is appropriate
+when it is the shortest way to reproduce a cross-layer bug; it must have a
+specific reproduction target, not become a full-suite detour.
+
+After a passing run, rerun only if subsequent changes affect the tested path.
+Respect a user's request for code-only review or no app testing; report any
+remaining verification gap instead of launching anyway.
+
+## Reuse the entry point before creating one
+
+Before writing automation, read `package.json` and the nearest existing
+`scripts/e2e-*.mjs` implementation. Select in this order:
+
+1. Invoke the existing script that already covers the behavior.
+2. Extend the appropriate existing suite when the scenario belongs to its
+   workflow; keep its process, profile, fixture, and cleanup conventions.
+3. Add a dedicated script only when existing suites do not fit. Reuse any
+   established harness rather than inventing a parallel launcher. Do not create
+   a throwaway `.codex-*` script for each iteration or add a new framework just
+   to share a few lines.
+
+Keep session reuse separate from test isolation: interactive checks should
+reuse a healthy current dev instance; automated regressions may deliberately
+launch a fresh short-lived instance with an isolated profile. Never attach
+unrelated automation to a suite-owned process to save a launch.
+
+Reuse builds deliberately:
+
+- Read the package script before invoking it: E2E entry points may already
+  include a build. Do not run a separate build immediately before such an entry.
+- If this task already built the current source successfully and no relevant
+  main, preload, renderer, build configuration, or dependency changes followed,
+  invoke the script directly (for example, `node scripts/e2e-onboarding.mjs`)
+  when its package entry has no other required setup. Script-only assertion
+  changes do not require rebuilding the app. Do not assume an old `out`
+  directory matches the current source.
+- Renderer/SCSS feedback in dev uses HMR, not a production build. Main/preload
+  changes must be loaded before checking, using the existing process owner and
+  restart path rather than starting another dev tree.
+
+Before a run, briefly identify the scenario and chosen existing entry point or
+dev session. If a new script, build, or process is necessary, state the concrete
+gap it fills. Do not announce a full E2E run for a read-only visual inspection.
+
+## Execute the selected mode
 
 ### Automated regression
 
 Use the existing Playwright Electron scripts when they cover the behavior:
 
 - `pnpm run test:e2e:single-instance`
+- `pnpm run test:e2e:onboarding`
 - `pnpm run test:e2e:workspace`
 
-Both package scripts build the current source before launching the built `out`. They use isolated profiles and temporary workspaces. Do not attach unrelated automation to their Electron process or kill it externally. On failure they preserve diagnostic artifacts; on success they clean up.
+These package scripts build the current source before launching the built `out`; apply the build-reuse rule above instead of building twice. They use isolated profiles and temporary workspaces. Do not attach unrelated automation to their Electron process or kill it externally. On failure they preserve diagnostic artifacts; on success they clean up.
 
 ### Interactive visual verification
 
-Use a persistent tmux shell when the dev app must remain available across tool calls. `melo-e2e` is the project default session name; tmux owns the process and logs, while CDP, Playwright, or CUA operates and inspects the UI. The commands below assume macOS or another Unix environment with tmux and `lsof`; on other platforms, use an equivalent supervised process while preserving the same ownership and cleanup invariants.
+For a new interactive dev launch, use a persistent tmux shell so the app remains available across tool calls. Do not restart or duplicate an existing usable dev instance solely to put it under tmux. `melo-e2e` is the project default session name; tmux owns newly launched processes and their logs, while CDP, Playwright, or CUA operates and inspects the UI. The commands below assume macOS or another Unix environment with tmux and `lsof`; on other platforms, use an equivalent supervised process while preserving the same ownership and cleanup invariants.
 
 Choose the data scope before launching:
 
 - Use an isolated instance for tests that mutate files, settings, onboarding state, or other persisted data, and whenever repeatability depends on a known profile. Prefer the automated suites when they cover the workflow.
-- A non-mutating visual check may reuse one already-running dev instance when it is uniquely identifiable, runs the current source, and existing user state is relevant. Do not turn that access into permission to modify real workspace files.
-- Prefer an isolated instance with representative fixtures when real user state is not necessary. A dedicated test instance means the same development app with a temporary `MELO_USER_DATA` profile and temporary workspace, not another installed copy of Melo.
+- For a non-mutating visual check, reuse an already-running dev instance when it is uniquely identifiable and runs the current source. Existing user data need not be relevant to reuse the window, but do not modify it or treat read-only access as permission to change files or settings.
+- Use an isolated instance with representative fixtures when the test needs controlled or mutable persisted state, or no existing instance can safely serve the check. A dedicated test instance means the same development app with a temporary `MELO_USER_DATA` profile and temporary workspace, not another installed copy of Melo. Lack of a CDP endpoint alone does not require a new instance if CUA can safely inspect the existing one.
 - For an isolated interactive run, create the profile and workspace with `mktemp -d`, keep their returned absolute paths in the task state, pass the profile path through `MELO_USER_DATA`, and open only the temporary workspace in Melo. This profile also isolates Melo's single-instance lock from the user's running instance.
 
 ## Preflight the interactive app
@@ -60,7 +125,7 @@ Interpret the evidence before acting:
 
 - A healthy `melo-e2e` session is reused. Renderer or SCSS changes normally arrive through HMR; do not restart for them.
 - An idle `melo-e2e` shell is reused for the next launch.
-- One project dev process outside the session is not permission to create another process in the same profile. Reuse it only when its current dev URL and automation endpoint are known; otherwise ask the user to close it, obtain authorization to stop its exact PID, or use an isolated profile when that suits the test.
+- One project dev process outside the session is not permission to create another process in the same profile. For CDP, confirm its dev URL and automation endpoint; for read-only CUA, confirm the exact app/window identity. If neither route is usable, ask the user to close it, obtain authorization to stop its exact PID, or use an isolated profile when the test actually requires one.
 - If multiple unmanaged project Electron processes remain and ownership is unclear, stop preflight. Report their exact PIDs, parent PIDs, and start times; do not launch, attach by a generic app identity, or terminate them without authorization.
 - Port 9223 is the default CDP port, not a product requirement. If it is occupied, identify the owner first; then either reuse the relevant instance or choose one available port and use it consistently for that run.
 - If the Electron executable is missing, repair the dependency installation before launching. Repeating `pnpm run dev` cannot fix `ENOENT`.
@@ -69,7 +134,7 @@ Never use broad `pkill` patterns against Electron; other applications share its 
 
 ## Start and reuse one tmux process
 
-When `melo-e2e` is absent, create a persistent shell first. When it already exists and is idle, skip `new-session`. Then send the dev command into that shell. These commands use the project defaults; adapt the session name or CDP port only when the observed environment requires it, and keep the chosen values consistent for the run. For an isolated run, prefix the dev command with `MELO_USER_DATA=` and the literal temporary profile path returned earlier.
+Only use this launch path after deciding a new interactive process is necessary. When `melo-e2e` is absent, create a persistent shell first. When it already exists and is idle, skip `new-session`. Then send the dev command into that shell. These commands use the project defaults; adapt the session name or CDP port only when the observed environment requires it, and keep the chosen values consistent for the run. For an isolated run, prefix the dev command with `MELO_USER_DATA=` and the literal temporary profile path returned earlier.
 
 ```bash
 tmux new-session -d -s melo-e2e -c "$(git rev-parse --show-toplevel)"

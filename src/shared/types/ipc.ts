@@ -1,9 +1,32 @@
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 
-export type UpdateCheckOutcome =
-  | { status: 'disabled' | 'busy' | 'up-to-date' | 'error' }
-  | { status: 'available'; version: string; install: 'manual' | 'in-app' }
+export interface UpdateRelease {
+  version: string
+  date: string | null
+  notes: string
+}
+
+export interface UpdateState {
+  revision: number
+  check: 'idle' | 'checking' | 'disabled' | 'up-to-date' | 'error'
+  release: UpdateRelease | null
+  download:
+    | { status: 'idle' }
+    | { status: 'downloading'; version: string; percent: number }
+    | { status: 'error'; version: string }
+  ready: { release: UpdateRelease; install: 'manual' | 'in-app' } | null
+  installation: 'idle' | 'opening' | 'opened' | 'error'
+}
+
+export const INITIAL_UPDATE_STATE: UpdateState = {
+  revision: 0,
+  check: 'idle',
+  release: null,
+  download: { status: 'idle' },
+  ready: null,
+  installation: 'idle',
+}
 
 export enum IpcChannels {
   // Send-only channels (renderer -> main)
@@ -16,6 +39,7 @@ export enum IpcChannels {
   OnSave = 'on-save',
   OnLanguageChanged = 'on-language-changed',
   OnSettingsChanged = 'on-settings-changed',
+  OnUpdateState = 'on-update-state',
   OpenWorkspace = 'open-workspace',
   OpenCodeGuide = 'open-code-guide',
   FlushBeforeClose = 'flush-before-close',
@@ -110,6 +134,12 @@ export enum IpcChannels {
   InvokeGetAppVersion = 'invoke-get-app-version',
   InvokeCheckForUpdates = 'invoke-check-for-updates',
   InvokeDownloadUpdate = 'invoke-download-update',
+  InvokeGetUpdateState = 'invoke-get-update-state',
+  InvokeOpenUpdateInstaller = 'invoke-open-update-installer',
+  InvokeShowUpdateWindow = 'invoke-show-update-window',
+  InvokeCloseUpdateWindow = 'invoke-close-update-window',
+  InvokeIgnoreUpdate = 'invoke-ignore-update',
+  InvokeShowUpdateInstaller = 'invoke-show-update-installer',
   InvokeGetWorkspaceSize = 'invoke-get-workspace-size',
   InvokeExportPDF = 'invoke-export-pdf',
   InvokeImportImage = 'invoke-import-image',
@@ -183,6 +213,10 @@ export interface IpcChannelDefinitions {
   }
   [IpcChannels.OnSettingsChanged]: {
     args: { settings: AppSettings }
+    response: void
+  }
+  [IpcChannels.OnUpdateState]: {
+    args: UpdateState
     response: void
   }
   [IpcChannels.OpenWorkspace]: {
@@ -527,10 +561,34 @@ export interface IpcChannelDefinitions {
   }
   [IpcChannels.InvokeCheckForUpdates]: {
     args: undefined
-    response: IpcResponse<UpdateCheckOutcome>
+    response: IpcResponse<UpdateState>
   }
   [IpcChannels.InvokeDownloadUpdate]: {
     args: undefined
+    response: IpcResponse<void>
+  }
+  [IpcChannels.InvokeGetUpdateState]: {
+    args: undefined
+    response: IpcResponse<UpdateState>
+  }
+  [IpcChannels.InvokeOpenUpdateInstaller]: {
+    args: { version: string }
+    response: IpcResponse<void>
+  }
+  [IpcChannels.InvokeShowUpdateWindow]: {
+    args: undefined
+    response: IpcResponse<void>
+  }
+  [IpcChannels.InvokeCloseUpdateWindow]: {
+    args: undefined
+    response: IpcResponse<void>
+  }
+  [IpcChannels.InvokeIgnoreUpdate]: {
+    args: { version: string }
+    response: IpcResponse<void>
+  }
+  [IpcChannels.InvokeShowUpdateInstaller]: {
+    args: { version: string }
     response: IpcResponse<void>
   }
   [IpcChannels.InvokeGetWorkspaceSize]: {

@@ -1,9 +1,4 @@
 import { atom } from 'jotai'
-import type { UpdateCheckOutcome } from '@shared/types/ipc'
+import { INITIAL_UPDATE_STATE } from '@shared/types/ipc'
 
-export type UpdateUiState =
-  | UpdateCheckOutcome
-  | { status: 'idle' | 'checking' | 'downloading' | 'downloaded' }
-  | { status: 'download-error' | 'release-error'; version: string }
-
-export const updateStatusAtom = atom<UpdateUiState>({ status: 'idle' })
+export const updateStatusAtom = atom(INITIAL_UPDATE_STATE)
