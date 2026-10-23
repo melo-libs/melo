@@ -2,6 +2,9 @@ import type { LocaleDict } from './en'
 
 export const zhCN: LocaleDict = {
   menu: {
+    about: '关于 Melo',
+    hide: '隐藏 Melo',
+    quit: '退出 Melo',
     file: '文件',
     newFile: '新建文件',
     openFile: '打开文件…',

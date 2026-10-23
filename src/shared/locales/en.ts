@@ -7,6 +7,9 @@
 
 export const en = {
   menu: {
+    about: 'About Melo',
+    hide: 'Hide Melo',
+    quit: 'Quit Melo',
     file: 'File',
     newFile: 'New File',
     openFile: 'Open File...',

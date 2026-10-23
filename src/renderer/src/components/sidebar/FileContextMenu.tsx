@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { IpcChannels } from '@shared/types/ipc'
 import { Icon, type IconName } from '../Icon'
-import { FileTypeIcon } from '../FileTypeIcon'
 import { cn } from '../../lib/cn'
 import type { FileNode } from './types'
 
@@ -66,12 +65,6 @@ export const FileContextMenu = ({ node, onAction, children }: FileContextMenuPro
             // inline rename input that an item may have just opened.
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
-            <div className="ctx-head">
-              <FileTypeIcon kind={node.kind} size={14} />
-              <span className="ctx-head-name">{node.name}</span>
-            </div>
-            <ContextMenu.Separator className="ctx-sep" />
-
             {isFolder && (
               <>
                 <Item

@@ -108,6 +108,14 @@ async function run() {
   page.on('pageerror', (error) => logs.push(`[renderer:pageerror] ${error.stack ?? error}\n`))
 
   await page.locator('.sidebar').waitFor({ state: 'visible', timeout: 30000 })
+  if (process.platform === 'darwin') {
+    const nativeLabels = await app.evaluate(({ Menu }) =>
+      Menu.getApplicationMenu()
+        .items[0].submenu.items.filter((item) => ['about', 'hide', 'quit'].includes(item.role))
+        .map((item) => item.label),
+    )
+    assert.deepEqual(nativeLabels, ['About Melo', 'Hide Melo', 'Quit Melo'])
+  }
   assert.equal(
     await page.locator('.ws-opener').count(),
     0,
@@ -126,6 +134,14 @@ async function run() {
 
   await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
   const smartNote = page.locator(`.res-row[data-path="${path.join(workspace, 'captured.md')}"]`)
+  await smartNote.click({ button: 'right' })
+  const smartMenu = page.locator('.ctx-menu')
+  await smartMenu.waitFor({ state: 'visible' })
+  assert.equal(await smartMenu.locator('.ctx-head').count(), 0)
+  assert.equal(await smartMenu.locator(':scope > :first-child .ctx-lbl').innerText(), 'Rename…')
+  await page.keyboard.press('Escape')
+  await smartMenu.waitFor({ state: 'hidden' })
+  assert(await smartResults.isVisible(), 'closing the file menu must keep the Smart Folder open')
   await smartNote.click()
   const outlineToggle = page.getByRole('button', { name: 'Toggle outline', exact: true })
   const outline = page.locator('.outline')
@@ -400,6 +416,10 @@ async function run() {
   // moves the real active file while keeping its open tab attached.
   await externalRow.scrollIntoViewIfNeeded()
   await externalRow.click({ button: 'right' })
+  const fileMenu = page.locator('.ctx-menu')
+  await fileMenu.waitFor({ state: 'visible' })
+  assert.equal(await fileMenu.locator('.ctx-head').count(), 0)
+  assert.equal(await fileMenu.locator(':scope > :first-child .ctx-lbl').innerText(), 'Rename…')
   const moveTrigger = page
     .locator('.ctx-item')
     .filter({ hasText: /Move to|移动到/ })
