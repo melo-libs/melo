@@ -126,6 +126,12 @@ async function run() {
 
   await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
   const smartNote = page.locator(`.res-row[data-path="${path.join(workspace, 'captured.md')}"]`)
+  await smartNote.click({ button: 'right' })
+  const smartMenu = page.locator('.ctx-menu')
+  await smartMenu.waitFor({ state: 'visible' })
+  assert.equal(await smartMenu.locator('.ctx-head').count(), 0)
+  assert.equal(await smartMenu.locator(':scope > :first-child .ctx-lbl').innerText(), 'Rename…')
+  await page.keyboard.press('Escape')
   await smartNote.click()
   const outlineToggle = page.getByRole('button', { name: 'Toggle outline', exact: true })
   const outline = page.locator('.outline')
@@ -400,6 +406,10 @@ async function run() {
   // moves the real active file while keeping its open tab attached.
   await externalRow.scrollIntoViewIfNeeded()
   await externalRow.click({ button: 'right' })
+  const fileMenu = page.locator('.ctx-menu')
+  await fileMenu.waitFor({ state: 'visible' })
+  assert.equal(await fileMenu.locator('.ctx-head').count(), 0)
+  assert.equal(await fileMenu.locator(':scope > :first-child .ctx-lbl').innerText(), 'Rename…')
   const moveTrigger = page
     .locator('.ctx-item')
     .filter({ hasText: /Move to|移动到/ })
