@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.3](https://github.com/melo-libs/melo/compare/v2.0.2...v2.0.3) (2026-10-23)
+
+- Added a final onboarding page showing that notes, PDFs, Office documents, images, and videos can be managed in one workspace.
+- Updated the macOS application menu to use the Melo name consistently.
+- Removed the redundant filename heading from file context menus.
+- Fixed Escape handling in Smart Folder context menus so closing a menu does not affect result navigation.
+
 ## [2.0.2](https://github.com/melo-libs/melo/compare/v2.0.1...v2.0.2) (2026-10-22)
 
 - Redesigned the update window with release notes, download progress, retry, and Ignore This Version.
