@@ -9,6 +9,7 @@ import {
 import type { TourFeature } from './tour'
 import { OrganizeArtwork } from './OrganizeArtwork'
 import { EditorArtwork } from './EditorArtwork'
+import { FilesArtwork } from './FilesArtwork'
 // Original figure from the article, bundled so the demo stays offline:
 // https://www-cdn.anthropic.com/images/4zrzovbb/website/5c0c0e9fe4def0b584c04d37849941da55e5e71c-2401x1000.png
 import routingDiagram from '../../assets/onboarding/anthropic-routing.png'
@@ -158,6 +159,7 @@ export function TourArtwork({ feature, modifier }: { feature: TourFeature; modif
     )
   if (feature === 'organize') return <OrganizeArtwork modifier={modifier} />
   if (feature === 'distill') return <EditorArtwork />
+  if (feature === 'files') return <FilesArtwork />
   return (
     <div className="ob-art-scene ob-express-art">
       <div className="ob-share-paper ob-sheet">

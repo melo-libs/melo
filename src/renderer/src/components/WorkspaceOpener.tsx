@@ -11,6 +11,7 @@ import {
   previousTourStep,
   TOUR_COMPLETED_KEY,
   TOUR_FEATURES,
+  TOUR_PAGES,
   type TourStep,
 } from './onboarding/tour'
 import './onboarding/opener.scss'
@@ -40,8 +41,8 @@ export const WorkspaceOpener = ({
   const mainRef = useRef<HTMLElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const focusHeadingRef = useRef(true)
-  const feature = TOUR_FEATURES.find((item) => item.id === step)
-  const hasAnimation = !!feature && feature.id !== 'organize'
+  const feature = TOUR_PAGES.find((item) => item.id === step)
+  const hasAnimation = !!feature && feature.id !== 'organize' && feature.id !== 'files'
   const playing = hasAnimation && visible && !reducedMotion
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
@@ -233,7 +234,7 @@ export const WorkspaceOpener = ({
             <div className="ob-pagination-slot">
               {feature && (
                 <nav className="ob-pagination" aria-label={t('onboarding.navigation')}>
-                  {TOUR_FEATURES.map(({ id }) => (
+                  {TOUR_PAGES.map(({ id }) => (
                     <Button
                       key={id}
                       className="ob-page-dot"
@@ -248,7 +249,7 @@ export const WorkspaceOpener = ({
               )}
             </div>
             <Button className="ob-continue" onClick={() => showStep(nextTourStep(step))}>
-              {t(step === 'express' ? 'onboarding.startUsing' : 'onboarding.continue')}
+              {t(step === 'files' ? 'onboarding.startUsing' : 'onboarding.continue')}
             </Button>
           </footer>
         )}

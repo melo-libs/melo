@@ -499,8 +499,19 @@ export const zhCN: LocaleDict = {
         description: '选中一段文字，生成分享卡片。复制图片，就能粘贴到聊天或社交应用。',
         result: '图片已复制，粘贴即可分享',
       },
+      files: {
+        label: '文件管理',
+        title: '不止笔记，资料不再散落各处',
+        description: 'Markdown 之外，PDF、Word、PPT、图片和视频，所有文件在一处管理',
+      },
     },
     demo: {
+      files: {
+        note: '阅读笔记',
+        pdf: '年度报告',
+        slides: 'Q3 规划',
+        word: '合作协议',
+      },
       sourceExamples: '例如',
       // Official article; the Chinese title and short excerpt are adapted for the demo.
       // https://www.anthropic.com/engineering/building-effective-agents

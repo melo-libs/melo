@@ -132,7 +132,7 @@ describe('the user-paced CODE introduction', () => {
     expect(playing()).toBe('false')
     expect(doc.querySelector('.ob-watch, .ob-auto-progress')).toBeNull()
     await click('.ob-continue')
-    for (const feature of ['collect', 'organize', 'distill', 'express']) {
+    for (const feature of ['collect', 'organize', 'distill', 'express', 'files']) {
       expect(step()).toBe(feature)
       await wait()
       expect(step()).toBe(feature)
@@ -165,17 +165,23 @@ describe('the user-paced CODE introduction', () => {
     expect(footer?.parentElement?.parentElement?.className).toBe('ws-opener')
     expect(doc.querySelector('.ob-main .ob-continue, .ob-main .ob-pagination')).toBeNull()
     expect(paginationSlot?.children).toHaveLength(0)
-    for (const feature of ['collect', 'organize', 'distill', 'express']) {
+    for (const feature of ['collect', 'organize', 'distill', 'express', 'files']) {
       await click('.ob-continue')
       expect(step()).toBe(feature)
       expect(doc.querySelector('.ob-navigation')).toBe(footer)
       expect(doc.querySelector('.ob-continue')).toBe(button)
       expect(doc.querySelector('.ob-pagination-slot')).toBe(paginationSlot)
-      expect(doc.querySelectorAll('.ob-page-dot')).toHaveLength(4)
+      expect(doc.querySelectorAll('.ob-page-dot')).toHaveLength(5)
     }
     await selectLanguage('zh-CN')
+    expect(doc.querySelector('.ob-replay-scene')).toBeNull()
+    expect(button?.textContent).toBe(zhCN.onboarding.startUsing)
+    await click('.ob-page-dot:nth-child(4)')
     await click('.ob-replay-scene')
     expect(doc.querySelector('.ob-continue')).toBe(button)
+    expect(button?.textContent).toBe(zhCN.onboarding.continue)
+    await click('.ob-continue')
+    expect(step()).toBe('files')
     expect(button?.textContent).toBe(zhCN.onboarding.startUsing)
     await click('.ob-continue')
     expect(step()).toBe('start')
@@ -510,7 +516,7 @@ describe('the user-paced CODE introduction', () => {
     await mountDemo()
     expect(doc.querySelector('.ob-captured .ob-capture-status')).not.toBeNull()
     expect(doc.querySelector('.ob-clip-palette .ob-capture-status')).toBeNull()
-    for (const feature of ['collect', 'organize', 'distill', 'express']) {
+    for (const feature of ['collect', 'organize', 'distill', 'express', 'files']) {
       expect(step()).toBe(feature)
       expect(doc.querySelector('.ob-demo-result, .ob-feature-label')).toBeNull()
       expect(doc.querySelector('.ob-organize-upcoming') !== null).toBe(feature === 'organize')
@@ -599,7 +605,7 @@ describe('the user-paced CODE introduction', () => {
     await mount()
     await press('Escape')
     expect(step()).toBe('welcome')
-    for (const screen of ['welcome', 'collect', 'organize', 'distill', 'express']) {
+    for (const screen of ['welcome', 'collect', 'organize', 'distill', 'express', 'files']) {
       expect(step()).toBe(screen)
       expect(doc.querySelector('.ob-skip')).toBeNull()
       await press('Escape')
@@ -643,6 +649,46 @@ describe('the user-paced CODE introduction', () => {
     expect(storage.get(TOUR_COMPLETED_KEY)).toBeUndefined()
     await wait()
     expect(step()).toBe('express')
+  })
+
+  it('shows all file examples immediately on the final page without changing CODE', async () => {
+    await mount()
+    expect(
+      [...doc.querySelectorAll('.ob-code-tile')].map((tile) => tile.textContent).join(''),
+    ).toBe('CODE')
+    await click('.ob-continue')
+    await click('.ob-page-dot:nth-child(5)')
+    expect(step()).toBe('files')
+    expect(playing()).toBe('false')
+    expect(doc.querySelector('.ob-replay-scene')).toBeNull()
+    expect(
+      [...doc.querySelectorAll('.ob-files-item')].map((item) =>
+        item.getAttribute('data-extension'),
+      ),
+    ).toEqual(['jpg', 'pptx', 'mp4', 'pdf', 'md', 'docx'])
+    expect(
+      doc.querySelector('.ob-files-art input, .ob-files-art button, .ob-files-art a'),
+    ).toBeNull()
+    expect(storage.get(TOUR_COMPLETED_KEY)).toBeUndefined()
+    await selectLanguage('zh-CN')
+    expect(step()).toBe('files')
+    expect(doc.querySelector('h1')?.textContent).toBe('不止笔记，资料不再散落各处')
+    expect(doc.querySelector('.ob-description')?.textContent).toBe(
+      'Markdown 之外，PDF、Word、PPT、图片和视频，所有文件在一处管理',
+    )
+    expect(doc.querySelector('.ob-file-pdf strong')?.textContent).toBe('年度报告')
+    expect(doc.querySelector('.ob-file-note strong')?.textContent).toBe('# 阅读笔记')
+    expect(doc.querySelector('.ob-file-word strong')?.textContent).toBe('合作协议')
+    expect(doc.querySelector('.ob-files-window, .ob-files-grid, .ob-files-folder')).toBeNull()
+    await wait()
+    expect(step()).toBe('files')
+    await press('ArrowLeft')
+    expect(step()).toBe('express')
+    await click('.ob-continue')
+    expect(step()).toBe('files')
+    await click('.ob-continue')
+    expect(step()).toBe('start')
+    expect(storage.get(TOUR_COMPLETED_KEY)).toBe('1')
   })
 
   it('keeps folder choice primary and exposes create and file actions as localized text links', async () => {
