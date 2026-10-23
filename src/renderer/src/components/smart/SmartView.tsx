@@ -456,7 +456,11 @@ export const SmartView = () => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
-      if (t.closest('input, textarea, [contenteditable="true"], .smart-modal')) return
+      if (
+        e.defaultPrevented ||
+        t.closest('input, textarea, [contenteditable="true"], .smart-modal, [role="menu"]')
+      )
+        return
       const { results: rs, selectedIdx: idx } = keyCtx.current
       if (e.key === 'Escape') {
         setActiveId(null)
