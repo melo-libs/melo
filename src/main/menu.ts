@@ -6,6 +6,8 @@ import { openFileDialog, sendFileToRenderer } from './api/fileOperations/fileOpe
 import { updateManager } from './updater'
 import { openSettingsWindow } from './settingsWindow'
 
+const PRODUCT_NAME = 'Melo'
+
 export default function createMenu(
   mainWindow: BrowserWindow,
   locale: ResolvedLanguage = 'en',
@@ -13,13 +15,16 @@ export default function createMenu(
   const isMac = process.platform === 'darwin'
   const m = (locale === 'zh-CN' ? zhCN : en).menu
 
+  // Keep branding display-only: app.name also determines the existing profile path.
+  if (isMac) app.setAboutPanelOptions({ applicationName: PRODUCT_NAME })
+
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
       ? [
           {
-            label: app.name,
+            label: PRODUCT_NAME,
             submenu: [
-              { role: 'about' },
+              { label: m.about, role: 'about' },
               { type: 'separator' },
               {
                 label: m.settings,
@@ -29,11 +34,11 @@ export default function createMenu(
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
-              { role: 'hide' },
+              { label: m.hide, role: 'hide' },
               { role: 'hideOthers' },
               { role: 'unhide' },
               { type: 'separator' },
-              { role: 'quit' },
+              { label: m.quit, role: 'quit' },
             ] as MenuItemConstructorOptions[],
           } as MenuItemConstructorOptions,
         ]
