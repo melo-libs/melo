@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { MeloLogo } from '../MeloLogo'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { useAtomValue } from 'jotai'
 import { getMarkRange } from '@tiptap/core'
@@ -16,6 +17,7 @@ import i18n from '../../i18n'
 import { workspacePathAtom } from '../../store/workspace'
 import { appStore } from '../../store/appStore'
 import { activeTabIdAtom } from '../../store/editor'
+import { openAgent } from '../../store/agent'
 import { openImageView } from './ImageLightbox'
 import { currentBlockType, turnInto } from './blockCommands'
 import { FORMAT_OPTIONS, blockName } from './overlayData'
@@ -287,6 +289,7 @@ type BubbleDD = 'format' | 'link' | null
 /** Selection toolbar wired to real editor commands. */
 export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare: () => void }) => {
   const { t } = useTranslation()
+  const workspacePath = useAtomValue(workspacePathAtom)
   const [openDD, setOpenDD] = useState<BubbleDD>(null)
   // Mirror for event handlers that fire before React re-renders (editor blur
   // fires the instant the link input steals focus).
@@ -328,9 +331,10 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
   }, [editor])
 
   useEffect(() => {
+    let updateFrame = 0
     const update = () => {
       if (pressing.current) return
-      if (shouldShow()) {
+      if (editor.isFocused && shouldShow()) {
         if (!visibleRef.current) {
           visibleRef.current = true
           place()
@@ -341,9 +345,9 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
       }
     }
     const hide = () => {
-      // Editor blur fired by the link input taking focus — the toolbar (and
-      // panel) must stay up while the user types the URL.
+      // Only the link input owns focus outside the editor itself.
       if (openDDRef.current === 'link') return
+      setDD(null)
       visibleRef.current = false
       setAnchor(null)
     }
@@ -354,10 +358,15 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
       if (!pressing.current) return
       pressing.current = false
       visibleRef.current = false
-      requestAnimationFrame(update)
+      if (updateFrame) cancelAnimationFrame(updateFrame)
+      updateFrame = requestAnimationFrame(() => {
+        updateFrame = 0
+        update()
+      })
     }
     const reposition = () => {
-      if (shouldShow()) place()
+      // Scrolling the AI panel must not revive a dismissed selection toolbar.
+      if (visibleRef.current && shouldShow()) place()
     }
     editor.on('selectionUpdate', update)
     editor.on('blur', hide)
@@ -366,6 +375,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
     return () => {
+      if (updateFrame) cancelAnimationFrame(updateFrame)
       editor.off('selectionUpdate', update)
       editor.off('blur', hide)
       editor.view.dom.removeEventListener('mousedown', onMouseDown)
@@ -373,7 +383,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
       window.removeEventListener('scroll', reposition, true)
       window.removeEventListener('resize', reposition)
     }
-  }, [editor, shouldShow, place])
+  }, [editor, shouldShow, place, setDD])
 
   // This selector runs on every transaction (every keystroke), so it must be
   // cheap when the toolbar can't be shown. With an empty selection the menu is
@@ -401,7 +411,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
   useLayoutEffect(() => {
     const el = elRef.current
     if (!el || !anchor) return
-    el.querySelectorAll<HTMLElement>('.bubble-turn').forEach((btn) => {
+    el.querySelectorAll<HTMLElement>('.bubble-turn, .bubble-ask').forEach((btn) => {
       btn.style.width = 'auto'
       // offsetWidth, not getBoundingClientRect: this runs during the pop
       // entry animation, whose scale(0.98) shrinks measured rects — the
@@ -409,7 +419,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
       // and immune to transforms.
       btn.style.width = `${btn.offsetWidth}px`
     })
-  }, [anchor, s.blockType])
+  }, [anchor, s.blockType, t])
 
   useLayoutEffect(() => {
     const el = elRef.current
@@ -473,9 +483,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
     return () => window.removeEventListener('keydown', onKey)
   }, [anchor, setDD])
 
-  // Hide the toolbar while a block is being dragged (it would otherwise sit
-  // over the document mid-drag). Toggle a body class rather than unmounting
-  // the Tiptap BubbleMenu — unmount/remount per drag leaks its DOM element.
+  // A block drag should not leave text-formatting controls over the document.
   useEffect(() => {
     const start = () => document.body.classList.add('melo-dragging')
     const end = () => document.body.classList.remove('melo-dragging')
@@ -498,7 +506,31 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
   if (!anchor) return null
 
   return (
-    <div ref={elRef} className="bubble" style={{ position: 'fixed' }}>
+    <div ref={elRef} className="bubble bubble-selection" style={{ position: 'fixed' }}>
+      {workspacePath && (
+        <button
+          className="bubble-btn bubble-ask"
+          onMouseDown={(event) => event.preventDefault()}
+          title={t('agent.askAI')}
+          aria-label={t('agent.askAI')}
+          onClick={() => {
+            const { from, to } = editor.state.selection
+            const rect = editor.view.coordsAtPos(to)
+            visibleRef.current = false
+            setDD(null)
+            setAnchor(null)
+            openAgent({
+              selection: editor.state.doc.textBetween(from, to, '\n'),
+              anchor: { x: rect.left + 12, y: rect.bottom + 12 },
+            })
+          }}
+        >
+          <MeloLogo size={18} />
+          <span>{t('agent.askAI')}</span>
+        </button>
+      )}
+      {workspacePath && <span className="bubble-sep" />}
+
       <button
         className={cn('bubble-btn bubble-turn', openDD === 'format' && 'open')}
         onMouseDown={(e) => {
@@ -599,18 +631,19 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
         onMouseDown={(e) => e.preventDefault()}
         onClick={cmd((c) => c.toggleHighlight().run())}
         title={t('editor.highlight')}
+        aria-label={t('editor.highlight')}
       >
         <span className="bubble-hl-letter-trigger">A</span>
       </button>
-
       <span className="bubble-sep" />
       <button
-        className="bubble-btn"
+        className="bubble-btn bubble-share"
         onMouseDown={(e) => e.preventDefault()}
         onClick={onShare}
         title={t('editor.shareAsImage')}
+        aria-label={t('editor.shareAsImage')}
       >
-        <Icon name="share" size={14} />
+        <Icon name="share" size={16} />
       </button>
     </div>
   )

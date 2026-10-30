@@ -12,3 +12,6 @@ stats.html
 # Reference repos for Tiptap research (cloned locally, not tracked)
 .reference/
 *.tsbuildinfo
+
+# Repository-local package cache; dependencies use the configured pnpm store.
+/.pnpm-store/

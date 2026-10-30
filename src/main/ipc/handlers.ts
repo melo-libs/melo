@@ -47,6 +47,7 @@ import {
   activeWorkspaceRoot,
 } from '../api/indexer'
 import { getSmartViews, saveSmartViews } from '../api/smartViews'
+import { resumeAgent, suspendAgent } from './agent'
 import { downloadImageToAssets } from '../api/capture/pipeline'
 import { sniffImageExt } from '../api/capture/pipeline'
 import { MAX_SMART_RULES, SMART_SORTS, type SmartSort } from '../../shared/types/smart'
@@ -196,7 +197,9 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeWatchWorkspace]: async (event, args) => {
     try {
+      await suspendAgent()
       await watchWorkspace(args.directoryPath, event.sender)
+      resumeAgent()
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
@@ -205,6 +208,7 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeUnwatchWorkspace]: async () => {
     try {
+      await suspendAgent()
       await unwatchWorkspace()
       return { success: true }
     } catch (error) {
@@ -214,7 +218,9 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeInitIndex]: async (_event, args) => {
     try {
+      if (activeWorkspaceRoot() !== args.directoryPath) await suspendAgent()
       openIndex(args.directoryPath)
+      resumeAgent()
       await fullScan()
       // A slower scan for a workspace that has already been switched away
       // must not publish the new workspace's source map under the old request.
@@ -502,6 +508,7 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
         success: true,
         data: {
           mtime: stats.mtimeMs,
+          canonicalPath: await fs.realpath(args.filePath),
           size: stats.size,
           isDirectory: stats.isDirectory(),
         },

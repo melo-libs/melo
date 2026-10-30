@@ -1,8 +1,10 @@
 import { ipcMain } from 'electron'
 import { IpcChannels } from '../../shared/types/ipc'
 import { getHandler } from './handlers'
+import { setupAgentIPC } from './agent'
 
 export function setupIPC(): void {
+  setupAgentIPC()
   // Register invoke handlers
   Object.values(IpcChannels).forEach((channel) => {
     const handler = getHandler(channel)

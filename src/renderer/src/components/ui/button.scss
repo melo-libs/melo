@@ -60,6 +60,36 @@
   color: var(--paper);
 }
 
+.ui-button-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: var(--paper);
+}
+
+.ui-button-danger:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--danger) 90%, var(--ink));
+  color: var(--paper);
+}
+
+.ui-button-danger-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--danger);
+}
+
+.ui-button-danger-ghost:hover:not(:disabled),
+.ui-button-danger-ghost[data-state='open']:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--danger) 10%, var(--paper));
+  color: var(--danger);
+}
+
+.ui-button-danger:focus-visible,
+.ui-button-danger-ghost:focus-visible {
+  outline-color: var(--danger);
+}
+
 .ui-button:disabled {
   cursor: default;
   border-color: var(--hairline);

@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react'
 import * as Switch from '@radix-ui/react-switch'
 import * as ToggleGroup from '@radix-ui/react-toggle-group'
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Icon } from '../Icon'
 import { cn } from '../../lib/cn'
 
 /* ============================================================
@@ -58,15 +56,18 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   value: T
   options: Option<T>[]
   onChange: (v: T) => void
+  disabled?: boolean
 }) {
   return (
     <ToggleGroup.Root
       type="single"
       className="seg"
+      disabled={disabled}
       value={value}
       onValueChange={(v) => {
         // Radix reports '' when the active item is re-clicked — a segmented
@@ -83,40 +84,4 @@ export function Segmented<T extends string>({
   )
 }
 
-export function Select<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T
-  options: Option<T>[]
-  onChange: (v: T) => void
-}) {
-  const current = options.find((o) => o.value === value) ?? options[0]
-  return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="sel-btn">
-        <span>{current?.label ?? ''}</span>
-        <span className="sel-chev">
-          <Icon name="chev" size={12} />
-        </span>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content className="sel-pop" align="end" sideOffset={5} collisionPadding={12}>
-          {options.map((o) => (
-            <DropdownMenu.Item
-              key={o.value}
-              className={cn('sel-opt', o.value === value && 'sel-active')}
-              onSelect={() => onChange(o.value)}
-            >
-              <span>{o.label}</span>
-              <span className="sel-ck">
-                <Icon name="tick" size={13} />
-              </span>
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  )
-}
+export { Select } from '../ui/Select'

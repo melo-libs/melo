@@ -40,6 +40,8 @@ import {
   restoreWorkspacePath,
 } from './lib/workspace'
 import { openCodeGuide } from './lib/codeGuide'
+import { AgentWindow } from './components/agent/AgentWindow'
+import { connectAgent } from './store/agent'
 
 const SIDEBAR_WIDTH_KEY = 'melo.sidebarWidth'
 const SIDEBAR_WIDTH_DEFAULT = 260
@@ -60,6 +62,7 @@ const savedSidebarWidth = (): number => {
  * editor; the outline follows the active document in either browsing mode.
  */
 const App = () => {
+  useEffect(connectAgent, [])
   const settings = useAtomValue(settingsAtom)
   const [sidebarShown, setSidebarShown] = useState(true)
   const [sidebarFits, setSidebarFits] = useState(true)
@@ -586,6 +589,7 @@ const App = () => {
       {showOutline ? <Outline /> : <div className="app-region" />}
       <SmartBuilder />
       <SearchPalette />
+      <AgentWindow />
       <Toaster />
     </div>
   )

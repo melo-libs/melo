@@ -60,7 +60,7 @@ export async function openDirectoryDialog(
  */
 export async function readAndProcessFile(
   filePath: string,
-): Promise<{ content: string; filePath: string; mtime: number }> {
+): Promise<{ content: string; filePath: string; canonicalPath: string; mtime: number }> {
   const fileContent = await fs.readFile(filePath, 'utf-8')
   const stats = await fs.stat(filePath)
   // Add to recent documents when reading markdown files
@@ -71,7 +71,12 @@ export async function readAndProcessFile(
   // Return raw markdown — the renderer will parse it via @tiptap/markdown.
   // mtime rides along so the document session can detect external changes
   // without a second stat round-trip.
-  return { content: fileContent, filePath, mtime: stats.mtimeMs }
+  return {
+    content: fileContent,
+    filePath,
+    canonicalPath: await fs.realpath(filePath),
+    mtime: stats.mtimeMs,
+  }
 }
 
 /** Ask the renderer's document session to open a file from disk. */

@@ -37,23 +37,30 @@
     "test:main": "ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run src/main",
     "test:e2e:single-instance": "pnpm run build && node scripts/e2e-single-instance.mjs",
     "test:e2e:onboarding": "pnpm run build && node scripts/e2e-onboarding.mjs",
-    "test:e2e:workspace": "pnpm run build && node scripts/e2e-workspace-watcher.mjs"
+    "test:e2e:workspace": "pnpm run build && node scripts/e2e-workspace-watcher.mjs",
+    "test:e2e:agent": "pnpm run build && node scripts/e2e-agent.mjs"
   },
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.95.0",
+    "@agentclientprotocol/codex-acp": "2.2.2",
+    "@agentclientprotocol/sdk": "2.0.2",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "@modelcontextprotocol/sdk": "1.28.0",
     "@mozilla/readability": "^0.6.0",
     "@parcel/watcher": "^2.6.0",
     "@tiptap/core": "^3.25.0",
     "@tiptap/extension-paragraph": "^3.25.0",
     "@tiptap/pm": "^3.25.0",
     "better-sqlite3": "^12.10.0",
+    "diff": "9.0.0",
     "electron-updater": "^6.1.7",
     "fs-extra": "^11.2.0",
     "gray-matter": "^4.0.3",
     "linkedom": "^0.18.12",
     "mime-types": "^2.1.35",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@ariakit/react": "^0.4.29",

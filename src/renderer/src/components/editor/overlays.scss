@@ -354,20 +354,47 @@ body.melo-eq-editing .bubble {
 .bubble-turn.open {
   background: var(--paper-2);
 }
-/* Highlight toggle — an A over a bar of the actual mark color, so the
-   button previews exactly what the highlight looks like. (The dropdown
-   with text colors and multicolor highlights is gone: neither survives
-   Markdown; only ==text== does.) */
-/* Active = the real mark effect: ink A on the actual highlight color,
-   not the blue used by the other toggles. The bar would double-paint a
-   darker stripe on the same-color background, so it goes transparent. */
-.bubble-btn.bubble-hl-btn[data-active='true'],
-.bubble-btn.bubble-hl-btn[data-active='true']:hover {
+// Keep direct actions compact, as requested; image controls retain their layout.
+.bubble-selection {
+  height: 36px;
+  padding: 4px;
+  border-radius: var(--r-lg);
+  gap: 1px;
+  border: 0;
+  box-shadow:
+    0 0 0 0.5px var(--hairline),
+    var(--shadow-md);
+  .bubble-btn {
+    height: 28px;
+    min-width: 28px;
+    border-radius: var(--r-md);
+    color: var(--ink-2);
+  }
+  .bubble-btn[data-active='true'] {
+    color: #fff;
+  }
+  .bubble-sep {
+    flex-shrink: 0;
+    height: 18px;
+  }
+  .bubble-ask {
+    padding: 0 8px 0 6px;
+    gap: 5px;
+    color: var(--ink);
+    font-size: 13px;
+    > svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+}
+.bubble-selection .bubble-hl-btn[data-active='true'],
+.bubble-selection .bubble-hl-btn[data-active='true']:hover {
   background: var(--hl-mark);
   color: var(--ink);
-}
-.bubble-hl-btn[data-active='true'] .bubble-hl-letter-trigger {
-  border-bottom-color: transparent;
+  .bubble-hl-letter-trigger {
+    border-bottom-color: transparent;
+  }
 }
 .bubble-hl-letter-trigger {
   font-family: var(--font-serif);

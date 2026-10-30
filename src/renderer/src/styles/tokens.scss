@@ -60,6 +60,7 @@
   --ai-hover: oklch(0.745 0.17 84);
 
   /* Semantic */
+  --danger: oklch(0.5 0.18 25);
   --selection: oklch(0.8 0.075 262 / 0.42);
   /* Highlighter lemon — v1.0.0's hue (#ffff00) with the glare taken out. */
   --hl-mark: oklch(0.94 0.16 105 / 0.5);
@@ -149,6 +150,7 @@
   --ai-hover: oklch(0.76 0.09 150);
 
   --selection: oklch(0.62 0.09 262 / 0.4);
+  --danger: oklch(0.72 0.18 25);
   --hl-mark: oklch(0.65 0.13 100 / 0.4);
   --find-match: oklch(0.55 0.12 105);
   --find-active: oklch(0.62 0.15 55);

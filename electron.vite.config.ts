@@ -7,7 +7,8 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // ACP is ESM-only; Electron 31's CommonJS main cannot require it directly.
+    plugins: [externalizeDepsPlugin({ exclude: ['@agentclientprotocol/sdk'] })],
     build: {
       minify: true,
       sourcemap: false,
