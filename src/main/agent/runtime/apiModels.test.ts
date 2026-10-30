@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiModels } from './apiModels'
-import { testAgentApi, validateAgentApiEndpoint } from './apiConnection'
+import { testAgentApi } from './apiConnection'
+import { validateAgentApiEndpoint } from './apiTransport'
 import { agentApiService, type AgentApiServiceId } from '../../../shared/agentApi'
 import type { AgentProvider } from '../../../shared/types/agent'
 import { claudeApiConfiguration } from './claudeAccess'

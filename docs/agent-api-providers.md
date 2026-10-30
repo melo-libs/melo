@@ -68,8 +68,10 @@ connection, and no undocumented model-list endpoint is guessed for Coding Plans.
 - `shared/agentApi.ts`: service profiles, verified catalogs and key-scope rules.
 - `main/agent/runtime/apiModels.ts`: bounded catalog reads, parsing, filtering,
   per-Harness/service/endpoint/key caching, and explicit refresh/fallback.
-- `main/agent/runtime/apiConnection.ts`: endpoint validation, authenticated
-  protocol probes and sanitized transport/provider errors.
+- `main/agent/runtime/apiTransport.ts`: validated endpoint/key types, auth headers,
+  bounded HTTP reads and sanitized transport/provider errors. No Harness dependency.
+- `main/agent/runtime/apiConnection.ts`: stateless Messages/Responses probes.
+  Model ID rules live in the shared policy and also apply to Claude configuration.
 - `main/agent/runtime/claudeAccess.ts`: the matching Claude subprocess auth policy.
 - `main/agent/storage/agentSettings.ts`: encrypted keys and persisted service identity.
 - `renderer/.../AgentApiModelField.tsx`: transient catalog state and stale-response

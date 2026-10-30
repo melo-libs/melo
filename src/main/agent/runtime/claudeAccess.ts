@@ -4,6 +4,7 @@ import {
   agentApiPreset,
   agentApiService,
   normalizeAgentApiUrl,
+  validateAgentApiModel,
 } from '../../../shared/agentApi'
 
 export const CLAUDE_AUTH_STATUS_METHOD = '_auth/status_update'
@@ -75,12 +76,11 @@ export function claudeApiConfiguration(input: unknown): {
 } {
   const parsed = API_CONFIGURATION.parse(input)
   const baseUrl = normalizeAgentApiUrl('claude', parsed.baseUrl)
-  const { apiKey, model } = parsed
+  const { apiKey } = parsed
   const service = parsed.apiService
     ? agentApiService('claude', parsed.apiService)
     : agentApiPreset('claude', baseUrl)
-  const deepseek = service.id === 'deepseek'
-  if (deepseek && model.toLowerCase() === 'deepseek') throw new Error('AGENT_API_MODEL_INVALID')
+  const model = validateAgentApiModel(service.id, parsed.model)
   const bearer = (parsed.authHeader ?? service.auth) === 'Authorization'
   return {
     baseUrl,

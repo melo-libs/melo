@@ -210,6 +210,19 @@ export function agentApiService(provider: AgentProvider, id: AgentApiServiceId):
   if (!preset) throw new Error('AGENT_API_SERVICE_INVALID')
   return preset
 }
+export function validateAgentApiModel(service: AgentApiServiceId, input: string): string {
+  const model = input.trim()
+  if (
+    !model ||
+    model.length > 256 ||
+    /\s/.test(model) ||
+    (service === 'deepseek' && model.toLowerCase() === 'deepseek')
+  ) {
+    throw new Error('AGENT_API_MODEL_INVALID')
+  }
+  return model
+}
+
 // Older profiles knew only these built-ins. Do not silently assign an existing
 // custom key to a newly introduced service or billing product.
 export function savedAgentApiService(

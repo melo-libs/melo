@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
-import { testAgentApi, requestAgentApi } from './apiConnection'
+import { testAgentApi } from './apiConnection'
+import { requestAgentApi } from './apiTransport'
 import { claudeApiConfiguration } from './claudeAccess'
 
 let server: Server | undefined

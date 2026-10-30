@@ -38,7 +38,8 @@ Main
     │    ├─ runtimeEnvironment.ts      Node discovery/install and adapter entry points
     │    ├─ runtimeOutput.ts           Streaming output and credential redaction
     │    ├─ toolIdentity.ts            Adapter-provided MCP provenance
-    │    ├─ apiConnection.ts           Provider API validation and connection tests
+    │    ├─ apiTransport.ts            API endpoint/key boundaries and safe HTTP transport
+    │    ├─ apiConnection.ts           Stateless Messages/Responses connection probes
     │    ├─ claudeAccess.ts            Claude authentication and API configuration
     │    ├─ claudeSession.ts           Claude session policy
     │    └─ codexLaunch.ts             Native account reuse and MCP isolation

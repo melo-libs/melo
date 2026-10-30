@@ -6,7 +6,8 @@ import {
   requestAgentApi,
   validateAgentApiEndpoint,
   type AgentApiEndpoint,
-} from './apiConnection'
+  type ResolvedAgentApiEndpoint,
+} from './apiTransport'
 
 const MODEL = z.object({
   id: z
@@ -53,7 +54,7 @@ export class ApiModels {
         return catalog
       })
       .catch((error: Error) => {
-        const service = agentApiService(config.provider, config.apiService!)
+        const service = agentApiService(config.provider, config.apiService)
         const fallback =
           this.cache.get(key) ??
           (service.models.length
@@ -73,8 +74,8 @@ export class ApiModels {
     return request
   }
 
-  private async fetch(config: AgentApiEndpoint): Promise<AgentApiCatalog> {
-    const service = agentApiService(config.provider, config.apiService!)
+  private async fetch(config: ResolvedAgentApiEndpoint): Promise<AgentApiCatalog> {
+    const service = agentApiService(config.provider, config.apiService)
     if (!service.catalogPath && service.id !== 'custom')
       return {
         models: service.models,
