@@ -9,6 +9,7 @@ supportedArchitectures:
     - arm64
 
 patchedDependencies:
+  '@agentclientprotocol/codex-acp@2.2.2': patches/@agentclientprotocol__codex-acp@2.2.2.patch
   '@parcel/watcher@2.6.0': patches/@parcel__watcher@2.6.0.patch
 
 allowBuilds:

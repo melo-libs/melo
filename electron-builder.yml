@@ -12,6 +12,8 @@ compression: maximum
 asar: true
 asarUnpack:
   - resources/**
+  # ACP adapters run in external Node, which cannot resolve modules inside asar.
+  - node_modules/**/*
   # pnpm.supportedArchitectures installs both packaged macOS architectures,
   # and @parcel/watcher selects the matching N-API binary at runtime. Native
   # modules cannot be loaded from inside app.asar.

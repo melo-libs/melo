@@ -1,0 +1,30 @@
+diff --git a/dist/index.js b/dist/index.js
+index 3e927271d2e805d1b111dfa6082686c17b2f62ae..86deeeff6d5847f6e22f645721769dd0d8d01f2a 100755
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -35479,7 +35479,10 @@ var CodexAcpClient = class _CodexAcpClient {
+     return {
+       config: {
+         ...configWithWorkspaceRoots,
+-        "mcp_servers": Object.fromEntries(serversToConfigure.map((mcp) => [mcp.name, this.createMcpSeverConfig(mcp.server)]))
++        "mcp_servers": {
++          ...configWithWorkspaceRoots.mcp_servers,
++          ...Object.fromEntries(serversToConfigure.map((mcp) => [mcp.name, { ...configWithWorkspaceRoots.mcp_servers?.[mcp.name], ...this.createMcpSeverConfig(mcp.server) }]))
++        }
+       },
+       skippedMcpServers
+     };
+@@ -42671,11 +42674,8 @@ var CodexAcpServer = class {
+   }
+   async handleError(e) {
+     if (e.message.includes("log out") || e.message.includes("cloud requirements")) {
+-      await this.runWithProcessCheck(() => this.codexAcpClient.logout());
+-      await this.refreshAuthState(null);
+-      throw RequestError.internalError(`${e.message}
+-
+-You have been logged out. Please try again.`);
++      // Melo shares the user's native account; reporting an error must never revoke it.
++      throw RequestError.authRequired();
+     }
+     const configPath = this.codexAcpClient.getHomePath() ?? "global";
+     if (e.message.includes("load config")) {

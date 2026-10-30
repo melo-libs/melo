@@ -1,11 +1,13 @@
 import type { Editor } from '@tiptap/core'
 import i18n from '../i18n'
 import { appStore } from './appStore'
-import { setTabSaveStateAtom, promoteTabAtom, type SaveStatus } from './editor'
+import { setTabSaveStateAtom, promoteTabAtom, closeTabAtom, type SaveStatus } from './editor'
 import { toast } from '../components/Toaster'
 import { splitFrontmatter } from '../lib/frontmatter'
 import { createSaveScheduler, type SaveScheduler } from '../lib/saveScheduler'
 import { stripMarkdownExtension } from '@shared/fileKinds'
+import { agentRevision } from '@shared/agentRevision'
+import type { AgentDocumentRequest, AgentDocumentReply } from '@shared/types/agent'
 
 /* ============================================================
    Document sessions — the single owner of everything "save".
@@ -34,6 +36,7 @@ export function getMarkdown(editor: Editor): string {
 
 interface Session {
   id: string
+  canonicalPath: string | null
   kind: 'file' | 'untitled'
   frontmatter: string
   /** Last content known to be on disk. null = no successful load/save yet,
@@ -60,7 +63,7 @@ let displayedId: string | null = null
 let activeEditor: Editor | null = null
 /** Registered by EditorPage: knows how to put a reloaded body into the
  *  editor (setContent + state rebuild + recounts). */
-let reloadApplier: ((body: string) => void) | null = null
+let reloadApplier: ((body: string, preserveHistory?: boolean) => void) | null = null
 
 const isUntitled = (id: string) => id.startsWith('untitled-')
 
@@ -81,6 +84,7 @@ function ensure(id: string): Session {
   if (!s) {
     s = {
       id,
+      canonicalPath: null,
       kind: isUntitled(id) ? 'untitled' : 'file',
       frontmatter: '',
       baseline: null,
@@ -105,7 +109,9 @@ export function attachEditor(editor: Editor | null): void {
   activeEditor = editor
 }
 
-export function registerReloadApplier(fn: ((body: string) => void) | null): void {
+export function registerReloadApplier(
+  fn: ((body: string, preserveHistory?: boolean) => void) | null,
+): void {
   reloadApplier = fn
 }
 
@@ -156,12 +162,14 @@ export async function activateSession(
 async function loadFile(id: string): Promise<{ body: string; frontmatter: string } | null> {
   const s = ensure(id)
   const token = ++s.loadToken
+  const revisionBefore = s.dirtyRev
   try {
     const res = await window.api.invoke(window.api.channels.InvokeReadFile, { filePath: id })
-    if (s.closed || token !== s.loadToken) return null
+    if (s.closed || token !== s.loadToken || revisionBefore !== s.dirtyRev) return null
     if (!res.success || !res.data) throw new Error(res.success ? 'empty response' : res.error)
     const { frontmatter, body } = splitFrontmatter(res.data.content)
     s.frontmatter = frontmatter
+    s.canonicalPath = res.data.canonicalPath
     s.baseline = body
     s.content = body
     s.mtime = res.data.mtime
@@ -305,7 +313,10 @@ export async function promoteUntitled(oldId: string, filePath: string): Promise<
   if (displayedId === oldId) displayedId = filePath
   try {
     const res = await window.api.invoke(window.api.channels.InvokeGetFileStats, { filePath })
-    if (res.success && res.data) s.mtime = res.data.mtime
+    if (res.success && res.data) {
+      s.mtime = res.data.mtime
+      s.canonicalPath = res.data.canonicalPath
+    }
   } catch {
     // mtime stays null; the next save fills it in.
   }
@@ -374,4 +385,126 @@ export function reviveFromDisk(id: string): Promise<{ body: string; frontmatter:
 /** Frontmatter of a session (ClipBanner and save need it). */
 export function getFrontmatter(id: string): string {
   return sessions.get(id)?.frontmatter ?? ''
+}
+
+const preparedFiles = new Map<string, boolean>()
+
+export function isDocumentPrepared(id: string): boolean {
+  return preparedFiles.has(id)
+}
+
+function releasePrepared(id: string): void {
+  const editable = preparedFiles.get(id)
+  preparedFiles.delete(id)
+  if (editable !== undefined && id === displayedId) activeEditor?.setEditable(editable, false)
+}
+
+/** Agent edits enter the same owner as typing and auto-save. The last check
+ * and editor transaction are synchronous so a keystroke cannot slip between. */
+export async function handleAgentDocument(
+  request: AgentDocumentRequest,
+  signal?: AbortSignal,
+): Promise<AgentDocumentReply> {
+  signal?.throwIfAborted()
+  if (request.action === 'cancel') return { id: request.id, handled: false }
+  for (const session of sessions.values()) {
+    if (session.kind !== 'file' || session.canonicalPath !== null || session.baseline === null)
+      continue
+    const result = await window.api.invoke(window.api.channels.InvokeGetFileStats, {
+      filePath: session.id,
+    })
+    signal?.throwIfAborted()
+    if (!result.success || !result.data) throw new Error('Could not resolve the open document path')
+    session.canonicalPath = result.data.canonicalPath
+  }
+  const owners = [...sessions.values()].filter(
+    (session) => session.id === request.path || session.canonicalPath === request.path,
+  )
+  if (owners.length > 1)
+    throw new Error('This file is open through multiple paths. Close the duplicate tabs first.')
+  const id = owners[0]?.id ?? request.path
+  let s = sessions.get(id)
+  if (request.action === 'abort-file-operation') {
+    releasePrepared(id)
+    return { id: request.id, handled: true }
+  }
+  if (request.action === 'finish-file-operation') {
+    releasePrepared(id)
+    await closeSession(id, { discard: true })
+    appStore.set(closeTabAtom, id)
+    return { id: request.id, handled: true }
+  }
+  if (request.action === 'prepare-file-operation') {
+    if (preparedFiles.has(id)) throw new Error('A file operation is already pending')
+    preparedFiles.set(id, id === displayedId ? (activeEditor?.isEditable ?? false) : true)
+    if (id === displayedId) activeEditor?.setEditable(false, false)
+    try {
+      if (!(await flush(id))) throw new Error('Could not save the open document')
+      signal?.throwIfAborted()
+      return { id: request.id, handled: true }
+    } catch (error) {
+      releasePrepared(id)
+      throw error
+    }
+  }
+  if (preparedFiles.has(id)) throw new Error('A file operation is pending')
+  if (!s && request.action === 'read') return { id: request.id, handled: false }
+  if (!s) {
+    if (!(await activateSession(id))) throw new Error('Could not load the document')
+    s = sessions.get(id)!
+  }
+  const raw = () => s!.frontmatter + getContent(id)
+  if (!s.dirty && !s.saving) {
+    const revisionBefore = s.dirtyRev
+    const disk = await window.api.invoke(window.api.channels.InvokeReadFile, { filePath: id })
+    signal?.throwIfAborted()
+    if (!disk.success || !disk.data) throw new Error('Could not read the document')
+    if (s.closed || revisionBefore !== s.dirtyRev || s.saving)
+      throw new Error('Document changed; read it again')
+    if (disk.data.content !== s.frontmatter + s.baseline) {
+      const next = splitFrontmatter(disk.data.content)
+      s.frontmatter = next.frontmatter
+      s.baseline = next.body
+      s.content = next.body
+      s.mtime = disk.data.mtime
+      if (id === displayedId) reloadApplier?.(next.body)
+    }
+  }
+  const content = raw()
+  if (content.length > 1024 * 1024) throw new Error('Document exceeds the 1 MB limit')
+  const revision = await agentRevision(content)
+  signal?.throwIfAborted()
+  if (s.closed || raw() !== content || preparedFiles.has(id))
+    throw new Error('Document changed; read it again')
+  if (request.action === 'read')
+    return { id: request.id, handled: true, snapshot: { content, revision } }
+  if (request.action !== 'edit') throw new Error('Unsupported document operation')
+  const disk = await window.api.invoke(window.api.channels.InvokeReadFile, { filePath: id })
+  signal?.throwIfAborted()
+  if (!disk.success || !disk.data) throw new Error('Could not read the document')
+  if (
+    s.closed ||
+    raw() !== content ||
+    preparedFiles.has(id) ||
+    request.expectedRevision !== revision ||
+    disk.data.content !== s.frontmatter + s.baseline
+  )
+    throw new Error('Document changed; read it again before editing')
+  const next = splitFrontmatter(request.content)
+  if (s.frontmatter !== next.frontmatter) throw new Error('Preserve document metadata when editing')
+  if (id === displayedId) {
+    if (!activeEditor || !reloadApplier) throw new Error('Editor is not ready')
+    reloadApplier(next.body, true)
+  }
+  s.content = next.body
+  s.dirty = true
+  s.dirtyRev++
+  setTabState({ id, dirty: true })
+  if (!(await flush(id))) throw new Error('Could not save the edited document')
+  const saved = raw()
+  return {
+    id: request.id,
+    handled: true,
+    snapshot: { content: saved, revision: await agentRevision(saved) },
+  }
 }

@@ -37,6 +37,7 @@ import {
   getFrontmatter,
   noteEdited,
   registerReloadApplier,
+  isDocumentPrepared,
   setDisplayedSession,
   snapshotDisplayed,
 } from '../../store/documentSession'
@@ -212,17 +213,19 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
   // reloads keep the caret and scroll position best-effort; tab switches
   // reset both.
   const applyBody = useCallback(
-    (body: string, opts?: { preserveView?: boolean }) => {
+    (body: string, opts?: { preserveView?: boolean; preserveHistory?: boolean }) => {
       if (!editor) return
       const scrollEl = document.querySelector<HTMLElement>('.ed-scroll')
       const prevScroll = opts?.preserveView ? (scrollEl?.scrollTop ?? 0) : 0
       const prevFrom = opts?.preserveView ? editor.state.selection.from : null
       editor.commands.setContent(body, { contentType: 'markdown', emitUpdate: false })
-      const freshState = EditorState.create({
-        doc: editor.state.doc,
-        plugins: editor.state.plugins,
-      })
-      editor.view.updateState(freshState)
+      if (!opts?.preserveHistory) {
+        const freshState = EditorState.create({
+          doc: editor.state.doc,
+          plugins: editor.state.plugins,
+        })
+        editor.view.updateState(freshState)
+      }
       if (prevFrom !== null) {
         try {
           const pos = Math.min(prevFrom, editor.state.doc.content.size)
@@ -241,8 +244,8 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
   )
 
   useEffect(() => {
-    registerReloadApplier((body) => {
-      applyBody(body, { preserveView: true })
+    registerReloadApplier((body, preserveHistory) => {
+      applyBody(body, { preserveView: true, preserveHistory })
       setDocInfo((d) => (d ? { ...d, body } : d))
     })
     return () => registerReloadApplier(null)
@@ -313,7 +316,7 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
       // Edits belong to the new document only from this point on.
       setDisplayedSession(loadFailed ? null : activeTabId)
       setDocInfo(doc ? { frontmatter: getFrontmatter(activeTabId), body: doc.body } : null)
-      editor.setEditable(!loadFailed, false)
+      editor.setEditable(!loadFailed && !isDocumentPrepared(activeTabId), false)
       scrollEl?.classList.remove('ed-switching')
       // Caret at the start — documents open at the top (focus('end')
       // also scrolled long documents to the bottom).

@@ -1,5 +1,12 @@
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
+import type {
+  AgentCommand,
+  AgentCommandResult,
+  AgentView,
+  AgentDocumentRequest,
+  AgentDocumentReply,
+} from './agent'
 
 export interface UpdateRelease {
   version: string
@@ -29,6 +36,10 @@ export const INITIAL_UPDATE_STATE: UpdateState = {
 }
 
 export enum IpcChannels {
+  AgentCommand = 'agent-command',
+  OnAgentView = 'on-agent-view',
+  OnAgentDocumentRequest = 'on-agent-document-request',
+  AgentDocumentReply = 'agent-document-reply',
   // Send-only channels (renderer -> main)
   FileNew = 'file-new',
   FileMoved = 'file-moved',
@@ -195,6 +206,10 @@ export type WorkspaceChangedEvent =
 
 // Channel-specific type definitions
 export interface IpcChannelDefinitions {
+  [IpcChannels.AgentCommand]: { args: AgentCommand; response: IpcResponse<AgentCommandResult> }
+  [IpcChannels.OnAgentView]: { args: AgentView; response: void }
+  [IpcChannels.OnAgentDocumentRequest]: { args: AgentDocumentRequest; response: void }
+  [IpcChannels.AgentDocumentReply]: { args: AgentDocumentReply; response: void }
   [IpcChannels.FileNew]: {
     args: undefined
     response: void
@@ -289,7 +304,12 @@ export interface IpcChannelDefinitions {
   }
   [IpcChannels.InvokeReadFile]: {
     args: { filePath: string }
-    response: IpcResponse<{ content: string; filePath: string; mtime: number }>
+    response: IpcResponse<{
+      content: string
+      filePath: string
+      canonicalPath: string
+      mtime: number
+    }>
   }
   [IpcChannels.InvokeReadFileBinary]: {
     args: { filePath: string }
@@ -307,6 +327,7 @@ export interface IpcChannelDefinitions {
     args: { filePath: string }
     response: IpcResponse<{
       mtime: number
+      canonicalPath: string
       size: number
       isDirectory: boolean
     }>

@@ -7,8 +7,61 @@ import type { SVGProps } from 'react'
    ============================================================ */
 
 const paths: Record<string, JSX.Element> = {
+  lightbulb: (
+    <>
+      <path
+        d="M6 11.5C6 9.5 4.5 9 4.5 6.5a4.5 4.5 0 0 1 9 0c0 2.5-1.5 3-1.5 5M6 12h6M7 15h4"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  languages: (
+    <>
+      <path
+        d="M2 4h8M6 2v2M8 4c0 4-3 6-6 7M3.5 6c1 2 3 3.5 5 4M10 15l3-8 3 8M11 12.5h4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="2" y="3" width="14" height="12" rx="2" />
+      <path d="m5 7 2 2-2 2m4 0h4" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  cube: (
+    <>
+      <path d="m9 2 6.5 3.5v7L9 16l-6.5-3.5v-7Z" />
+      <path d="m2.5 5.5 6.5 3.5 6.5-3.5M9 9v7" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3 4.5v4h4M3.5 7a6 6 0 1 1-.2 4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 5.5v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M3 5h12M3 13h12" strokeLinecap="round" />
+      <circle cx="7" cy="5" r="2" fill="var(--paper)" />
+      <circle cx="11" cy="13" r="2" fill="var(--paper)" />
+    </>
+  ),
+  minus: <path d="M4 9h10" strokeLinecap="round" />,
+
   folder: (
     <path d="M2.5 5.5a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2v-7Z" />
+  ),
+  folderFilled: (
+    <g stroke="none" fill="currentColor">
+      <path
+        opacity="0.7"
+        d="M2 5a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2Z"
+      />
+      <rect x="2" y="6" width="14" height="10" rx="2" />
+    </g>
   ),
   folderOpen: (
     <path d="M2.5 6.5a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v.5M2.5 6.5v6a2 2 0 0 0 2 2h9.2a1.5 1.5 0 0 0 1.44-1.07l1.3-4.34a1 1 0 0 0-.96-1.29H4.5a2 2 0 0 0-2 2.2" />

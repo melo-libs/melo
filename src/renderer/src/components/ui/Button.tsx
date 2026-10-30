@@ -3,7 +3,7 @@ import { cn } from '../../lib/cn'
 import './button.scss'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary'
+  variant?: 'primary' | 'secondary' | 'danger' | 'danger-ghost'
   size?: 'default' | 'small'
 }
 

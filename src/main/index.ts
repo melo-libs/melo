@@ -21,6 +21,7 @@ import { registerProtocols, stripAppReferer } from './protocols'
 import { resolveLanguage } from './language'
 import { launchFilePaths } from './launchFiles'
 import { isTextDocumentPath } from '../shared/fileKinds'
+import { suspendAgent, resumeAgent } from './ipc/agent'
 
 // stdout/stderr are pipes to whatever launched us (terminal, test driver).
 // If that end dies first, console.* raises EPIPE — without handlers this
@@ -143,6 +144,7 @@ const initializeWindow = (window: BrowserWindow) => {
     const onCancel = () => {
       cleanup()
       closing = false
+      resumeAgent('window')
     }
     const timeout = setTimeout(() => {
       cleanup()
@@ -150,7 +152,14 @@ const initializeWindow = (window: BrowserWindow) => {
     }, 30000)
     ipcMain.once(IpcChannels.ReadyToClose, onReady)
     ipcMain.once(IpcChannels.CancelClose, onCancel)
-    window.webContents.send(IpcChannels.FlushBeforeClose)
+    void suspendAgent('window')
+      .then(() => {
+        if (!window.isDestroyed()) window.webContents.send(IpcChannels.FlushBeforeClose)
+      })
+      .catch((error) => {
+        console.error('Could not stop Agent before closing', error)
+        onCancel()
+      })
   })
 
   loadContent()
@@ -159,6 +168,7 @@ const initializeWindow = (window: BrowserWindow) => {
 // create main window
 const ensureMainWindow = (): BrowserWindow => {
   if (!appState.mainWindow) {
+    resumeAgent('window')
     const window = new BrowserWindow(getWindowConfig())
     appState.mainWindow = window
     setMainWindow(window)

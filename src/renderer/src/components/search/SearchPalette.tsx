@@ -33,19 +33,19 @@ import {
   type SearchResult,
 } from './searchEngine'
 import './search.scss'
+import { openAgent } from '../../store/agent'
 
 /* ============================================================
    SearchPalette — the ⌘K spotlight (design direction B): results
    on the left, a live preview of the highlighted result on the
-   right. Ask Melo is shown as a non-interactive product preview
-   until the workspace-wide assistant is available.
+   right. Ask Melo continues the query in a contextual conversation.
    ============================================================ */
 
 type Row =
   | { kind: 'head'; label: string }
   | { kind: 'file'; file: SearchFile; nav: true }
   | { kind: 'command'; cmd: (typeof COMMANDS)[number]; nav: true }
-  | { kind: 'asknotice'; nav: false }
+  | { kind: 'asknotice'; nav: true }
   | { kind: 'item'; it: SearchItem; nav: true }
   | { kind: 'more'; count: number; nav: false }
   | { kind: 'none'; nav: false }
@@ -89,6 +89,7 @@ const relTime = (ms?: number) => {
 }
 
 const rowKey = (r: NavRow): string => {
+  if (r.kind === 'asknotice') return 'ask-melo'
   if (r.kind === 'file') return 'recent:' + r.file.id
   if (r.kind === 'command') return 'cmd:' + r.cmd.id
   const it = r.it
@@ -99,7 +100,7 @@ const rowKey = (r: NavRow): string => {
 /* Memoized result row — while typing and on arrow-key moves the row data
    keeps its identity, so only the rows whose `isActive` flips re-render. */
 interface PaletteRowProps {
-  row: NavRow
+  row: Exclude<NavRow, { kind: 'asknotice' }>
   index: number
   isActive: boolean
   onHover: (index: number) => void
@@ -278,7 +279,7 @@ export const SearchPalette = () => {
         rows.push({ kind: 'head', label: t('search.groups.recent') })
         recentFiles.slice(0, 5).forEach((f) => rows.push({ kind: 'file', file: f, nav: true }))
       }
-      rows.push({ kind: 'asknotice', nav: false })
+      if (workspacePath) rows.push({ kind: 'asknotice', nav: true })
       rows.push({ kind: 'head', label: t('search.groups.commands') })
       ;['new-note', 'new-folder', 'settings'].forEach((cid) => {
         const c = COMMANDS.find((x) => x.id === cid)
@@ -292,8 +293,9 @@ export const SearchPalette = () => {
       })
       if (!result.total && !urlMatch) rows.push({ kind: 'none', nav: false })
     }
+    if (!empty && !urlMatch && workspacePath) rows.push({ kind: 'asknotice', nav: true })
     return rows
-  }, [empty, result, recentFiles, urlMatch, t])
+  }, [empty, result, recentFiles, urlMatch, workspacePath, t])
 
   const navIdx = useMemo(
     () => flat.map((r, i) => ('nav' in r && r.nav ? i : -1)).filter((i) => i >= 0),
@@ -339,6 +341,10 @@ export const SearchPalette = () => {
       if (rowIndex == null) return
       const r = flat[rowIndex]
       if (!r) return
+      if (r.kind === 'asknotice') {
+        close()
+        openAgent(query.trim() ? { draft: query } : {})
+      }
       if (r.kind === 'file') openFile(r.file.id)
       else if (r.kind === 'command') runCommand(r.cmd.id)
       else if (r.kind === 'item') {
@@ -347,7 +353,7 @@ export const SearchPalette = () => {
         else if (it.type === 'command') runCommand(it.id)
       }
     },
-    [flat, openFile, runCommand],
+    [flat, openFile, runCommand, close, query],
   )
   const hoverRow = useCallback((i: number) => setActive(navIdx.indexOf(i)), [navIdx])
   const onKey = (e: React.KeyboardEvent) => {
@@ -366,9 +372,11 @@ export const SearchPalette = () => {
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      inputRef.current?.focus()
       move(1)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
+      inputRef.current?.focus()
       move(-1)
     } else if (e.key === 'Enter') {
       e.preventDefault()
@@ -478,18 +486,27 @@ export const SearchPalette = () => {
                     )
                   if (r.kind === 'asknotice')
                     return (
-                      <div key="ask-melo" className="pb-row pb-ai pb-ask-notice">
+                      <button
+                        key="ask-melo"
+                        className="pb-row pb-ai pb-ask-notice"
+                        data-active={i === activeRowIndex}
+                        onMouseMove={() => hoverRow(i)}
+                        onFocus={() => hoverRow(i)}
+                        onClick={() => choose(i)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.stopPropagation()
+                        }}
+                      >
                         <span className="pb-row-ic ai">
                           <QIcon name="sparkle" size={16} />
                         </span>
                         <div className="pb-row-main">
                           <div className="pb-ask-title-line">
                             <div className="pb-row-title">{i18n.t('search.askMelo')}</div>
-                            <span className="pb-row-soon">{i18n.t('search.comingSoon')}</span>
                           </div>
                           <div className="pb-row-sub">{i18n.t('search.askMeloDescription')}</div>
                         </div>
-                      </div>
+                      </button>
                     )
                   return (
                     <PaletteRow
