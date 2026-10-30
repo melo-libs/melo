@@ -13,7 +13,6 @@ type ProcessOptions = Pick<
 >
 interface OwnedProcess {
   key: string
-  name: string
   controller: AbortController
   connection: Promise<AcpConnection>
   handlers: Pick<HarnessSessionOptions, 'onUpdate' | 'onPermission'> | null
@@ -55,19 +54,15 @@ export class HarnessProcess {
     }
     this.generation += 1
     const controller = new AbortController()
-    const name = `melo_${randomUUID().replaceAll('-', '')}`
     const owned: OwnedProcess = {
       key,
-      name,
       controller,
       handlers: null,
       leased: false,
       connection: startHarnessConnection({
         ...options,
         signal: controller.signal,
-        // Codex reads process-level MCP settings once. Keep its server identity
-        // stable; session/new replaces this inert endpoint with the current turn.
-        mcpServers: [{ type: 'http', name, url: 'http://127.0.0.1:9', headers: [] }],
+        mcpServers: [],
         onUpdate: (update) => owned.handlers?.onUpdate(update),
         onPermission: (request) =>
           owned.handlers?.onPermission?.(request) ??
@@ -108,12 +103,15 @@ export class HarnessProcess {
       active.leased = true
       active.handlers = options
       const connection = await active.connection
-      const mcpServers = options.mcpServers.map((server) => ({ ...server, name: active.name }))
+      // Codex caches MCP clients by name across sessions. A fresh identity
+      // prevents the next turn from retaining a closed tool server's connection.
+      const toolName = `melo_${randomUUID().replaceAll('-', '')}`
+      const mcpServers = options.mcpServers.map((server) => ({ ...server, name: toolName }))
       await createHarnessSession(connection, { ...options, mcpServers })
       options.signal.throwIfAborted()
       return {
         connection,
-        toolName: active.name,
+        toolName,
         release: async (reusable: boolean) => {
           active.handlers = null
           if (!reusable || this.owned !== active || connection.isClosed) {

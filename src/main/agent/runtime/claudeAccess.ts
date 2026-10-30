@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { agentApiPreset, normalizeAgentApiUrl } from '../../../shared/agentApi'
+import {
+  AGENT_API_SERVICES,
+  agentApiPreset,
+  agentApiService,
+  normalizeAgentApiUrl,
+} from '../../../shared/agentApi'
 
 export const CLAUDE_AUTH_STATUS_METHOD = '_auth/status_update'
 
@@ -46,6 +51,7 @@ const API_CONFIGURATION = z
       .max(4096)
       .regex(/^[\x21-\x7e]+$/),
     authHeader: z.enum(['x-api-key', 'Authorization']).optional(),
+    apiService: z.enum(AGENT_API_SERVICES).optional(),
     model: z
       .string()
       .min(1)
@@ -70,10 +76,12 @@ export function claudeApiConfiguration(input: unknown): {
   const parsed = API_CONFIGURATION.parse(input)
   const baseUrl = normalizeAgentApiUrl('claude', parsed.baseUrl)
   const { apiKey, model } = parsed
-  const deepseek = agentApiPreset('claude', baseUrl).id === 'deepseek'
+  const service = parsed.apiService
+    ? agentApiService('claude', parsed.apiService)
+    : agentApiPreset('claude', baseUrl)
+  const deepseek = service.id === 'deepseek'
   if (deepseek && model.toLowerCase() === 'deepseek') throw new Error('AGENT_API_MODEL_INVALID')
-  const bearer =
-    (parsed.authHeader ?? (deepseek ? 'Authorization' : 'x-api-key')) === 'Authorization'
+  const bearer = (parsed.authHeader ?? service.auth) === 'Authorization'
   return {
     baseUrl,
     headers: bearer ? { Authorization: `Bearer ${apiKey}` } : { 'x-api-key': apiKey },

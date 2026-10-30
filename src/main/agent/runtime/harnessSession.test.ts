@@ -5,7 +5,11 @@ import { openHarnessSession } from './harnessSession'
 import { RuntimeEnvironment } from './runtimeEnvironment'
 import { codexLaunch } from './codexLaunch'
 
-vi.mock('./codexLaunch', () => ({ codexLaunch: vi.fn(async () => ({})) }))
+vi.mock('./codexLaunch', () => ({
+  CODEX_API_PROVIDER: 'melo-api',
+  CODEX_API_KEY_ENV: 'MELO_CODEX_API_KEY',
+  codexLaunch: vi.fn(async () => ({})),
+}))
 afterEach(() => vi.restoreAllMocks())
 
 it.each(['claude', 'codex'] as const)(
@@ -101,4 +105,54 @@ it('closes the adapter when cancellation occurs after initialize but during sess
     }),
   ).rejects.toThrow('disconnected')
   expect(close).toHaveBeenCalled()
+})
+
+it('pins API routing for Codex without placing credentials in config or native preferences', async () => {
+  const environment = new RuntimeEnvironment('unused')
+  vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  const close = vi.fn(async () => {}),
+    authenticate = vi.fn(async () => {})
+  const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
+    close,
+    authenticate,
+    createSession: async () => ({ sessionId: 'fixture', configOptions: [] }),
+  } as unknown as AcpConnection)
+  const { connection } = await openHarnessSession({
+    environment,
+    codexLauncher: 'fixture',
+    workspaceRoot: process.cwd(),
+    signal: new AbortController().signal,
+    configuration: {
+      provider: 'codex',
+      access: 'api',
+      apiService: 'kimi',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      model: 'kimi-k3.1-pro',
+      hasApiKey: true,
+      native: { model: 'native-model', effort: 'xhigh' },
+    },
+    apiKey: 'fixture-key',
+    mcpServers: [],
+    onUpdate: () => {},
+  })
+  await connection.close()
+  const env = start.mock.calls[0][0].launch.env!
+  expect(JSON.parse(env.CODEX_CONFIG!)).toMatchObject({
+    model_provider: 'melo-api',
+    model: 'kimi-k3.1-pro',
+    model_reasoning_effort: 'high',
+  })
+  expect(env.CODEX_CONFIG).not.toContain('fixture-key')
+  expect(env.CODEX_CONFIG).not.toContain('native-model')
+  expect(codexLaunch).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.anything(),
+    expect.anything(),
+    expect.anything(),
+    expect.anything(),
+    'https://api.moonshot.cn/v1',
+  )
+  expect(authenticate).not.toHaveBeenCalled()
+  expect(env.MODEL_PROVIDER).toBe('melo-api')
+  expect(env.MELO_CODEX_API_KEY).toBe('fixture-key')
 })

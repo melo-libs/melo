@@ -146,6 +146,10 @@ export const en = {
         'Could not check sign-in. Confirm the agent works in Terminal, then try again.',
       AGENT_SIGN_IN_REQUIRED: 'Sign in to your account in Connection settings, then try again.',
       AGENT_RUNTIME_REQUIRED: 'Install the agent runtime in Connection settings, then try again.',
+      AGENT_API_HARNESS_UNSUPPORTED:
+        'This service’s tool format is not supported by this Harness. Use Claude Code for DeepSeek.',
+      AGENT_API_SERVICE_INVALID: 'This API service is not supported by the selected Harness.',
+      AGENT_API_MODELS_EMPTY: 'No compatible models were returned. Enter a model ID or retry.',
       AGENT_API_KEY_REQUIRED: 'Add an API key in Connection settings.',
       AGENT_STORAGE_FAILED:
         'Melo could not save this conversation. Check your disk space before trying again.',
@@ -244,7 +248,21 @@ export const en = {
     signInCheckUnknown: 'Could not confirm sign-in.',
     apiProvider: 'API service',
     customProvider: 'Custom',
-    deepseekModel: 'Model ID, not the provider name. Recommended: deepseek-flash.',
+    chooseApiModel: 'Choose a model',
+    loadingApiModels: 'Loading models…',
+    apiModelsEmpty: 'No compatible models found. Enter a model ID or refresh.',
+    refreshApiModels: 'Refresh models',
+    manualApiModelHelp: 'Enter the model ID supplied by your API service.',
+    curatedApiModels: 'Built-in directory · verified {{date}}. Connect to check access.',
+    remoteApiModels: 'From your API service. Connect to check model access.',
+    apiModelKeyHelp: 'Add a key, then open the list to choose a model.',
+    chooseFromApiModels: 'Choose from list',
+    enterApiModel: 'Enter model ID',
+    apiModelsFallback: 'Using the previous or built-in directory.',
+    apiProtocolHelp:
+      'Only services compatible with this Harness’s tool format are listed. Use Claude Code for DeepSeek.',
+    apiServiceKeyHelp:
+      'API and Coding Plan keys are separate. Use the key for the selected service.',
     testingConnection: 'Connecting…',
     connectionReady: 'Connected',
     latest: 'Back to latest',

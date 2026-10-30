@@ -1,5 +1,5 @@
 diff --git a/dist/index.js b/dist/index.js
-index 3e927271d2e805d1b111dfa6082686c17b2f62ae..86deeeff6d5847f6e22f645721769dd0d8d01f2a 100755
+index 3e927271d2e805d1b111dfa6082686c17b2f62ae..7c6b8bfd040f239eeb4234ce5534ed6e0dc67779 100755
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -35479,7 +35479,10 @@ var CodexAcpClient = class _CodexAcpClient {
@@ -14,7 +14,16 @@ index 3e927271d2e805d1b111dfa6082686c17b2f62ae..86deeeff6d5847f6e22f645721769dd0
        },
        skippedMcpServers
      };
-@@ -42671,11 +42674,8 @@ var CodexAcpServer = class {
+@@ -40018,6 +40021,8 @@ var TitleGenerator = class {
+    *                        not turn.items — turn.items contains only agent output).
+    */
+   onTurnCompleted(userPromptText) {
++    // Melo owns its conversation titles; avoid an unselected-model side request.
++    if (process.env["MELO_DISABLE_TITLE_GENERATION"] === "1") return;
+     if (this.generated) return;
+     const src = this.getSessionTitleSource();
+     if (src === "explicit" || src === "unknown") return;
+@@ -42671,11 +42676,8 @@ var CodexAcpServer = class {
    }
    async handleError(e) {
      if (e.message.includes("log out") || e.message.includes("cloud requirements")) {

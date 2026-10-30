@@ -4,8 +4,9 @@ import { AcpConnection, type AcpConnectionOptions } from './acpConnection'
 import { claudeApiConfiguration } from './claudeAccess'
 import { claudeSession } from './claudeSession'
 import { RuntimeEnvironment, adapterEntry } from './runtimeEnvironment'
-import { codexLaunch } from './codexLaunch'
+import { codexLaunch, CODEX_API_PROVIDER, CODEX_API_KEY_ENV } from './codexLaunch'
 import { applyNativePreferences } from './nativeConfiguration'
+import { agentApiService, savedAgentApiService } from '../../../shared/agentApi'
 
 const APPROVAL_TOOL_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -39,10 +40,12 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
     'ANTHROPIC_DEFAULT_OPUS_MODEL',
     'ANTHROPIC_DEFAULT_SONNET_MODEL',
     'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    'ANTHROPIC_DEFAULT_FABLE_MODEL',
     'CLAUDE_CODE_SUBAGENT_MODEL',
     'CLAUDE_CODE_OAUTH_TOKEN',
     'OPENAI_API_KEY',
     'CODEX_API_KEY',
+    CODEX_API_KEY_ENV,
     'OPENAI_BASE_URL',
     'MODEL_PROVIDER',
     'CODEX_CONFIG',
@@ -64,8 +67,15 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
       options.codexLauncher,
       env,
       options.signal,
+      configuration.access === 'api' ? configuration.baseUrl : undefined,
     )
     env.INITIAL_AGENT_MODE = 'read-only'
+    env.MELO_DISABLE_TITLE_GENERATION = '1'
+    if (configuration.access === 'api') {
+      if (!apiKey) throw new Error('AGENT_API_KEY_REQUIRED')
+      env.MODEL_PROVIDER = CODEX_API_PROVIDER
+      env[CODEX_API_KEY_ENV] = apiKey
+    }
   }
   if (configuration.provider === 'claude') {
     // Melo owns durable preferences; do not create a second harness-specific memory.
@@ -78,6 +88,7 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
         env,
         claudeApiConfiguration({
           baseUrl: configuration.baseUrl,
+          apiService: configuration.apiService,
           model: configuration.model,
           apiKey,
         }).environment,
@@ -87,14 +98,31 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
         'ANTHROPIC_DEFAULT_OPUS_MODEL',
         'ANTHROPIC_DEFAULT_SONNET_MODEL',
         'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+        'ANTHROPIC_DEFAULT_FABLE_MODEL',
         'CLAUDE_CODE_SUBAGENT_MODEL',
       ])
         env[name] = configuration.model
     }
   }
   if (disabledMcpServers) {
+    const apiModel =
+      configuration.access === 'api'
+        ? agentApiService(
+            'codex',
+            savedAgentApiService('codex', configuration.baseUrl, configuration.apiService),
+          ).models.find((model) => model.id === configuration.model)
+        : undefined
     // Human review must not share the harness's short default tool deadline.
     env.CODEX_CONFIG = JSON.stringify({
+      // Process launch selects this provider; keep per-session routing consistent.
+      ...(configuration.access === 'api'
+        ? {
+            model_provider: CODEX_API_PROVIDER,
+            // Explicitly override file-backed Terminal preferences. Medium is the
+            // Harness default; known API models use their documented high level.
+            model_reasoning_effort: apiModel?.effortLevels?.includes('high') ? 'high' : 'medium',
+          }
+        : {}),
       mcp_servers: {
         ...disabledMcpServers,
         ...Object.fromEntries(
@@ -142,18 +170,6 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
   options.signal.addEventListener('abort', abort, { once: true })
   try {
     options.signal.throwIfAborted()
-    if (configuration.provider === 'codex' && configuration.access === 'api') {
-      if (!apiKey) throw new Error('AGENT_API_KEY_REQUIRED')
-      await connection.authenticate({
-        methodId: 'gateway',
-        _meta: {
-          gateway: {
-            baseUrl: configuration.baseUrl,
-            headers: { Authorization: `Bearer ${apiKey}` },
-          },
-        },
-      })
-    }
     return connection
   } catch (error) {
     await connection.close()

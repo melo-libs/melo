@@ -3,15 +3,22 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { expect, it, vi } from 'vitest'
-import * as access from './claudeAccess'
 import { RuntimeEnvironment } from './runtimeEnvironment'
 import { createRuntimeFactory } from './runtime'
 import { startWorkspaceTools } from '../mcp/workspaceTools'
 import type { AgentRuntime } from '../agentTypes'
 
-it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each(['x-api-key', 'Authorization'])(
-  'uses the real %s credential in a Claude ACP turn without login',
-  async (header) => {
+it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each([
+  { service: 'deepseek', model: 'deepseek-flash', header: 'Authorization' },
+  { service: 'zhipu', model: 'glm-5.3', header: 'x-api-key' },
+  { service: 'zhipu-coding', model: 'glm-5.3', header: 'x-api-key' },
+  { service: 'kimi', model: 'kimi-k3.1-pro', header: 'Authorization' },
+  { service: 'kimi-coding', model: 'k3.1-pro', header: 'x-api-key' },
+  { service: 'anthropic', model: 'fixture-claude', header: 'x-api-key' },
+  { service: 'custom', model: 'fixture-model', header: 'x-api-key' },
+] as const)(
+  'uses the $service model and $header credential in a Claude ACP turn without login',
+  async ({ service, model, header }) => {
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'melo-claude-gateway-')))
     const home = path.join(root, 'claude-home')
     await mkdir(home)
@@ -71,13 +78,6 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each(['x-api-key', 'Authori
     })
     let factory: ReturnType<typeof createRuntimeFactory> | undefined
     let runtime: AgentRuntime | undefined
-    const configuration = access.claudeApiConfiguration
-    const authentication = vi.spyOn(access, 'claudeApiConfiguration').mockImplementation((input) =>
-      configuration({
-        ...(input as { baseUrl: string; model: string; apiKey: string }),
-        authHeader: header,
-      }),
-    )
     try {
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
       const address = server.address()
@@ -88,8 +88,9 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each(['x-api-key', 'Authori
         configuration: () => ({
           provider: 'claude',
           access: 'api',
+          apiService: service,
           baseUrl: `http://127.0.0.1:${address.port}/anthropic`,
-          model: 'deepseek-flash',
+          model,
           hasApiKey: true,
         }),
         apiKey: () => 'fixture-key',
@@ -123,12 +124,11 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each(['x-api-key', 'Authori
       await runtime.prompt('Reply Connected. Do not call tools.')
       expect(answer).toContain('Connected.')
       expect(models.length).toBeGreaterThan(0)
-      expect(models.every((model) => model === 'deepseek-flash')).toBe(true)
+      expect(models.every((value) => value === model)).toBe(true)
       expect(authenticated.every(Boolean)).toBe(true)
     } finally {
       await runtime?.close()
       await factory?.close?.()
-      authentication.mockRestore()
       vi.unstubAllEnvs()
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))

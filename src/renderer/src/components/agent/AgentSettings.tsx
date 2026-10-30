@@ -3,7 +3,8 @@ import * as Popover from '@radix-ui/react-popover'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import {
-  agentApiPreset,
+  agentApiService,
+  savedAgentApiService,
   agentApiPresets,
   canReuseAgentApiKey,
   normalizeAgentApiUrl,
@@ -17,6 +18,7 @@ import type { AgentAccountState } from '../../store/agent'
 import type { AgentProvider } from '@shared/types/agent'
 import { agentErrorText } from './agentError'
 import { AgentAccount } from './AgentAccount'
+import { AgentApiModelField } from './AgentApiModelField'
 import { toast } from '../Toaster'
 
 export function AgentSettings({
@@ -38,7 +40,13 @@ export function AgentSettings({
   const setup = useAtomValue(agentSetupAtom)!
   const configuration = setup.configuration
   const presets = agentApiPresets(configuration.provider)
-  const preset = agentApiPreset(configuration.provider, configuration.baseUrl)
+  const savedService = savedAgentApiService(
+    configuration.provider,
+    configuration.baseUrl,
+    configuration.apiService,
+  )
+  const [apiService, setApiService] = useState(savedService)
+  const preset = agentApiService(configuration.provider, savedService)
   const [access, setAccess] = useState(configuration.access)
   const [baseUrl, setBaseUrl] = useState(
     normalizeAgentApiUrl(configuration.provider, configuration.baseUrl),
@@ -67,8 +75,9 @@ export function AgentSettings({
     configuration.baseUrl.trim() &&
     configuration.model.trim()
   )
-  const hasKey = configuration.hasApiKey && canReuseAgentApiKey(configuration.baseUrl, baseUrl)
-  const selectedPreset = agentApiPreset(configuration.provider, baseUrl)
+  const hasKey =
+    configuration.hasApiKey &&
+    canReuseAgentApiKey(configuration.provider, configuration, { baseUrl, apiService })
   const ready = !!(baseUrl.trim() && model.trim() && (apiKey.trim() || hasKey))
   const change = (update: () => void) => {
     update()
@@ -112,6 +121,7 @@ export function AgentSettings({
           action: 'configure',
           provider: configuration.provider,
           access: next,
+          apiService: savedService,
           baseUrl: configuration.baseUrl,
           model: configuration.model,
         })
@@ -133,6 +143,7 @@ export function AgentSettings({
           await agentCommand({
             action: 'test-connection',
             provider: configuration.provider,
+            apiService,
             baseUrl,
             model,
             ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
@@ -141,6 +152,7 @@ export function AgentSettings({
             action: 'configure',
             provider: configuration.provider,
             access,
+            apiService,
             baseUrl,
             model,
             ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
@@ -269,7 +281,15 @@ export function AgentSettings({
             <label>
               {t('agent.apiProvider')}
               <Select
-                value={selectedPreset.id}
+                value={apiService}
+                displayValue={
+                  apiService === 'custom'
+                    ? t('agent.customProvider')
+                    : agentApiService(configuration.provider, apiService).label
+                }
+                description={
+                  configuration.provider === 'codex' ? t('agent.apiProtocolHelp') : undefined
+                }
                 disabled={editingDisabled}
                 options={presets.map((item) => ({
                   value: item.id,
@@ -278,6 +298,7 @@ export function AgentSettings({
                 onChange={(value) =>
                   change(() => {
                     const next = presets.find((item) => item.id === value)!
+                    setApiService(next.id)
                     setBaseUrl(next.baseUrl)
                     setModel(next.model)
                     setApiKey('')
@@ -285,10 +306,12 @@ export function AgentSettings({
                 }
               />
             </label>
+            <small>{t('agent.apiServiceKeyHelp')}</small>
             <label>
               {t('agent.baseUrl')}
               <input
                 value={baseUrl}
+                readOnly={apiService !== 'custom'}
                 disabled={editingDisabled}
                 spellCheck={false}
                 autoComplete="off"
@@ -299,18 +322,6 @@ export function AgentSettings({
                     : 'https://api.openai.com/v1'
                 }
               />
-            </label>
-            <label>
-              {t('agent.model')}
-              <input
-                value={model}
-                disabled={editingDisabled}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder={selectedPreset.model}
-                onChange={(event) => change(() => setModel(event.target.value))}
-              />
-              {selectedPreset.id === 'deepseek' && <small>{t('agent.deepseekModel')}</small>}
             </label>
             <label>
               API key
@@ -327,6 +338,17 @@ export function AgentSettings({
               <Icon name="lock" size={14} />
               {t('agent.keyStorage')}
             </small>
+            <AgentApiModelField
+              key={apiService}
+              provider={configuration.provider}
+              apiService={apiService}
+              baseUrl={baseUrl}
+              apiKey={apiKey}
+              hasKey={hasKey}
+              model={model}
+              disabled={editingDisabled}
+              onChange={(value) => change(() => setModel(value))}
+            />
             <div className="agent-test-row">
               <Button type="submit" variant="primary" size="small" disabled={busy || !ready}>
                 {t(pending === 'save' ? 'agent.testingConnection' : 'agent.connectApi')}

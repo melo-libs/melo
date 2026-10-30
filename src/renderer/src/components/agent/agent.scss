@@ -1243,6 +1243,15 @@
 .agent-key-note {
   align-items: flex-start;
 }
+.agent-api-model-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  .ui-button {
+    flex-shrink: 0;
+  }
+}
 .agent-test-row {
   display: flex;
   align-items: center;

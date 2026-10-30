@@ -21,7 +21,8 @@ import { createRuntimeFactory } from '../agent/runtime/runtime'
 import { testAgentApi, validateAgentApi } from '../agent/runtime/apiConnection'
 import { checkNativeAuthentication } from '../agent/runtime/nativeAuthentication'
 import { NativeModels } from '../agent/runtime/nativeModels'
-import { canReuseAgentApiKey } from '../../shared/agentApi'
+import { ApiModels } from '../agent/runtime/apiModels'
+import { AGENT_API_SERVICES, canReuseAgentApiKey } from '../../shared/agentApi'
 
 const execute = promisify(execFile)
 const provider = z.enum(['claude', 'codex'])
@@ -42,8 +43,17 @@ const COMMAND = z.discriminatedUnion('action', [
   z.object({ action: z.literal('install') }),
   z.object({ action: z.literal('login'), provider }),
   z.object({
+    action: z.literal('api-models'),
+    provider,
+    apiService: z.enum(AGENT_API_SERVICES).optional(),
+    baseUrl: z.string().max(2048),
+    apiKey: z.string().max(4096).optional(),
+    refresh: z.boolean().optional(),
+  }),
+  z.object({
     action: z.literal('test-connection'),
     provider,
+    apiService: z.enum(AGENT_API_SERVICES).optional(),
     baseUrl: z.string().max(2048),
     model: z.string().max(256),
     apiKey: z.string().max(4096).optional(),
@@ -52,6 +62,7 @@ const COMMAND = z.discriminatedUnion('action', [
     action: z.literal('configure'),
     provider,
     access: z.enum(['native', 'api']),
+    apiService: z.enum(AGENT_API_SERVICES).optional(),
     baseUrl: z.string().max(2048),
     model: z.string().max(256),
     apiKey: z.string().max(4096).optional(),
@@ -114,6 +125,7 @@ function createController() {
     .join(app.getAppPath(), 'resources/agent/codex-launch.cjs')
     .replace('app.asar/', 'app.asar.unpacked/')
   const nativeModels = new NativeModels(settings, environment, codexLauncher)
+  const apiModels = new ApiModels()
   const store = new ConversationStore(path.join(directory, 'conversations.db'))
   const memory = new MemoryService(directory)
   const documents = new DocumentAccess(() => getMainWindow()?.webContents ?? null)
@@ -136,7 +148,7 @@ function createController() {
     suspensions,
     (id, conversationId, root) => workspace.undo(id, conversationId, root),
   )
-  return { settings, environment, nativeModels, store, documents, service, journal }
+  return { settings, environment, nativeModels, apiModels, store, documents, service, journal }
 }
 const getController = () => (controller ??= createController())
 
@@ -184,7 +196,8 @@ export function setupAgentIPC(): void {
       )
         throw new Error('Invalid agent sender')
       const command = COMMAND.parse(value)
-      const { settings, environment, nativeModels, service, store, journal } = getController()
+      const { settings, environment, nativeModels, apiModels, service, store, journal } =
+        getController()
       const root = activeWorkspaceRoot()
       if ('workspaceRoot' in command && command.workspaceRoot !== root)
         throw new Error('Workspace is not active')
@@ -202,15 +215,20 @@ export function setupAgentIPC(): void {
             setup: await setup(service.open(command.conversationId).conversation.provider),
           }
           break
+        case 'api-models':
         case 'test-connection': {
           const saved = settings.get(command.provider)
           const key =
             command.apiKey?.trim() ||
-            (canReuseAgentApiKey(saved.baseUrl, command.baseUrl)
+            (canReuseAgentApiKey(command.provider, saved, command)
               ? settings.key(command.provider)
               : undefined)
           if (!key) throw new Error('AGENT_API_KEY_REQUIRED')
-          await testAgentApi({ ...command, apiKey: key })
+          if (command.action === 'api-models')
+            result = {
+              apiCatalog: await apiModels.load({ ...command, apiKey: key }, command.refresh),
+            }
+          else await testAgentApi({ ...command, apiKey: key })
           break
         }
         case 'native-options':
@@ -265,12 +283,17 @@ export function setupAgentIPC(): void {
             const saved = settings.get(command.provider)
             const key =
               configuration.apiKey ||
-              (canReuseAgentApiKey(saved.baseUrl, command.baseUrl)
+              (canReuseAgentApiKey(command.provider, saved, command)
                 ? settings.key(command.provider)
                 : undefined)
             if (!key) throw new Error('AGENT_API_KEY_REQUIRED')
             const validated = validateAgentApi({ ...configuration, apiKey: key })
-            configuration = { ...configuration, baseUrl: validated.baseUrl, model: validated.model }
+            configuration = {
+              ...configuration,
+              apiService: validated.apiService,
+              baseUrl: validated.baseUrl,
+              model: validated.model,
+            }
           }
           await service.suspend('configuration')
           try {

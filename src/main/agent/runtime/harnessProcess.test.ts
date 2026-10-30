@@ -74,9 +74,9 @@ it('coalesces prewarming and opens fresh turn sessions without restarting the pr
       ...options,
       mcpServers: [{ ...options.mcpServers[0], name: 'turn-two', url: 'http://127.0.0.1:5678' }],
     })
-    expect(second.toolName).toBe(first.toolName)
+    expect(second.toolName).not.toBe(first.toolName)
     expect(vi.mocked(createHarnessSession).mock.calls[1][1].mcpServers).toEqual([
-      expect.objectContaining({ name: first.toolName, url: 'http://127.0.0.1:5678' }),
+      expect.objectContaining({ name: second.toolName, url: 'http://127.0.0.1:5678' }),
     ])
     await second.release(true)
     expect(startHarnessConnection).toHaveBeenCalledTimes(1)

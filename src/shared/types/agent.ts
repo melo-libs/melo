@@ -1,4 +1,5 @@
 import type { AgentOperation } from '../agentCapabilities'
+import type { AgentApiCatalog, AgentApiServiceId } from '../agentApi'
 
 export type AgentProvider = 'claude' | 'codex'
 export type AgentStatus = 'idle' | 'connecting' | 'running' | 'awaiting-permission' | 'error'
@@ -96,6 +97,7 @@ export interface AgentConfiguration {
   baseUrl: string
   model: string
   hasApiKey: boolean
+  apiService?: AgentApiServiceId
   native?: AgentNativePreferences
 }
 
@@ -133,11 +135,20 @@ export type AgentCommand =
   | { action: 'install' }
   | { action: 'login'; provider: AgentProvider }
   | {
+      action: 'api-models'
+      provider: AgentProvider
+      apiService?: AgentApiServiceId
+      baseUrl: string
+      apiKey?: string
+      refresh?: boolean
+    }
+  | {
       action: 'test-connection'
       provider: AgentProvider
       baseUrl: string
       model: string
       apiKey?: string
+      apiService?: AgentApiServiceId
     }
   | {
       action: 'configure'
@@ -146,6 +157,7 @@ export type AgentCommand =
       baseUrl: string
       model: string
       apiKey?: string
+      apiService?: AgentApiServiceId
     }
   | { action: 'current'; workspaceRoot: string }
   | { action: 'history'; before?: number; after?: number; around?: string }
@@ -165,6 +177,7 @@ export type AgentCommand =
   | { action: 'undo'; conversationId: string; changeIds: string[] }
 
 export interface AgentCommandResult {
+  apiCatalog?: AgentApiCatalog
   authentication?: AgentAuthentication
   setup?: AgentSetup
   view?: AgentView

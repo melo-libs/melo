@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { adapterEntry } from './runtimeEnvironment'
 
 const execute = promisify(execFile)
+export const CODEX_API_PROVIDER = 'melo-api'
+export const CODEX_API_KEY_ENV = 'MELO_CODEX_API_KEY'
 type DisabledMcpServer =
   | { enabled: false; command: string; args: string[] }
   | { enabled: false; url: string }
@@ -25,6 +27,7 @@ export async function codexLaunch(
   launcher: string,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
+  apiBaseUrl?: string,
 ): Promise<Record<string, DisabledMcpServer>> {
   const candidates = [
     path.join(path.dirname(node), 'codex'),
@@ -74,7 +77,15 @@ export async function codexLaunch(
       cause: 'Codex configuration lookup failed',
     })
   }
-  env.MELO_CODEX_LAUNCH = JSON.stringify({ command, args, servers, node })
+  env.MELO_CODEX_LAUNCH = JSON.stringify({
+    command,
+    args,
+    servers,
+    node,
+    ...(apiBaseUrl
+      ? { api: { id: CODEX_API_PROVIDER, baseUrl: apiBaseUrl, envKey: CODEX_API_KEY_ENV } }
+      : {}),
+  })
   env.CODEX_PATH = launcher
   return Object.fromEntries(
     servers.map((server) => [
