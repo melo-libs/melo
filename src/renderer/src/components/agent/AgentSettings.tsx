@@ -282,6 +282,7 @@ export function AgentSettings({
               {t('agent.apiProvider')}
               <Select
                 value={apiService}
+                label={t('agent.apiProvider')}
                 displayValue={
                   apiService === 'custom'
                     ? t('agent.customProvider')
