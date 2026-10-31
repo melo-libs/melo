@@ -1,0 +1,73 @@
+{
+  "models": [
+    {
+      "slug": "deepseek-flash",
+      "display_name": "DeepSeek Flash",
+      "description": "DeepSeek model with image input",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        { "effort": "low", "description": "Low" },
+        { "effort": "high", "description": "High" },
+        { "effort": "max", "description": "Max" }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "availability_nux": null,
+      "upgrade": null,
+      "base_instructions": "You are Melo, an assistant for the user's notes. Use the provided Melo tools to read and update notes. Follow the user's instructions and report tool results accurately.",
+      "default_reasoning_summary": "none",
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "apply_patch_tool_type": "freeform",
+      "truncation_policy": { "mode": "tokens", "limit": 10000 },
+      "context_window": 1048576,
+      "max_context_window": 1048576,
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": ["text", "image"],
+      "supports_image_detail_original": true,
+      "supports_search_tool": false,
+      "use_responses_lite": false,
+      "tool_mode": null,
+      "multi_agent_version": null,
+      "prefer_websockets": false,
+      "include_skills_usage_instructions": false
+    },
+    {
+      "slug": "deepseek-v4-pro",
+      "display_name": "DeepSeek V4 Pro",
+      "description": "DeepSeek reasoning model",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        { "effort": "low", "description": "Low" },
+        { "effort": "high", "description": "High" },
+        { "effort": "max", "description": "Max" }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 2,
+      "availability_nux": null,
+      "upgrade": null,
+      "base_instructions": "You are Melo, an assistant for the user's notes. Use the provided Melo tools to read and update notes. Follow the user's instructions and report tool results accurately.",
+      "default_reasoning_summary": "none",
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "apply_patch_tool_type": "freeform",
+      "truncation_policy": { "mode": "tokens", "limit": 10000 },
+      "context_window": 1048576,
+      "max_context_window": 1048576,
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "input_modalities": ["text"],
+      "supports_search_tool": false,
+      "use_responses_lite": false,
+      "tool_mode": null,
+      "multi_agent_version": null,
+      "prefer_websockets": false,
+      "include_skills_usage_instructions": false
+    }
+  ]
+}

@@ -137,6 +137,11 @@
   font-size: 12px;
   line-height: 18px;
 }
+.sel-description {
+  // Radix uses max-content sizing; status text must wrap within the trigger width.
+  max-width: calc(var(--radix-dropdown-menu-trigger-width) - 10px);
+  overflow-wrap: anywhere;
+}
 .sel-separator {
   height: 1px;
   margin: 4px;

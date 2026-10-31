@@ -12,6 +12,7 @@ Renderer
   components/agent/AgentWindow.tsx      Floating layout, scrolling and focus
     ├─ useAgentController.ts           Loading, history, permissions, undo and provider commands
     ├─ AgentDock.tsx                   Draggable minimized status capsule
+    ├─ AgentApiModelField.tsx          Shared Select, catalog loading and manual model entry
     ├─ AgentSettings.tsx               Connection drafts, eligible access selection and API setup
     ├─ useAgentAccounts.ts             Independent status queries for both tools
     ├─ AgentAccount.tsx                Account status, identity and sign-in actions
@@ -37,7 +38,8 @@ Main
     │    ├─ runtimeEnvironment.ts      Node discovery/install and adapter entry points
     │    ├─ runtimeOutput.ts           Streaming output and credential redaction
     │    ├─ toolIdentity.ts            Adapter-provided MCP provenance
-    │    ├─ apiConnection.ts           Provider API validation and connection tests
+    │    ├─ apiTransport.ts            API endpoint/key boundaries and safe HTTP transport
+    │    ├─ apiConnection.ts           Stateless Messages/Responses connection probes
     │    ├─ claudeAccess.ts            Claude authentication and API configuration
     │    ├─ claudeSession.ts           Claude session policy
     │    └─ codexLaunch.ts             Native account reuse and MCP isolation
@@ -80,7 +82,7 @@ workspace execution records remain available to the service.
 Hiding the floating window preserves the reading position and unsent draft.
 Opening the panel prepares the selected Harness after its connection is usable.
 `runtime/harnessProcess.ts` keeps one adapter process warm across successful turns;
-each turn closes its session and tool server before another session can start.
+each turn uses a fresh MCP identity and closes its session and tool server before another session can start.
 Idle processes expire after five minutes. Workspace, Harness or connection changes,
 application shutdown, cancellation and failed turns discard the owned process.
 Session IDs fence delayed notifications and permission requests from closed sessions.
@@ -113,13 +115,14 @@ through that history.
   account, or enter an API endpoint, model and key for either provider.
   Claude requires an Anthropic-compatible API; Codex uses an OpenAI
   Responses-compatible endpoint. No billing-source fallback is automatic.
-- API setup tests credentials with a short request before saving. DeepSeek has
-  a preset for `https://api.deepseek.com/anthropic` and `deepseek-flash`.
+- API setup tests credentials with a short request before saving. Provider
+  profiles, catalog sources and endpoint/authentication policies are documented
+  in [API providers](agent-api-providers.md).
   Claude API credentials use the owned subprocess's `ANTHROPIC_API_KEY` or
   `ANTHROPIC_AUTH_TOKEN` environment, not ACP gateway bearer authentication:
   the installed Claude SDK replaces that gateway token with `acp-proxy`.
   Native account configuration is left unchanged. Saved keys are bound to
-  their endpoint origin, including when switching access modes.
+  their exact canonical endpoint and API service/product, including when switching access modes.
 - Native login uses the provider's CLI flow in Terminal on macOS. Melo does not
   handle the account password or copy credential files. Authentication status is
   separate from proof that a model request succeeds.
@@ -343,8 +346,10 @@ narrow-panel checks, without a model turn. `MELO_NATIVE_MODELS_CHECK=1` enables
 the real ACP capability/persistence test and verifies the CLI config is unchanged.
 `MELO_CODEX_LIVE=1` separately enables the ACP/MCP fixture integration test.
 `MELO_CLAUDE_API_CHECK=1 pnpm run test:main` additionally runs the installed
-Claude adapter against a local Anthropic API fixture. It verifies real request
-headers for both API key and bearer access without using an account or model.
+Claude adapter against local Anthropic API fixtures for every service profile. It
+verifies real API key/bearer requests without using an account or remote model.
+`MELO_CODEX_API_CHECK=1 pnpm run test:main` runs the installed Codex adapter against
+local Responses fixtures, including two successive MCP turns and native-setting isolation.
 `claudeIntegration.test.ts` supports optional native/live MCP checks through
 `MELO_AGENT_NODE` and `MELO_CLAUDE_ACP_ENTRY`. Acknowledgement alone is not
 connection verification. Runtime transcripts redact configured credentials,

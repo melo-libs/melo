@@ -14,6 +14,7 @@ const workspace = path.join(testRoot, 'workspace')
 const profile = path.join(testRoot, 'profile')
 const logs = []
 const toolResults = []
+const catalogRequests = []
 const live = process.env.MELO_AGENT_LIVE === '1'
 let app
 let passed = false
@@ -32,6 +33,19 @@ const fixture = createServer((request, response) => {
 })
 async function respondToFixture(request, response) {
   const url = new URL(request.url, 'http://localhost')
+  if (url.pathname.endsWith('/models')) {
+    assert.equal(request.headers['x-api-key'], 'fixture-key')
+    catalogRequests.push(url.pathname)
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    if (catalogRequests.length > 1) {
+      response.writeHead(503, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: 'fixture-key must never reach the UI' }))
+      return
+    }
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ data: [{ id: 'melo-fixture', display_name: 'Melo fixture' }] }))
+    return
+  }
   if (!url.pathname.endsWith('/messages')) {
     response.writeHead(404)
     response.end()
@@ -302,7 +316,37 @@ try {
     !(await page.locator('.agent-compose').isVisible()),
     'settings must not share the conversation composer',
   )
-  await page.getByLabel('Model', { exact: true }).fill('melo-fixture')
+  assert.equal(catalogRequests.length, 0, 'opening settings must not fetch models')
+  await page.getByRole('button', { name: 'Choose from list', exact: true }).click()
+  const apiModel = page.locator('.agent-api-model .sel-btn')
+  await apiModel.click()
+  await page.locator('.sel-pop .sel-loading').waitFor()
+  assert.equal(await apiModel.getAttribute('aria-busy'), null, 'loading belongs inside the menu')
+  assert(
+    (await apiModel.innerText()).includes('invalid-model'),
+    'loading must preserve the draft selection',
+  )
+  await page.getByRole('menuitem', { name: 'Melo fixture', exact: true }).click()
+  assert.equal(catalogRequests.length, 1)
+  await apiModel.click()
+  await page.getByRole('menuitem', { name: 'Melo fixture', exact: true }).waitFor()
+  assert.equal(catalogRequests.length, 1, 'reopening a successful catalog uses the cache')
+  await page.getByRole('menuitem', { name: 'Refresh models', exact: true }).click()
+  await page
+    .locator('.sel-pop [role="status"]')
+    .filter({ hasText: 'temporarily unavailable' })
+    .waitFor()
+  assert.equal(catalogRequests.length, 2)
+  await page.getByRole('menuitem', { name: 'Melo fixture', exact: true }).waitFor()
+  assert(!(await page.locator('.sel-pop').innerText()).includes('fixture-key'))
+  await page.keyboard.press('Escape')
+  assert(
+    (await page.locator('.agent-api-model [role="status"]').innerText()).includes(
+      'temporarily unavailable',
+    ),
+  )
+  await page.getByRole('button', { name: 'Enter model ID', exact: true }).click()
+  assert.equal(await page.getByLabel('Model', { exact: true }).inputValue(), 'melo-fixture')
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await page.locator('.agent-test-success').waitFor()
   await page.getByRole('button', { name: 'Back', exact: true }).click()

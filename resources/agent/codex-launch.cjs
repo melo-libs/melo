@@ -14,6 +14,25 @@ const disabled = specification.servers.map(({ name, transport }) => {
   return `${JSON.stringify(name)}={enabled=false,${fields}}`
 })
 const overrides = disabled.length ? ['-c', `mcp_servers={${disabled.join(',')}}`] : []
+// Codex requires process-level and per-session provider identities to agree.
+// Route this owned process explicitly; credentials stay in its
+// environment and never appear in argv or the user's config.
+if (specification.api) {
+  const { id, baseUrl, envKey, modelCatalog } = specification.api
+  overrides.push(
+    '-c',
+    `model_provider=${JSON.stringify(id)}`,
+    '-c',
+    `model_providers={${JSON.stringify(id)}={name="Melo API",base_url=${JSON.stringify(baseUrl)},env_key=${JSON.stringify(envKey)},wire_api="responses",requires_openai_auth=false}}`,
+  )
+  if (modelCatalog)
+    overrides.push(
+      '-c',
+      `model_catalog_json=${JSON.stringify(modelCatalog)}`,
+      '-c',
+      'web_search="disabled"',
+    )
+}
 const child = spawn(
   specification.command,
   [

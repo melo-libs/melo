@@ -292,6 +292,7 @@ it('switches to a native account immediately and preserves the saved API profile
         action: 'configure',
         provider: 'codex',
         access: 'native',
+        apiService: 'custom',
         baseUrl: 'https://api.example.com',
         model: 'saved-model',
       }),

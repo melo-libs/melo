@@ -3,7 +3,12 @@ import { readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
-import { canReuseAgentApiKey } from '../../../shared/agentApi'
+import {
+  AGENT_API_SERVICES,
+  canReuseAgentApiKey,
+  savedAgentApiService,
+  type AgentApiServiceId,
+} from '../../../shared/agentApi'
 import type {
   AgentConfiguration,
   AgentNativePreferences,
@@ -15,6 +20,7 @@ const PROFILE = z.object({
   baseUrl: z.string(),
   model: z.string(),
   encryptedKey: z.string().optional(),
+  apiService: z.enum(AGENT_API_SERVICES).optional(),
   native: z
     .object({
       model: z.string(),
@@ -43,7 +49,12 @@ export class AgentSettings {
   }
   get(provider = this.value.provider): AgentConfiguration {
     const { encryptedKey, ...value } = this.value[provider]
-    return { provider, ...value, hasApiKey: !!encryptedKey }
+    return {
+      provider,
+      ...value,
+      apiService: savedAgentApiService(provider, value.baseUrl, value.apiService),
+      hasApiKey: !!encryptedKey,
+    }
   }
   saveNative(provider: AgentProvider, native: AgentNativePreferences): void {
     this.persist({ ...this.value, [provider]: { ...this.value[provider], native } })
@@ -62,9 +73,11 @@ export class AgentSettings {
     baseUrl: string
     model: string
     apiKey?: string
+    apiService?: AgentApiServiceId
   }): void {
     const saved = this.value[value.provider]
-    let encryptedKey = canReuseAgentApiKey(saved.baseUrl, value.baseUrl)
+    const apiService = savedAgentApiService(value.provider, value.baseUrl, value.apiService)
+    let encryptedKey = canReuseAgentApiKey(value.provider, saved, value)
       ? saved.encryptedKey
       : undefined
     if (value.apiKey) {
@@ -81,6 +94,7 @@ export class AgentSettings {
       [value.provider]: {
         native: saved.native,
         access: value.access,
+        apiService,
         baseUrl: value.baseUrl,
         model: value.model,
         encryptedKey,

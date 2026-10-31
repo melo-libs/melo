@@ -1,7 +1,13 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import {
+  execFile,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type ExecFileException,
+} from 'node:child_process'
 import { realpath, stat } from 'node:fs/promises'
 import { Readable, Writable } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
+import { promisify } from 'node:util'
 import {
   client,
   methods,
@@ -272,11 +278,22 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
     try {
       signal(value)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
-      // macOS can report EPERM while an exited child is waiting to be reaped.
-      // Retry after its close event, but preserve a genuine permission failure.
+      if (process.platform !== 'darwin' || (error as NodeJS.ErrnoException).code !== 'EPERM')
+        throw error
+      // Darwin excludes zombies when signalling a group and reports EPERM when
+      // no signalable members remain. Reaping an orphan can take longer than close.
       await Promise.race([closed, delay(100)])
-      signal(value)
+      try {
+        signal(value)
+      } catch (retryError) {
+        if (
+          (retryError as NodeJS.ErrnoException).code === 'EPERM' &&
+          (child.exitCode !== null || child.signalCode !== null) &&
+          !(await hasLiveProcessGroup(child.pid!))
+        )
+          return
+        throw retryError
+      }
     }
   }
   let timeout: ReturnType<typeof setTimeout> | undefined
@@ -296,5 +313,23 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
     child.stdin.destroy()
     child.stdout.destroy()
     child.stderr.destroy()
+  }
+}
+
+async function hasLiveProcessGroup(pid: number): Promise<boolean> {
+  try {
+    const { stdout } = await promisify(execFile)('/bin/ps', ['-o', 'stat=', '-g', String(pid)], {
+      timeout: 2000,
+      maxBuffer: 64 * 1024,
+    })
+    return stdout
+      .trim()
+      .split('\n')
+      .some((state) => state.trim() && !state.trim().startsWith('Z'))
+  } catch (error) {
+    const failure = error as ExecFileException & { stdout: string; stderr: string }
+    // ps returns 1 with empty output when the group has already disappeared.
+    if (failure.code === 1 && !failure.stdout.trim() && !failure.stderr.trim()) return false
+    throw error
   }
 }

@@ -1,10 +1,12 @@
 import { createServer, type Server } from 'node:http'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { testAgentApi } from './apiConnection'
+import { requestAgentApi } from './apiTransport'
 import { claudeApiConfiguration } from './claudeAccess'
 
 let server: Server | undefined
 afterEach(async () => {
+  vi.unstubAllGlobals()
   server?.closeAllConnections()
   await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
 })
@@ -64,4 +66,37 @@ it('does not accept a successful response from an incompatible endpoint', async 
   await expect(
     testAgentApi({ provider: 'claude', baseUrl, model: 'fixture', apiKey: 'fixture-key' }),
   ).rejects.toThrow('AGENT_API_PROTOCOL_ERROR')
+})
+
+it.each([
+  [new DOMException('fixture-key', 'AbortError'), 'AGENT_API_TIMEOUT'],
+  [new TypeError('socket closed with fixture-key'), 'AGENT_API_NETWORK_ERROR'],
+] as const)(
+  'classifies failures while reading the response body without exposing transport details',
+  async (error, code) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(error)
+              },
+            }),
+          ),
+      ),
+    )
+    await expect(requestAgentApi('https://fixture.example', {})).rejects.toThrow(code)
+  },
+)
+
+it('preserves an authentication failure when the provider error body exceeds the size limit', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('fixture-key'.repeat(10000), { status: 401 })),
+  )
+  await expect(requestAgentApi('https://fixture.example', {})).rejects.toThrow(
+    'AGENT_API_AUTH_FAILED',
+  )
 })

@@ -28,6 +28,7 @@ export function Select<T extends string>({
   loading = false,
   placeholder,
   emptyText,
+  notice,
   displayValue,
 }: {
   value: T
@@ -47,6 +48,7 @@ export function Select<T extends string>({
   loading?: boolean
   placeholder?: string
   emptyText?: string
+  notice?: string
   displayValue?: string
 }) {
   const current = options.find((o) => o.value === value) ?? options[0]
@@ -102,6 +104,11 @@ export function Select<T extends string>({
                 </span>
               </DropdownMenu.Item>
             ))}
+          {!loading && options.length > 0 && notice && (
+            <div className="sel-description" role="status">
+              {notice}
+            </div>
+          )}
           {!loading && action && (
             <>
               <DropdownMenu.Separator className="sel-separator" />
