@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, realpath, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { expect, it, vi } from 'vitest'
@@ -16,6 +16,8 @@ interface FixtureRequest {
 }
 
 it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
+  { service: 'deepseek', model: 'deepseek-flash', effort: 'high' },
+  { service: 'deepseek', model: 'deepseek-v4-pro', effort: 'high' },
   { service: 'custom', model: 'fixture-model', effort: 'medium' },
   { service: 'kimi', model: 'kimi-k3.1-pro', effort: 'high' },
   { service: 'kimi-coding', model: 'k3.1-pro', effort: 'high' },
@@ -44,6 +46,11 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
         for await (const chunk of request) chunks.push(Buffer.from(chunk))
         const body = JSON.parse(Buffer.concat(chunks).toString()) as FixtureRequest
         requests.push(body)
+        if (service === 'deepseek') {
+          expect(body.tools?.some((tool) => tool.type === 'tool_search')).toBe(false)
+          expect(body.tools?.some((tool) => tool.name === 'collaboration')).toBe(false)
+          expect(body.tools?.some((tool) => tool.type === 'web_search')).toBe(false)
+        }
         const result = body.input.find((item) => item.type === 'function_call_output')
         const namespace = body.tools?.find(
           (tool) =>
@@ -149,7 +156,7 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
         response.end()
       })().catch((error: Error) => {
         errors.push(error)
-        if (!response.headersSent) response.writeHead(500)
+        if (!response.headersSent) response.writeHead(400)
         response.end()
       })
     })
@@ -201,7 +208,11 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
             if (event.type === 'text') answer += event.text
           },
         })
-        await runtime.prompt('Read note.md with melo_read_document and reply Connected.')
+        await runtime
+          .prompt('Read note.md with melo_read_document and reply Connected.')
+          .catch((error) => {
+            throw errors[0] ?? error
+          })
         await runtime.close()
         runtime = undefined
       }
@@ -214,6 +225,9 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
       expect(await readFile(path.join(home, 'config.toml'), 'utf8')).toBe(
         'model_reasoning_effort = "xhigh"\n',
       )
+      const homeFiles = await readdir(home)
+      expect(homeFiles).not.toContain('models.json')
+      expect(homeFiles).not.toContain('auth.json')
     } finally {
       await runtime?.close()
       await factory?.close?.()

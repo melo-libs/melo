@@ -125,8 +125,6 @@ export const zhCN: LocaleDict = {
       AGENT_AUTH_CHECK_FAILED: '检查登录状态失败，请确认 Agent 能在 Terminal 中正常运行，再重试。',
       AGENT_SIGN_IN_REQUIRED: '请在连接设置中登录账号，然后重试。',
       AGENT_RUNTIME_REQUIRED: '请在连接设置中安装运行环境，然后重试。',
-      AGENT_API_HARNESS_UNSUPPORTED:
-        '当前 Harness 不兼容该服务的工具调用格式。DeepSeek 请使用 Claude Code。',
       AGENT_API_SERVICE_INVALID: '所选 Harness 不支持这个 API 服务。',
       AGENT_API_MODELS_EMPTY: '没有返回兼容的模型，可以填写模型 ID 或重试。',
       AGENT_API_KEY_REQUIRED: '请在连接设置中填写 API key。',
@@ -232,7 +230,7 @@ export const zhCN: LocaleDict = {
     chooseFromApiModels: '从列表选择',
     enterApiModel: '填写模型 ID',
     apiModelsFallback: '当前显示上次获取或内置的模型目录。',
-    apiProtocolHelp: '仅列出兼容当前 Harness 工具调用格式的服务。DeepSeek 请使用 Claude Code。',
+    apiProtocolHelp: 'Codex 使用 Responses API，服务端需要支持该协议及工具调用。',
     apiServiceKeyHelp: '普通 API 与 Coding Plan 使用各自的 Key，请使用所选服务对应的密钥。',
     testingConnection: '正在连接…',
     connectionReady: '连接成功',

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import { adapterEntry } from './runtimeEnvironment'
+import type { AgentApiServiceId } from '../../../shared/agentApi'
 
 const execute = promisify(execFile)
 export const CODEX_API_PROVIDER = 'melo-api'
@@ -27,7 +28,7 @@ export async function codexLaunch(
   launcher: string,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
-  apiBaseUrl?: string,
+  api?: { baseUrl: string; apiService: AgentApiServiceId },
 ): Promise<Record<string, DisabledMcpServer>> {
   const candidates = [
     path.join(path.dirname(node), 'codex'),
@@ -82,8 +83,18 @@ export async function codexLaunch(
     args,
     servers,
     node,
-    ...(apiBaseUrl
-      ? { api: { id: CODEX_API_PROVIDER, baseUrl: apiBaseUrl, envKey: CODEX_API_KEY_ENV } }
+    ...(api
+      ? {
+          api: {
+            id: CODEX_API_PROVIDER,
+            baseUrl: api.baseUrl,
+            envKey: CODEX_API_KEY_ENV,
+            // Supply provider metadata without installing into the user's CLI home.
+            ...(api.apiService === 'deepseek'
+              ? { modelCatalog: path.join(path.dirname(launcher), 'deepseek-models.json') }
+              : {}),
+          },
+        }
       : {}),
   })
   env.CODEX_PATH = launcher

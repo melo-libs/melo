@@ -25,7 +25,7 @@ Base URLs do not include the final `/v1/messages` or `/responses` operation.
 
 | Service           | Claude Code base URL                     | Codex base URL                    | Catalog                                |
 | ----------------- | ---------------------------------------- | --------------------------------- | -------------------------------------- |
-| DeepSeek          | `https://api.deepseek.com/anthropic`     | —                                 | Remote `/models`                       |
+| DeepSeek          | `https://api.deepseek.com/anthropic`     | `https://api.deepseek.com`        | Remote `/models`                       |
 | Zhipu API         | `https://open.bigmodel.cn/api/anthropic` | `https://open.bigmodel.cn/api/v1` | Verified built-in directory            |
 | Zhipu Coding Plan | `https://open.bigmodel.cn/api/anthropic` | `https://open.bigmodel.cn/api/v1` | Verified built-in directory            |
 | Kimi API          | `https://api.moonshot.cn/anthropic`      | `https://api.moonshot.cn/v1`      | Remote `/v1/models`                    |
@@ -36,10 +36,17 @@ Base URLs do not include the final `/v1/messages` or `/responses` operation.
 
 Claude uses Bearer authentication for DeepSeek/Kimi API and `x-api-key` for
 Zhipu, Kimi Code, Anthropic and Custom. Codex uses Bearer authentication.
-DeepSeek is offered under Claude Code only: the currently installed Codex emits
-namespace tools, while DeepSeek documents flat function tools. Codex presets omit
-that combination; a saved incompatible profile returns an explicit compatibility
-error. Custom remains available for gateways that implement the required format.
+DeepSeek is available under both Harnesses. Codex receives a bundled model catalog
+through an owned-process `model_catalog_json` override, following DeepSeek's official
+Codex integration guide. It declares model context, reasoning levels, modalities and
+standard Responses transport; provider routing and credentials remain subprocess-only.
+The catalog is shipped with Melo and is never installed into the user's Codex home.
+Melo exposes its MCP tools directly (`supports_search_tool: false`), without
+multi-agent tools or web search. These application-specific choices avoid deferred
+tool discovery and unnecessary built-in tools; they do not modify the user's CLI defaults.
+Tool schema compatibility is not inferred solely from the provider's documentation
+omitting a tool type. Local fixtures verify the installed Harness's actual requests;
+live provider acceptance still requires a real API check.
 
 Custom addresses must expose the protocol required by the selected Harness.
 For example, a Chat Completions-only endpoint does not satisfy Codex's Responses
@@ -98,7 +105,8 @@ changed by provider selection, catalog discovery or API turns.
 
 - DeepSeek: [catalog](https://api-docs.deepseek.com/api/list-models/),
   [Messages](https://api-docs.deepseek.com/guides/anthropic_api/),
-  [Responses](https://api-docs.deepseek.com/guides/responses_api/).
+  [Responses](https://api-docs.deepseek.com/guides/responses_api/),
+  [Codex configuration](https://api-docs.deepseek.com/quick_start/agent_integrations/codex/).
 - Zhipu: [Messages](https://docs.bigmodel.cn/cn/guide/develop/claude/introduction),
   [Responses](https://docs.bigmodel.cn/cn/guide/develop/responses/introduction),
   [Coding Plan endpoints](https://docs.bigmodel.cn/cn/coding-plan/tool/others),
@@ -121,8 +129,9 @@ responses for an old key. The isolated Electron Agent E2E exercises the shared
 Select through IPC against a local catalog, connects with a protocol request, then
 runs Claude ACP tool calls, approvals and undo. `MELO_CLAUDE_API_CHECK=1` exercises
 the installed Claude adapter for all service/auth profiles. `MELO_CODEX_API_CHECK=1`
-exercises Codex with Custom, Kimi API/Code, and Zhipu API/Coding Plan: two fresh
+exercises Codex with DeepSeek, Custom, Kimi API/Code, and Zhipu API/Coding Plan: two fresh
 sessions each, real MCP calls, selected-model/effort checks, and an unchanged
 file-backed native preference. These checks use local fixtures and empty temporary
 CLI homes; they do not verify live provider entitlement. No developer account is
-used.
+used. DeepSeek Flash and V4 Pro run through the same Codex fixture with the bundled
+model catalog, while the fixture's native configuration remains unchanged.

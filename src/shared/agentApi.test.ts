@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest'
 import { agentApiPresets, canReuseAgentApiKey, savedAgentApiService } from './agentApi'
 
-it('offers only compatible built-ins for each Harness', () => {
+it('offers DeepSeek under both Harnesses', () => {
   expect(agentApiPresets('claude').some((service) => service.id === 'deepseek')).toBe(true)
-  expect(agentApiPresets('codex').some((service) => service.id === 'deepseek')).toBe(false)
+  expect(agentApiPresets('codex').some((service) => service.id === 'deepseek')).toBe(true)
   expect(agentApiPresets('codex').map((service) => service.id)).toEqual(
     expect.arrayContaining(['openai', 'custom', 'kimi', 'zhipu']),
   )

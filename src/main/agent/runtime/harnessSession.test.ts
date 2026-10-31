@@ -150,7 +150,7 @@ it('pins API routing for Codex without placing credentials in config or native p
     expect.anything(),
     expect.anything(),
     expect.anything(),
-    'https://api.moonshot.cn/v1',
+    { baseUrl: 'https://api.moonshot.cn/v1', apiService: 'kimi' },
   )
   expect(authenticate).not.toHaveBeenCalled()
   expect(env.MODEL_PROVIDER).toBe('melo-api')

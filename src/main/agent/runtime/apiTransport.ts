@@ -32,7 +32,6 @@ export function validateAgentApiEndpoint(input: AgentApiEndpoint): ResolvedAgent
   const baseUrl = url.origin + url.pathname.replace(/\/+$/, '')
   const apiService = savedAgentApiService(input.provider, baseUrl, input.apiService)
   const service = agentApiService(input.provider, apiService)
-  if (service.supported === false) throw new Error('AGENT_API_HARNESS_UNSUPPORTED')
   if (apiService !== 'custom' && baseUrl !== service.baseUrl)
     throw new Error('AGENT_API_ENDPOINT_INVALID')
   if (!input.apiKey || input.apiKey.length > 4096 || !/^[\x21-\x7e]+$/.test(input.apiKey))

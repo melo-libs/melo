@@ -67,7 +67,16 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
       options.codexLauncher,
       env,
       options.signal,
-      configuration.access === 'api' ? configuration.baseUrl : undefined,
+      configuration.access === 'api'
+        ? {
+            baseUrl: configuration.baseUrl,
+            apiService: savedAgentApiService(
+              'codex',
+              configuration.baseUrl,
+              configuration.apiService,
+            ),
+          }
+        : undefined,
     )
     env.INITIAL_AGENT_MODE = 'read-only'
     env.MELO_DISABLE_TITLE_GENERATION = '1'

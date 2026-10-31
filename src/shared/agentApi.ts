@@ -36,7 +36,6 @@ export interface AgentApiPreset {
   models: AgentApiModel[]
   sourceUrl?: string
   verifiedAt?: string
-  supported?: false
 }
 const VERIFIED_AT = '2026-10-30'
 const deepseek: AgentApiModel[] = [
@@ -123,8 +122,6 @@ const kimiCoding: AgentApiModel[] = [
 const common = (provider: AgentProvider): AgentApiPreset[] => [
   {
     id: 'deepseek',
-    // Current Codex emits namespace tools; DeepSeek documents only flat function tools.
-    ...(provider === 'codex' ? { supported: false as const } : {}),
     label: 'DeepSeek',
     baseUrl:
       provider === 'claude' ? 'https://api.deepseek.com/anthropic' : 'https://api.deepseek.com',
@@ -204,7 +201,7 @@ const PRESETS: Record<AgentProvider, AgentApiPreset[]> = {
   ],
 }
 export const agentApiPresets = (provider: AgentProvider): readonly AgentApiPreset[] =>
-  PRESETS[provider].filter((preset) => preset.supported !== false)
+  PRESETS[provider]
 export function agentApiService(provider: AgentProvider, id: AgentApiServiceId): AgentApiPreset {
   const preset = PRESETS[provider].find((item) => item.id === id)
   if (!preset) throw new Error('AGENT_API_SERVICE_INVALID')

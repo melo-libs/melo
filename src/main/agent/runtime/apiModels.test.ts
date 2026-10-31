@@ -188,9 +188,7 @@ const routes = [
 ] as const
 it.each(
   (['claude', 'codex'] as const).flatMap((provider) =>
-    routes
-      .filter((route) => provider !== 'codex' || route.service !== 'deepseek')
-      .map((route) => ({ provider, ...route })),
+    routes.map((route) => ({ provider, ...route })),
   ),
 )(
   'sends a $provider protocol probe for $service with its documented endpoint and authentication',
@@ -236,10 +234,4 @@ it('accepts canonical equivalents of an official URL without changing the servic
       baseUrl: 'https://API.ANTHROPIC.COM:443/',
     }),
   ).toMatchObject({ baseUrl: 'https://api.anthropic.com', apiService: 'anthropic' })
-})
-
-it('filters an incompatible service before connecting or discovering models', () => {
-  expect(() => validateAgentApiEndpoint(input('codex', 'deepseek'))).toThrow(
-    'AGENT_API_HARNESS_UNSUPPORTED',
-  )
 })

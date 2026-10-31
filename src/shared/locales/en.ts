@@ -146,8 +146,6 @@ export const en = {
         'Could not check sign-in. Confirm the agent works in Terminal, then try again.',
       AGENT_SIGN_IN_REQUIRED: 'Sign in to your account in Connection settings, then try again.',
       AGENT_RUNTIME_REQUIRED: 'Install the agent runtime in Connection settings, then try again.',
-      AGENT_API_HARNESS_UNSUPPORTED:
-        'This service’s tool format is not supported by this Harness. Use Claude Code for DeepSeek.',
       AGENT_API_SERVICE_INVALID: 'This API service is not supported by the selected Harness.',
       AGENT_API_MODELS_EMPTY: 'No compatible models were returned. Enter a model ID or retry.',
       AGENT_API_KEY_REQUIRED: 'Add an API key in Connection settings.',
@@ -260,7 +258,7 @@ export const en = {
     enterApiModel: 'Enter model ID',
     apiModelsFallback: 'Using the previous or built-in directory.',
     apiProtocolHelp:
-      'Only services compatible with this Harness’s tool format are listed. Use Claude Code for DeepSeek.',
+      'Codex uses the Responses API. Services must support this protocol and tool calls.',
     apiServiceKeyHelp:
       'API and Coding Plan keys are separate. Use the key for the selected service.',
     testingConnection: 'Connecting…',

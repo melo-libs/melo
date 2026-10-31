@@ -5,9 +5,10 @@ import os from 'node:os'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
 
-it.each([false, true])(
-  'keeps MCP isolation and API routing in owned-process argv (API: %s)',
-  async (api) => {
+it.each(['native', 'api', 'deepseek'] as const)(
+  'keeps MCP isolation and API routing in owned-process argv (%s)',
+  async (mode) => {
+    const api = mode !== 'native'
     const root = await mkdtemp(path.join(os.tmpdir(), 'melo-codex-launch-'))
     try {
       const fixture = path.join(root, 'cli.cjs')
@@ -33,6 +34,9 @@ it.each([false, true])(
                       id: 'melo-api',
                       baseUrl: 'https://fixture.example/v1',
                       envKey: 'MELO_CODEX_API_KEY',
+                      ...(mode === 'deepseek'
+                        ? { modelCatalog: path.resolve('resources/agent/deepseek-models.json') }
+                        : {}),
                     },
                   }
                 : {}),
@@ -56,6 +60,12 @@ it.each([false, true])(
         expect(routing).toContain('requires_openai_auth=false')
         expect(routing).not.toContain('Bearer')
       } else expect(routing).toBeUndefined()
+      expect(args.find((arg) => arg.startsWith('model_catalog_json='))).toBe(
+        mode === 'deepseek'
+          ? `model_catalog_json=${JSON.stringify(path.resolve('resources/agent/deepseek-models.json'))}`
+          : undefined,
+      )
+      if (mode === 'deepseek') expect(args).toContain('web_search="disabled"')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
