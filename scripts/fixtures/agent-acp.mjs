@@ -1,4 +1,5 @@
 import { Readable, Writable } from 'node:stream'
+import { spawn } from 'node:child_process'
 import {
   agent,
   methods,
@@ -10,12 +11,20 @@ import {
 let finishTurn
 let authenticated = false
 let sessionSequence = 0
+const runtime =
+  process.env.MELO_AGENT_FIXTURE === 'runtime-child'
+    ? spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+    : undefined
 const app = agent({ name: 'melo-test-agent' })
   .onRequest(methods.agent.initialize, () => {
     if (process.env.MELO_AGENT_FIXTURE === 'hang-init') return new Promise(() => {})
     return {
       protocolVersion: PROTOCOL_VERSION,
-      agentInfo: { name: 'melo-test-agent', version: '1', _meta: { pid: process.pid } },
+      agentInfo: {
+        name: 'melo-test-agent',
+        version: '1',
+        _meta: { pid: process.pid, ...(runtime ? { runtimePid: runtime.pid } : {}) },
+      },
       agentCapabilities: { mcpCapabilities: { http: true } },
       authMethods: [{ id: 'gateway', name: 'Gateway' }],
     }

@@ -13,15 +13,20 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(connections.splice(0).map((connection) => connection.close()))
   await rm(root, { recursive: true, force: true })
 })
 
-async function start(onUpdate: (notification: SessionNotification) => void = () => {}) {
+async function start(
+  onUpdate: (notification: SessionNotification) => void = () => {},
+  fixture?: string,
+) {
   const connection = await AcpConnection.start({
     launch: {
       command: process.execPath,
       args: [path.resolve('scripts/fixtures/agent-acp.mjs')],
+      ...(fixture ? { env: { ...process.env, MELO_AGENT_FIXTURE: fixture } } : {}),
     },
     workspaceRoot: root,
     onUpdate,
@@ -33,6 +38,64 @@ async function start(onUpdate: (notification: SessionNotification) => void = () 
 }
 
 describe.skipIf(process.platform === 'win32')('ACP process connection', () => {
+  it.skipIf(process.platform !== 'darwin')(
+    'accepts Darwin EPERM only after the adapter exits and its group has no live members',
+    async () => {
+      const connection = await start()
+      const pid = connection.initialization.agentInfo?._meta?.pid as number
+      const kill = process.kill.bind(process)
+      const denied = Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+      const signal = vi.spyOn(process, 'kill').mockImplementation((target, value) => {
+        if (target === -pid && value !== 0) throw denied
+        return kill(target, value)
+      })
+      try {
+        kill(pid, 'SIGTERM')
+        await vi.waitFor(() => expect(connection.isClosed).toBe(true))
+        await expect(connection.close()).resolves.toBeUndefined()
+        expect(signal).toHaveBeenCalledWith(-pid, 'SIGKILL')
+      } finally {
+        signal.mockRestore()
+      }
+    },
+  )
+
+  it.skipIf(process.platform !== 'darwin').each(['adapter', 'descendant'] as const)(
+    'preserves a genuine permission failure while the owned %s is alive',
+    async (scope) => {
+      const connection = await start(
+        undefined,
+        scope === 'descendant' ? 'runtime-child' : undefined,
+      )
+      const pid = connection.initialization.agentInfo?._meta?.pid as number
+      const kill = process.kill.bind(process)
+      const denied = Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+      const signal = vi.spyOn(process, 'kill').mockImplementation((target, value) => {
+        if (target === -pid && value !== 0) throw denied
+        return kill(target, value)
+      })
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        if (scope === 'descendant') {
+          const runtimePid = connection.initialization.agentInfo?._meta?.runtimePid as number
+          expect(kill(runtimePid, 0)).toBe(true)
+          kill(pid, 'SIGTERM')
+          await vi.waitFor(() => expect(connection.isClosed).toBe(true))
+        }
+        await expect(connection.close()).rejects.toBe(denied)
+      } finally {
+        signal.mockRestore()
+        connections.splice(connections.indexOf(connection), 1)
+        try {
+          kill(-pid, 'SIGKILL')
+        } catch (error) {
+          expect((error as NodeJS.ErrnoException).code).toBe('ESRCH')
+        }
+        await vi.waitFor(() => expect(() => kill(pid, 0)).toThrow())
+      }
+    },
+  )
+
   it('interrupts initialization when the caller cancels startup', async () => {
     const controller = new AbortController()
     const pending = AcpConnection.start({
