@@ -2,13 +2,13 @@ import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 import type { AgentFiling, AgentHistoryMessage, AgentMessage } from '@shared/types/agent'
+import { agentOperationSchema } from '@shared/agentCapabilities'
 import { AgentChanges } from './AgentChanges'
 import { AgentFilingResult } from './AgentFilingResult'
 import { AgentTranscript } from './AgentTranscript'
 import { AgentReceipt } from './AgentReceipt'
 import { AgentPermission } from './AgentPermission'
 import { AgentActivity } from './AgentActivity'
-import { AgentOrganization } from './AgentOrganization'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -182,117 +182,41 @@ it('groups resolved access requests with tool details and keeps the current appr
   expect(ended).toContain('agent.nativeApproval.expired')
 })
 
-it('offers clarification or keeping files in Inbox when no file can be understood', () => {
+it('renders historical organization proposals read-only even when marked pending', () => {
   const html = renderToStaticMarkup(
-    createElement(AgentOrganization, {
-      operation: {
-        kind: 'organize',
-        files: [
-          {
-            id: 'file',
-            name: 'private.zip',
-            size: 10,
-            source: 'Inbox/private.zip',
-            destination: null,
-            detail: 'Password required to read this archive.',
-            readable: false,
-          },
-        ],
-        folders: [],
-        locations: ['Inbox'],
-        includeNote: false,
-      },
-      pending: true,
-      busy: false,
-      onRespond: () => {},
-      onDescribe: () => {},
-    }),
-  )
-  expect(html).toContain('agent.organization.needsDescription')
-  expect(html).toContain('Password required')
-  expect(html).toContain('agent.organization.keepInbox')
-  expect(html).not.toContain('agent.organization.apply')
-})
-
-it('shows complete identifying facts with provenance, without filling unknown document metadata', () => {
-  const render = (detail: string) =>
-    renderToStaticMarkup(
-      createElement(AgentOrganization, {
-        operation: {
+    createElement(AgentPermission, {
+      permission: {
+        id: 'legacy',
+        status: 'pending',
+        operation: agentOperationSchema.parse({
           kind: 'organize',
           files: [
             {
-              id: 'contract',
-              name: 'Original contract.docx',
-              size: 1024,
-              source: 'Inbox/Original contract.docx',
-              destination: 'Contracts/灵枢科技—杭州织算星图技术研发服务合同.docx',
-              detail,
+              id: '00000000-0000-4000-8000-000000000001',
+              name: 'Original.pdf',
+              size: 1,
+              source: 'Inbox/Original.pdf',
+              destination: 'Reference/Original.pdf',
+              detail: 'Historical suggestion',
               readable: true,
-              facts: [
-                { label: '签署日期', value: '2026-08-16', source: 'content' },
-                { label: '作者', value: 'Document property author', source: 'metadata' },
-                { label: '项目', value: 'Token 网关、数字员工', source: 'user' },
-              ],
             },
           ],
-          folders: ['Contracts'],
-          locations: ['Contracts'],
+          folders: [],
+          locations: [],
           includeNote: false,
-        },
-        pending: true,
-        busy: false,
-        onRespond: () => {},
-      }),
-    )
-  const html = render('')
-  expect(html).toContain('灵枢科技—杭州织算星图技术研发服务合同')
-  expect(html).toContain(
-    '<span class="agent-organization-original-name">Original contract.docx</span>',
-  )
-  expect(html).toContain('agent.organization.renameTo')
-  expect(html).toContain('<dt>签署日期</dt><dd>2026-08-16</dd>')
-  expect(html).toContain('Document property author')
-  expect(html).toContain('agent.organization.factSource.metadata')
-  expect(html).toContain('agent.organization.factSource.user')
-  expect(html).not.toContain('<p></p>')
-  expect(html).not.toContain('Unknown')
-  expect(render('A short identifying project fact.')).toContain('A short identifying project fact.')
-})
-
-it('keeps an unchanged uploaded filename separate from a document date', () => {
-  const html = renderToStaticMarkup(
-    createElement(AgentOrganization, {
-      operation: {
-        kind: 'organize',
-        files: [
-          {
-            id: 'contract',
-            name: 'Uploaded contract.pdf',
-            size: 1024,
-            source: 'Inbox/Uploaded contract.pdf',
-            destination: 'Contracts/Uploaded contract.pdf',
-            readable: true,
-            detail: '',
-            facts: [{ label: '签署日期', value: '2026-07-27', source: 'content' }],
-          },
-        ],
-        folders: [],
-        locations: ['Contracts'],
-        includeNote: false,
+        }),
       },
-      pending: true,
+      active: true,
       busy: false,
+      workspaceName: 'notes',
       onRespond: () => {},
     }),
   )
-  expect(html).toContain(
-    '<span class="agent-organization-original-name">Uploaded contract.pdf</span>',
-  )
-  expect(html).toContain('value="Uploaded contract"')
-  expect(html).toContain('<span class="agent-organization-extension">.pdf</span>')
-  expect(html).toContain('<dt>签署日期</dt><dd>2026-07-27</dd>')
-  expect(html).toContain('agent.organization.moveTo')
+  expect(html).toContain('Reference/Original.pdf')
+  expect(html).toContain('Historical suggestion')
+  expect(html).not.toContain('data-pending')
+  expect(html).not.toContain('<button')
+  expect(html).not.toContain('<input')
 })
 
 it('does not reopen a superseded confirmation when the user asks to revise the plan', () => {
@@ -365,6 +289,40 @@ it('shows Inbox receipt separately from changes and never offers import undo whi
     }),
   )
   expect(imports).toBe('')
+})
+
+it('keeps a single trash result collapsed with one restore action, then records restoration', () => {
+  const messages: AgentMessage[] = [
+    {
+      id: 'trash-result',
+      role: 'tool',
+      content: '',
+      createdAt: 1,
+      change: { id: 'trash', kind: 'trash', path: 'Inbox/report.pdf', undone: false },
+    },
+  ]
+  const render = (disabled = false) =>
+    renderToStaticMarkup(
+      createElement(AgentChanges, {
+        messages,
+        disabled,
+        onUndo: () => {},
+        onOpenFile: () => {},
+      }),
+    )
+  const html = render()
+  expect(html).toContain('<details class="agent-change-details">')
+  expect(html).not.toContain(' open')
+  expect(html).not.toContain('agent-card-heading')
+  expect(html).toContain('agent.trashedCount')
+  expect(html).toContain('report.pdf')
+  expect(html.match(/<button/g)).toHaveLength(1)
+  expect(html).toContain('agent.restore')
+  expect(render(true)).toContain('disabled=""')
+  messages[0].change!.undone = true
+  const restored = render()
+  expect(restored).toContain('agent.restored')
+  expect(restored).not.toContain('<button')
 })
 
 it('keeps change ownership across a deleted question and disables undo in other workspaces', () => {

@@ -1,4 +1,4 @@
-import type { AgentOperation, OrganizationEdits } from '../agentCapabilities'
+import type { AgentOperation } from '../agentCapabilities'
 import type { AgentApiCatalog, AgentApiServiceId } from '../agentApi'
 import type { AttachmentReceipt } from '../agentAttachments'
 import type { AgentToolActivity } from '../agentActivity'
@@ -186,7 +186,6 @@ export type AgentCommand =
       permissionId: string
       allow: boolean
       conversation?: boolean
-      organization?: OrganizationEdits
     }
   | { action: 'undo'; conversationId: string; changeIds: string[] }
   | { action: 'undo-filing'; conversationId: string; batchId: string }

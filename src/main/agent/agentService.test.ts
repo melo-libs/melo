@@ -6,7 +6,6 @@ import { AgentService } from './agentService'
 import { ConversationStore } from './storage/conversationStore'
 import { MemoryService } from './storage/memory'
 import type { RuntimeFactory, RuntimeRequest } from './agentTypes'
-import type { AgentOperation } from '../../shared/agentCapabilities'
 
 let root: string
 let store: ConversationStore
@@ -126,46 +125,33 @@ describe('AgentService lifecycle', () => {
       'failed',
     )
   })
-  it('only accepts organization edits for the exact pending file set and persists approved destinations', async () => {
-    const fileId = '00000000-0000-4000-8000-000000000001'
-    const operation: Extract<AgentOperation, { kind: 'organize' }> = {
-      kind: 'organize',
-      files: [
-        {
-          id: fileId,
-          name: 'note.txt',
-          size: 4,
-          source: 'Inbox/note.txt',
-          destination: 'Filed/note.txt',
-          detail: 'fixture',
-          readable: true,
-        },
-      ],
-      folders: ['Filed'],
-      locations: ['', 'Inbox'],
-      includeNote: false,
-    }
-    prompt.mockImplementationOnce(async () => {
-      expect(await request.authorize(operation)).toBe(true)
-      expect(operation.files[0].destination).toBe('Travel/Hotel.txt')
-    })
+  it('keeps a filing discussion across turns without pending approval or an executed change', async () => {
     const view = service.create(root, 'claude')
-    service.send(view.conversation.id, 'Organize files', {})
-    await vi.waitFor(() => expect(view.permission).not.toBeNull())
-    expect(() =>
-      service.respond(view.conversation.id, view.permission!.id, true, false, {
-        destinations: [],
-        includeNote: false,
-      }),
-    ).toThrow('Invalid organization approval')
-    service.respond(view.conversation.id, view.permission!.id, true, false, {
-      destinations: [{ id: fileId, path: 'Travel/Hotel.txt' }],
-      includeNote: false,
+    prompt.mockImplementationOnce(async () => {
+      request.onEvent({
+        type: 'text',
+        text: 'I suggest Reference/report.pdf because it is reference material. Shall I move it?',
+      })
     })
+    service.send(view.conversation.id, 'Organize this file', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(view.permission).toBeNull()
+    prompt.mockImplementationOnce(async (text) => {
+      expect(text).toContain('I suggest Reference/report.pdf')
+      expect(text).toContain('Why Reference?')
+      request.onEvent({
+        type: 'text',
+        text: 'It matches the existing reference documents. This remains a suggestion.',
+      })
+    })
+    service.send(view.conversation.id, 'Why Reference?', {})
     await vi.waitFor(() => expect(view.status).toBe('idle'))
     expect(
-      store.messages(view.conversation.id).find((message) => message.approval)?.approval?.operation,
-    ).toMatchObject({ kind: 'organize', files: [{ destination: 'Travel/Hotel.txt' }] })
+      view.messages.some((message) => message.approval || message.change || message.filing),
+    ).toBe(false)
+    expect(
+      store.messages(view.conversation.id).filter((message) => message.role === 'assistant'),
+    ).toHaveLength(2)
   })
   it('keeps window suspension when a workspace refresh resumes its own scope', async () => {
     const view = service.create(root, 'codex')

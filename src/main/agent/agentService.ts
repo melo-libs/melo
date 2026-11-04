@@ -1,8 +1,4 @@
-import {
-  AGENT_OPERATIONS,
-  type AgentOperation,
-  type OrganizationEdits,
-} from '../../shared/agentCapabilities'
+import { AGENT_OPERATIONS, type AgentOperation } from '../../shared/agentCapabilities'
 import { randomUUID } from 'node:crypto'
 import type {
   AgentApproval,
@@ -435,31 +431,10 @@ export class AgentService {
     return result
   }
 
-  respond(
-    id: string,
-    permissionId: string,
-    allow: boolean,
-    conversation = false,
-    organization?: OrganizationEdits,
-  ): void {
+  respond(id: string, permissionId: string, allow: boolean, conversation = false): void {
     const live = this.live.get(id)
     if (!live || live.view.permission?.id !== permissionId)
       throw new Error('Permission request is no longer active')
-    if (allow && organization) {
-      const operation = live.view.permission.operation
-      if (
-        operation.kind !== 'organize' ||
-        organization.destinations.length !== operation.files.length ||
-        new Set(organization.destinations.map((file) => file.id)).size !== operation.files.length ||
-        organization.destinations.some(
-          (file) => !operation.files.some((original) => original.id === file.id),
-        )
-      )
-        throw new Error('Invalid organization approval')
-      for (const file of operation.files)
-        file.destination = organization.destinations.find((item) => item.id === file.id)!.path
-      operation.includeNote = !!operation.note && organization.includeNote
-    }
     if (allow && conversation && AGENT_OPERATIONS[live.view.permission.operation.kind].allowRun)
       live.view.allowChanges = true
     live.permission?.(allow)

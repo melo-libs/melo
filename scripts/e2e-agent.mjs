@@ -156,6 +156,9 @@ async function respondToFixture(request, response) {
       .findLast((text) => text.includes('User request:')) ?? ''
   const currentRequest = promptText.split('User request:\n').at(-1) ?? ''
   const filing = currentRequest.includes('file_intake_fixture')
+  const filingConfirmed = currentRequest.includes('file_intake_confirm_fixture')
+  const filingQuestion = currentRequest.includes('file_intake_why_fixture')
+  let filingReply = ''
   const organizing =
     (currentRequest.includes('organize_fixture') || filing) &&
     body.tools?.some((tool) => tool.name.includes('melo_create'))
@@ -172,6 +175,42 @@ async function respondToFixture(request, response) {
     .filter(
       (block) => block.type === 'tool_result' && block.tool_use_id?.startsWith('organize_'),
     ).length
+  if (filingQuestion || filingConfirmed) {
+    assert(
+      promptText.includes('I suggest Travel/Hangzhou/Hotel.txt'),
+      'follow-up retains the actual proposal',
+    )
+    if (filingQuestion)
+      filingReply =
+        'I suggested Hangzhou because the reservation is for a hotel there. Nothing has moved; shall I use that destination?'
+    else {
+      const completed = body.messages
+        .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+        .find((block) => block.type === 'tool_result' && block.tool_use_id === 'filing_plan')
+      if (!completed) {
+        sendTool(
+          'melo_organize_files',
+          {
+            files: intakeFiles.map((file) => ({
+              id: file.id,
+              reading: file.name === 'archive.bin' ? 'unread' : 'read',
+              destination:
+                file.name === 'archive.bin'
+                  ? null
+                  : file.name === 'reservation.txt'
+                    ? 'Travel/Hangzhou/Hotel.txt'
+                    : `Reference/${file.name}`,
+            })),
+          },
+          'filing_plan',
+        )
+        return
+      }
+      assert(!completed.is_error, JSON.stringify(completed.content))
+      filingReply =
+        'Organized the three readable files in the agreed folders. The unread archive remains in Inbox.'
+    }
+  }
   if (
     filing &&
     body.tools?.some((tool) => tool.name.includes('melo_organize_files')) &&
@@ -278,7 +317,7 @@ async function respondToFixture(request, response) {
       sendTool('melo_list_files', { directory: '' }, 'filing_list')
       return
     }
-    const readings = intakeFiles.map((file, index) => {
+    intakeFiles.forEach((file, index) => {
       const result = results.find((block) => block.tool_use_id === `filing_read_${index}`)
       const content = Array.isArray(result.content)
         ? result.content
@@ -304,36 +343,9 @@ async function respondToFixture(request, response) {
             text.includes('Melo PDF preview'),
           'native Read must forward PDF content to the model',
         )
-      const status = unread ? 'unread' : 'read'
-      return {
-        id: file.id,
-        destination: status === 'read' ? `Filed/${file.name}` : null,
-        reading: status,
-        ...(file.name === 'reservation.txt' && {
-          facts: [
-            { label: 'Stay', value: 'Friday', source: 'content' },
-            { label: 'Author', value: 'Fixture Hotel', source: 'metadata' },
-          ],
-        }),
-        detail:
-          status === 'unread'
-            ? 'The native reader could not interpret this binary file; keep in Inbox.'
-            : file.name === 'reservation.txt'
-              ? 'Hangzhou hotel · Friday'
-              : file.name.endsWith('.pdf')
-                ? 'Melo PDF preview · First page'
-                : 'Received image',
-      }
     })
-    sendTool(
-      'melo_organize_files',
-      {
-        files: readings,
-        note: { path: 'packing.md', content: 'Reservation filed for the weekend.' },
-      },
-      'filing_plan',
-    )
-    return
+    filingReply =
+      '==I suggest Travel/Hangzhou/Hotel.txt for the hotel reservation.==\n\nUse Reference for the PDF and image, and keep archive.bin in Inbox because it could not be read. Shall I organize them this way?'
   }
   const nextOrganize = organizing && !filing ? organizeActions[organized] : undefined
   if (nextOrganize) {
@@ -413,11 +425,13 @@ async function respondToFixture(request, response) {
     index: 0,
     delta: {
       type: 'text_delta',
-      text: editing
-        ? 'Changed Saturday to Sunday.'
-        : organizing
-          ? 'The files are organized. Future articles can stay in Inbox until you decide where to keep them.'
-          : fixtureReply,
+      text:
+        filingReply ||
+        (editing
+          ? 'Changed Saturday to Sunday.'
+          : organizing
+            ? 'The files are organized. Future articles can stay in Inbox until you decide where to keep them.'
+            : fixtureReply),
     },
   })
   event('content_block_stop', { index: 0 })
@@ -1089,7 +1103,7 @@ try {
       )
     }, dropSource)
     await page.getByRole('button', { name: 'Remove packing.md', exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Got it', exact: true }).click()
+    assert.equal(await page.getByRole('button', { name: 'Got it', exact: true }).count(), 0)
     await page.locator('.agent-compose .agent-attachment').hover()
     await page.getByRole('button', { name: 'Remove packing.md', exact: true }).click()
     await waitUntil(
@@ -1225,7 +1239,18 @@ try {
     }
     const changesBeforeFiling = await page.locator('.agent-changes').count()
     await page.getByRole('button', { name: 'Send', exact: true }).click()
-    await page.locator('.agent-permission[data-pending]').waitFor()
+    await waitUntil(
+      'filing suggestion completes without an approval card',
+      async () =>
+        (await page.locator('.agent-assistant').last().innerText()).includes(
+          'I suggest Travel/Hangzhou/Hotel.txt',
+        ) && (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
+    )
+    assert.equal(await page.locator('.agent-permission[data-pending]').count(), 0)
+    assert.equal(
+      await page.locator('.agent-assistant').last().locator('mark').innerText(),
+      'I suggest Travel/Hangzhou/Hotel.txt for the hotel reservation.',
+    )
     assert.equal(
       fs.readFileSync(path.join(workspace, 'Inbox/reservation.txt'), 'utf8'),
       'Reservation fixture: Hangzhou hotel on Friday.',
@@ -1235,7 +1260,6 @@ try {
       0,
       'submitted attachments leave the composer',
     )
-    const plan = page.locator('.agent-permission[data-pending]')
     const activity = page.locator('.agent-activity').last()
     assert.equal(
       (await activity.locator(':scope > summary').innerText()).trim(),
@@ -1276,183 +1300,28 @@ try {
       !fs.existsSync(path.join(workspace, 'Travel/Hangzhou')),
       'filing must wait for user approval',
     )
-    await plan.locator('.agent-organization-unread').waitFor()
-    assert((await plan.locator('.agent-organization-unread').innerText()).includes('archive.bin'))
-    assert.equal(await plan.getByRole('checkbox').isChecked(), false)
-    assert((await plan.locator('.agent-organization-facts').innerText()).includes('Friday'))
-    assert((await plan.locator('.agent-organization-facts').innerText()).includes('Fixture Hotel'))
-    assert(
-      (await plan.locator('.agent-organization-facts').innerText()).includes('document properties'),
+    assert(!fs.existsSync(path.join(workspace, 'Reference')), 'a suggestion does not move files')
+    await textarea.fill('file_intake_why_fixture: Why Hangzhou?')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    await waitUntil(
+      'explain the suggestion without cancelling or executing it',
+      async () =>
+        (await page.locator('.agent-assistant').last().innerText()).includes(
+          'I suggested Hangzhou because',
+        ) && (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
     )
-    await plan.getByRole('button', { name: 'What is this?', exact: true }).click()
-    assert((await textarea.inputValue()).includes('archive.bin'))
-    await textarea.fill('')
-    const reservation = plan.getByRole('region', { name: 'reservation.txt', exact: true })
-    const filename = reservation.getByRole('textbox', {
-      name: 'Rename file: reservation.txt',
-      exact: true,
-    })
-    const location = reservation.getByRole('button', { name: /^Destination folder:/ })
-    await filename.fill('../escape')
-    assert.equal(
-      await plan.getByRole('button', { name: 'Organize', exact: true }).isDisabled(),
-      true,
-    )
-    await filename.fill('Hotel')
-    await location.click()
-    await page.getByRole('button', { name: 'Rename planned folder: Filed', exact: true }).click()
-    await page.getByLabel('Folder name', { exact: true }).fill('Reference')
-    await page.getByRole('button', { name: 'Done', exact: true }).click()
-    assert.equal(
-      await plan
-        .getByRole('button', { name: 'Destination folder: Reference', exact: true })
-        .count(),
-      3,
-    )
-    assert.equal(fs.existsSync(path.join(workspace, 'Reference')), false)
-    await location.click()
-    await page
-      .getByRole('textbox', { name: 'Search or create a folder', exact: true })
-      .fill('Checkups')
-    await page
-      .getByRole('button', { name: `Choose folder: ${existingFilingFolder}`, exact: true })
-      .click()
-    assert.equal(
-      await plan
-        .getByRole('button', { name: 'Destination folder: Reference', exact: true })
-        .count(),
-      2,
-      'choosing a destination must only change this file',
-    )
-    await location.click()
-    assert.equal(
-      await page.getByRole('button', { name: /^Rename planned folder:/ }).count(),
-      0,
-      'an existing folder must never offer draft renaming',
-    )
-    await page.getByRole('button', { name: 'Put in “2026”', exact: true }).click()
-    assert.equal(
-      await location.getAttribute('aria-label'),
-      'Destination folder: Family/Baby/Medical reports/2026',
-    )
-    await location.click()
-    await page
-      .getByRole('textbox', { name: 'Search or create a folder', exact: true })
-      .fill('Checkups')
-    await page
-      .getByRole('button', { name: `Choose folder: ${existingFilingFolder}`, exact: true })
-      .click()
-    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
-      const longName = '灵枢科技—杭州织算星图技术研发服务合同（Token 管理网关与数字员工项目）'
-      await filename.fill(longName)
-      assert.equal(await filename.inputValue(), longName)
-      assert.equal(
-        await reservation.locator('.agent-organization-original-name').textContent(),
-        'reservation.txt',
-      )
-      assert.equal(await reservation.locator('.agent-organization-extension').innerText(), '.txt')
-      await reservation.scrollIntoViewIfNeeded()
-      await page
-        .locator('.agent-window')
-        .screenshot({ path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-plan.png') })
-      await location.click()
-      assert(
-        await page.locator('.agent-folder-navigation').evaluate((navigation) => {
-          const current = navigation.querySelector('[aria-current]')
-          const container = current.closest('nav').querySelector(':scope > div')
-          return (
-            current.getBoundingClientRect().right <= container.getBoundingClientRect().right + 1
-          )
-        }),
-        'the current folder must remain visible in deep navigation',
-      )
-      await page.locator('.agent-folder-picker').screenshot({
-        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-folders.png'),
-      })
-      await page
-        .getByRole('textbox', { name: 'Search or create a folder', exact: true })
-        .fill('Medical')
-      await page
-        .locator('.agent-folder-picker')
-        .screenshot({ path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-search.png') })
-      await page.keyboard.press('Escape')
-      const original = await page.locator('.agent-window').evaluate((element) => ({
-        style: element.getAttribute('style'),
-        theme: document.documentElement.getAttribute('data-theme'),
-      }))
-      await page.locator('.agent-window').evaluate((element) => {
-        element.style.width = '360px'
-        document.documentElement.setAttribute('data-theme', 'dark')
-      })
-      await reservation.scrollIntoViewIfNeeded()
-      await waitUntil(
-        'long folder path collapses to fit',
-        async () =>
-          (await location.locator('.agent-folder-path').getAttribute('data-collapsed')) === 'true',
-      )
-      assert(
-        await location
-          .locator('.agent-folder-visible > .is-destination')
-          .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
-        'a narrow picker must keep the destination leaf readable',
-      )
+    assert(fs.existsSync(path.join(workspace, 'Inbox/reservation.txt')))
+    assert(!fs.existsSync(path.join(workspace, 'Travel/Hangzhou')))
+    assert.equal(await page.locator('.agent-permission[data-pending]').count(), 0)
+    assert.equal(await page.locator('.agent-filing-result').count(), 0)
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT)
       await page.locator('.agent-window').screenshot({
-        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-plan-dark-narrow.png'),
-        animations: 'disabled',
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-discussion.png'),
       })
-      assert.equal(
-        await plan.evaluate((element) => element.scrollWidth > element.clientWidth),
-        false,
-      )
-      await location.hover()
-      await page.getByRole('tooltip').waitFor()
-      assert(
-        (await page.getByRole('tooltip').innerText()).includes(
-          'Family › Baby › Medical reports › 2026 › Checkups',
-        ),
-      )
-      await page.locator('.agent-window').evaluate((element, original) => {
-        element.setAttribute('style', original.style ?? '')
-        if (original.theme) document.documentElement.setAttribute('data-theme', original.theme)
-        else document.documentElement.removeAttribute('data-theme')
-      }, original)
-      await filename.fill('Hotel')
-    }
-    await location.click()
-    await page
-      .getByRole('textbox', { name: 'Search or create a folder', exact: true })
-      .fill('Travel')
-    await page.getByRole('button', { name: /^Create “Travel” in/ }).click()
-    await page
-      .getByRole('navigation', { name: 'Browse folders' })
-      .getByRole('button', { name: 'Workspace', exact: true })
-      .click()
-    await page.getByLabel('Folder name', { exact: true }).fill('Reference')
-    assert.equal(
-      await page.getByRole('button', { name: 'Create here', exact: true }).isDisabled(),
-      true,
+    await textarea.fill(
+      'file_intake_confirm_fixture: Yes, use Travel/Hangzhou/Hotel.txt and Reference, and leave the archive in Inbox.',
     )
-    await page.getByRole('alert').waitFor()
-    await page.getByLabel('Folder name', { exact: true }).fill('Travel')
-    await page.getByRole('button', { name: 'Create here', exact: true }).click()
-    await location.click()
-    await page.getByRole('button', { name: 'Open folder: Travel', exact: true }).click()
-    await page.getByRole('button', { name: 'New folder in “Travel”…', exact: true }).click()
-    await page.getByLabel('Folder name', { exact: true }).fill('Hangzhou')
-    await page.getByRole('button', { name: 'Create here', exact: true }).click()
-    assert.equal(await location.getAttribute('aria-label'), 'Destination folder: Travel/Hangzhou')
-    assert.equal(
-      fs.existsSync(path.join(workspace, 'Travel')),
-      false,
-      'new folders stay in the plan until approval',
-    )
-    assert.equal(
-      await plan
-        .getByRole('button', { name: 'Destination folder: Reference', exact: true })
-        .count(),
-      2,
-    )
-    await plan.getByRole('button', { name: 'Organize', exact: true }).click()
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
     await waitUntil('file intake and filing', async () => {
       if (await page.locator('.agent-error').isVisible())
         throw new Error(await page.locator('.agent-error').innerText())
@@ -1482,15 +1351,17 @@ try {
     assert((await filed.locator('summary').innerText()).includes('Organized 3 files'))
     await page
       .locator('.agent-user')
-      .filter({ hasText: 'file_intake_fixture' })
+      .filter({ hasText: 'file_intake_confirm_fixture' })
       .last()
       .click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Delete message', exact: true }).click()
     await waitUntil(
       'filing survives deletion of its question',
       async () =>
-        (await page.locator('.agent-user').filter({ hasText: 'file_intake_fixture' }).count()) ===
-          0 && (await filed.locator('summary').innerText()) === 'Organized 3 files',
+        (await page
+          .locator('.agent-user')
+          .filter({ hasText: 'file_intake_confirm_fixture' })
+          .count()) === 0 && (await filed.locator('summary').innerText()) === 'Organized 3 files',
     )
     assert.equal(await page.locator('.agent-filing-result').count(), 1)
     assert.equal(await filed.locator('.agent-card-heading').count(), 0)

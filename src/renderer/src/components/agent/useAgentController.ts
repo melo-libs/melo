@@ -21,7 +21,6 @@ import {
 import { workspacePathAtom } from '../../store/workspace'
 import { appStore } from '../../store/appStore'
 import { agentErrorText } from './agentError'
-import type { OrganizationEdits } from '@shared/agentCapabilities'
 
 const preparationKey = (id: string, { configuration: c }: AgentSetup) =>
   JSON.stringify([
@@ -329,7 +328,6 @@ export function useAgentController(
     permissionId: string,
     allow: boolean,
     conversation = false,
-    organization?: OrganizationEdits,
   ) =>
     void perform(() =>
       agentCommand({
@@ -338,7 +336,6 @@ export function useAgentController(
         permissionId,
         allow,
         conversation,
-        organization,
       }),
     )
   const undo = (conversationId: string, changeIds: string[]) =>

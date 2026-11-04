@@ -1,5 +1,51 @@
 import { expect, it } from 'vitest'
 import { assembleContext, MAX_CONTEXT_CHARS } from './context'
+it('carries real filing and undo outcomes alongside a discussion, without raw command output', () => {
+  const prompt = assembleContext({
+    text: 'Why did you suggest that folder?',
+    context: {},
+    memory: { user: '', workspace: '' },
+    history: [
+      {
+        id: 'proposal',
+        role: 'assistant',
+        content:
+          'I suggest Reference/report.pdf because it is background research. Shall I move it?',
+        createdAt: 1,
+      },
+      {
+        id: 'filing',
+        role: 'tool',
+        content: '',
+        createdAt: 2,
+        filing: {
+          id: 'batch',
+          version: 1,
+          state: 'completed',
+          fileCount: 1,
+          createdAt: 2,
+          changes: [
+            {
+              id: 'move',
+              kind: 'move',
+              source: 'Inbox/report.pdf',
+              path: 'Reference/report.pdf',
+              undone: true,
+            },
+          ],
+          unresolved: [],
+        },
+      },
+      { id: 'raw', role: 'tool', content: 'private raw shell output', createdAt: 3 },
+    ],
+  })
+  expect(prompt).toContain('I suggest Reference/report.pdf because it is background research.')
+  expect(prompt).toContain('"type":"filing-result"')
+  expect(prompt).toContain('"source":"Inbox/report.pdf"')
+  expect(prompt).toContain('"undone":true')
+  expect(prompt).not.toContain('private raw shell output')
+})
+
 it('keeps recent exchanges across notes with explicit source labels and historical retrieval', () => {
   const prompt = assembleContext({
     text: 'Explain this',

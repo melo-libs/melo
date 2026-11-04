@@ -20,40 +20,18 @@ import { DocumentAccess } from './documentAccess'
 import { MemoryService } from '../storage/memory'
 import { AgentService } from '../agentService'
 import type { AgentAttachment, AgentChange } from '../../../shared/types/agent'
-import type { AgentOperation } from '../../../shared/agentCapabilities'
 
 it.each([false, true])(
-  'reviews filing once and keeps attachment identity through undo (backup cleanup failure: %s)',
+  'executes agreed filing without another approval and keeps attachment identity through undo (backup cleanup failure: %s)',
   async (cleanupFails) => {
     const conversation = store.create(workspace, 'claude')
-    await Promise.all(
-      Array.from({ length: 205 }, (_, index) =>
-        mkdir(path.join(workspace, 'Existing', `Folder ${index}`, 'Nested'), { recursive: true }),
-      ),
-    )
-    await mkdir(path.join(workspace, '.hidden'))
-    await symlink(root, path.join(workspace, 'Linked'))
     const files: AgentAttachment[] = []
     for (const name of ['reservation.txt', 'unknown.bin']) {
       await writeFile(path.join(root, name), 'fixture')
       const draft = await intake.stageFile(workspace, path.join(root, name))
       files.push(await receive(conversation, draft.id))
     }
-    const authorize = vi.fn(async (operation: AgentOperation) => {
-      expect(operation.kind).toBe('organize')
-      if (operation.kind === 'organize') {
-        expect(operation.locations).toContain('Existing/Folder 204/Nested')
-        expect(operation.locations).not.toContain('.hidden')
-        expect(operation.locations).not.toContain('Linked')
-        expect(operation.files[1].destination).toBeNull()
-        expect(operation.files[0].facts).toEqual([
-          { label: '入住日期', value: '2026-11-08', source: 'content' },
-          { label: '作者', value: 'Fixture Hotel', source: 'metadata' },
-        ])
-        operation.files[0].destination = 'Travel/杭州/Hotel.txt'
-      }
-      return true
-    })
+    const authorize = vi.fn(async () => false)
     const operations = access.operations({
       conversation,
       signal: new AbortController().signal,
@@ -66,18 +44,11 @@ it.each([false, true])(
     const result = await operations.actions!.organize!({
       files: files.map((file) => ({
         id: file.id,
-        destination: `Filed/${file.name}`,
-        detail: 'Reservation fixture',
-        ...(file.id === files[0].id && {
-          facts: [
-            { label: '入住日期', value: '2026-11-08', source: 'content' as const },
-            { label: '作者', value: 'Fixture Hotel', source: 'metadata' as const },
-          ],
-        }),
+        destination: file.id === files[0].id ? 'Travel/杭州/Hotel.txt' : 'Filed/unknown.bin',
         reading: file.id === files[0].id ? ('read' as const) : ('unread' as const),
       })),
     })
-    expect(authorize).toHaveBeenCalledTimes(1)
+    expect(authorize).not.toHaveBeenCalled()
     expect(result.files.map((file) => file.path)).toEqual([
       'Travel/杭州/Hotel.txt',
       'Inbox/unknown.bin',
@@ -105,7 +76,7 @@ it.each([false, true])(
 )
 
 it.each(['../escape.txt', '.hidden/file.txt', 'Travel/note.pdf', 'Alias/file.txt'])(
-  'rejects an invalid edited destination before creating any folders: %s',
+  'rejects an invalid agreed destination before creating any folders: %s',
   async (destination) => {
     const conversation = store.create(workspace, 'claude')
     await writeFile(path.join(root, 'note.txt'), 'fixture')
@@ -117,18 +88,59 @@ it.each(['../escape.txt', '.hidden/file.txt', 'Travel/note.pdf', 'Alias/file.txt
       signal: new AbortController().signal,
       isActive: () => true,
       onEvent: () => {},
-      authorize: async (operation) => {
-        if (operation.kind === 'organize') operation.files[0].destination = destination
-        return true
-      },
+      authorize: async () => false,
     })
     await expect(
       operations.actions!.organize!({
-        files: [{ id: draft.id, destination: 'Travel/note.txt', detail: '', reading: 'read' }],
+        files: [{ id: draft.id, destination, reading: 'read' }],
       }),
     ).rejects.toThrow()
     await expect(stat(path.join(workspace, 'Travel'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await readFile(path.join(workspace, 'Inbox/note.txt'), 'utf8')).toBe('fixture')
+  },
+)
+
+it.each(['existing file', 'duplicate destination', 'file used as folder'])(
+  'validates all agreed destinations before any move (%s)',
+  async (conflict) => {
+    const conversation = store.create(workspace, 'claude')
+    const files: AgentAttachment[] = []
+    for (const name of ['one.txt', 'two.txt']) {
+      await writeFile(path.join(root, name), name)
+      const draft = await intake.stageFile(workspace, path.join(root, name))
+      files.push(await receive(conversation, draft.id))
+    }
+    await mkdir(path.join(workspace, 'Reference'))
+    await writeFile(path.join(workspace, 'Reference/existing.txt'), 'keep this')
+    const onEvent = vi.fn()
+    const operations = access.operations({
+      conversation,
+      signal: new AbortController().signal,
+      isActive: () => true,
+      onEvent,
+      authorize: async () => false,
+    })
+    await expect(
+      operations.actions!.organize!({
+        files: files.map((file, index) => ({
+          id: file.id,
+          reading: 'read',
+          destination:
+            index === 0
+              ? 'Filed/one.txt'
+              : conflict === 'existing file'
+                ? 'Reference/existing.txt'
+                : conflict === 'duplicate destination'
+                  ? 'Filed/one.txt'
+                  : 'Filed/one.txt/two.txt',
+        })),
+      }),
+    ).rejects.toThrow()
+    expect(onEvent).not.toHaveBeenCalled()
+    await expect(stat(path.join(workspace, 'Filed'))).rejects.toMatchObject({ code: 'ENOENT' })
+    for (const file of files)
+      expect(await readFile(path.join(workspace, file.path!), 'utf8')).toBe(file.name)
+    expect(await readFile(path.join(workspace, 'Reference/existing.txt'), 'utf8')).toBe('keep this')
   },
 )
 
@@ -197,7 +209,6 @@ it.each(['retry', 'restart', 'read'] as const)(
         {
           id: draft.id,
           destination: 'Filed/sample.pdf',
-          detail: 'PDF fixture',
           reading: 'read',
         },
       ],
@@ -371,6 +382,37 @@ it('resolves only imported attachment paths without reading their contents', asy
   expect(() => intake.get(path.join(root, 'other-workspace'), file.id)).toThrow('UNAVAILABLE')
 })
 
+it('leaves unread or unchanged files in place without producing an organized receipt', async () => {
+  const conversation = store.create(workspace, 'claude')
+  await writeFile(path.join(root, 'unknown.bin'), 'fixture')
+  const draft = await intake.stageFile(workspace, path.join(root, 'unknown.bin'))
+  const file = await receive(conversation, draft.id)
+  const onEvent = vi.fn(),
+    authorize = vi.fn(async () => false)
+  const operations = access.operations({
+    conversation,
+    signal: new AbortController().signal,
+    isActive: () => true,
+    onEvent,
+    authorize,
+  })
+  for (const reading of ['read', 'unread'] as const) {
+    const result = await operations.actions!.organize!({
+      files: [
+        {
+          id: file.id,
+          destination: reading === 'read' ? file.path! : 'Filed/unknown.bin',
+          reading,
+        },
+      ],
+    })
+    expect(result.files).toEqual([{ id: file.id, path: file.path }])
+  }
+  expect(onEvent).not.toHaveBeenCalled()
+  expect(authorize).not.toHaveBeenCalled()
+  expect(await readFile(path.join(workspace, file.path!), 'utf8')).toBe('fixture')
+})
+
 it.each([false, true])(
   'distinguishes user-described attachments from model-readable content (%s)',
   async (described) => {
@@ -383,20 +425,13 @@ it.each([false, true])(
       signal: new AbortController().signal,
       isActive: () => true,
       onEvent: () => {},
-      authorize: async (operation) => {
-        if (operation.kind === 'organize') {
-          expect(operation.files[0].readable).toBe(false)
-          expect(!!operation.files[0].described).toBe(described)
-        }
-        return true
-      },
+      authorize: async () => false,
     })
     const result = await operations.actions!.organize!({
       files: [
         {
           id: draft.id,
           destination: 'Travel/booking.bin',
-          detail: 'Hotel confirmation',
           reading: described ? 'user-described' : 'unread',
         },
       ],
@@ -440,59 +475,6 @@ it('refuses import undo after a newer edit and never deletes the external source
   expect(await readFile(source, 'utf8')).toBe('original')
   expect(await readFile(path.join(workspace, imported.path!), 'utf8')).toBe('new user edit')
 })
-
-it.each([false, true])(
-  'only appends to a related note when explicitly selected (%s)',
-  async (includeNote) => {
-    const conversation = store.create(workspace, 'claude')
-    await writeFile(path.join(root, 'reservation.txt'), 'Booking')
-    await writeFile(path.join(workspace, 'Travel.md'), '# Travel\n')
-    const draft = await intake.stageFile(workspace, path.join(root, 'reservation.txt'))
-    await receive(conversation, draft.id)
-    const documents = new DocumentAccess(() => null)
-    vi.spyOn(documents, 'fileOperation').mockImplementation(async (_path, operation) => operation())
-    vi.spyOn(documents, 'read').mockImplementation(async (file) => ({
-      content: await readFile(file, 'utf8'),
-      revision: 'original',
-    }))
-    const edit = vi.spyOn(documents, 'edit').mockImplementation(async (file, revision, content) => {
-      expect(revision).toBe('original')
-      await writeFile(file, content)
-      return { content, revision: 'updated' }
-    })
-    const journal = new ChangeJournal(store, documents, directory, intake)
-    const access = new WorkspaceAccess(
-      documents,
-      new MemoryService(directory),
-      journal,
-      () => ({ messages: [], total: 0 }),
-      intake,
-    )
-    const operations = access.operations({
-      conversation,
-      signal: new AbortController().signal,
-      isActive: () => true,
-      onEvent: () => {},
-      authorize: async (operation) => {
-        if (operation.kind === 'organize') {
-          expect(operation.includeNote).toBe(false)
-          operation.includeNote = includeNote
-        }
-        return true
-      },
-    })
-    await operations.actions!.organize!({
-      files: [
-        { id: draft.id, destination: 'Trips/reservation.txt', detail: 'Booking', reading: 'read' },
-      ],
-      note: { path: 'Travel.md', content: 'Friday hotel reservation.' },
-    })
-    expect(edit).toHaveBeenCalledTimes(includeNote ? 1 : 0)
-    expect(await readFile(path.join(workspace, 'Travel.md'), 'utf8')).toBe(
-      includeNote ? '# Travel\n\nFriday hotel reservation.\n' : '# Travel\n',
-    )
-  },
-)
 
 it('recovers an import interrupted after publication using its recorded file identity', async () => {
   await writeFile(path.join(root, 'a.txt'), 'original')

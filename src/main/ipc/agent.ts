@@ -25,7 +25,6 @@ import { ApiModels } from '../agent/runtime/apiModels'
 import { AGENT_API_SERVICES, canReuseAgentApiKey } from '../../shared/agentApi'
 import { FileIntake } from '../agent/storage/fileIntake'
 import { getClipboardFiles } from '../api/fileOperations/clipboardOperations'
-import { organizationEditsSchema } from '../../shared/agentCapabilities'
 import { fileThumbnail } from '../libs/fileThumbnail'
 
 const execute = promisify(execFile)
@@ -119,7 +118,6 @@ const COMMAND = z.discriminatedUnion('action', [
     permissionId: id,
     allow: z.boolean(),
     conversation: z.boolean().optional(),
-    organization: organizationEditsSchema.optional(),
   }),
 ])
 const REPLY = z.object({
@@ -492,7 +490,6 @@ export function setupAgentIPC(): void {
             command.permissionId,
             command.allow,
             command.conversation,
-            command.organization,
           )
           break
       }

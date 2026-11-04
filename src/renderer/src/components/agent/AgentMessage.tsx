@@ -2,6 +2,7 @@ import { Fragment, memo, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MarkdownManager } from '@tiptap/markdown'
 import { StarterKit } from '@tiptap/starter-kit'
+import { Highlight } from '@tiptap/extension-highlight'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import type { JSONContent } from '@tiptap/core'
@@ -16,7 +17,7 @@ import { agentFilePath } from './agentFiles'
 // Render model output as React nodes: no raw HTML, remote images or executable
 // links. Replies share the editor's Markdown parser without mounting an editor.
 const markdown = new MarkdownManager({
-  extensions: [StarterKit, Table, TableRow, TableCell, TableHeader, TaskList, TaskItem],
+  extensions: [StarterKit, Highlight, Table, TableRow, TableCell, TableHeader, TaskList, TaskItem],
 })
 
 function renderNode(
@@ -34,6 +35,9 @@ function renderNode(
       switch (mark.type) {
         case 'bold':
           text = <strong>{text}</strong>
+          break
+        case 'highlight':
+          text = <mark>{text}</mark>
           break
         case 'italic':
           text = <em>{text}</em>

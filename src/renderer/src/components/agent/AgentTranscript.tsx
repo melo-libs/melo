@@ -10,7 +10,6 @@ import { AgentSource } from './AgentSource'
 import { AgentPermission } from './AgentPermission'
 import { AgentReceipt } from './AgentReceipt'
 import { AgentFilingResult } from './AgentFilingResult'
-import type { OrganizationEdits } from '@shared/agentCapabilities'
 
 export function AgentTranscript({
   messages,
@@ -27,7 +26,6 @@ export function AgentTranscript({
   onUndo,
   onUndoFiling,
   onDelete,
-  onDescribe,
 }: {
   messages: AgentHistoryMessage[]
   running: boolean
@@ -36,14 +34,7 @@ export function AgentTranscript({
   activeWorkspace: string
   activePlan?: string
   activePermission?: string
-  onRespond?(
-    conversationId: string,
-    permissionId: string,
-    allow: boolean,
-    run?: boolean,
-    organization?: OrganizationEdits,
-  ): void
-  onDescribe?(name: string): void
+  onRespond?(conversationId: string, permissionId: string, allow: boolean, run?: boolean): void
   highlight: string | null
   onOpenFile(path: string, workspace: string): void
   onOpenMessage(id: string): void
@@ -162,17 +153,9 @@ export function AgentTranscript({
                       message.conversationId === activeConversation
                     }
                     workspaceName={message.workspaceRoot.split('/').pop()!}
-                    workspaceRoot={message.workspaceRoot}
-                    onDescribe={onDescribe}
                     busy={busy}
-                    onRespond={(allow, run, organization) =>
-                      onRespond?.(
-                        message.conversationId,
-                        message.approval!.id,
-                        allow,
-                        run,
-                        organization,
-                      )
+                    onRespond={(allow, run) =>
+                      onRespond?.(message.conversationId, message.approval!.id, allow, run)
                     }
                   />
                 )
@@ -203,7 +186,6 @@ export function AgentTranscript({
                       data-highlight={highlight === message.id || undefined}
                     >
                       <AgentMessage
-                        workspaceRoot={message.workspaceRoot}
                         content={message.content}
                         role={message.role}
                         context={message.context}

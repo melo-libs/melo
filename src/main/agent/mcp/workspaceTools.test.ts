@@ -21,8 +21,8 @@ beforeEach(async () => {
   tools = await startWorkspaceTools(() => ({
     documents,
     actions: {
-      organize: async (proposal) => ({
-        files: proposal.files.map((file) => ({
+      organize: async (organization) => ({
+        files: organization.files.map((file) => ({
           id: file.id,
           path: file.destination ?? 'Inbox/unread.bin',
         })),

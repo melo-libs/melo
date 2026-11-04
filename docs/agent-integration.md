@@ -52,7 +52,7 @@ Main
     │    ├─ documentAccess.ts          Bridge to existing renderer document sessions
     │    ├─ changeJournal.ts           Change records, backups and undo
     │    ├─ editPreview.ts             Bounded diff generation
-    │    └─ fileOrganization.ts        Editable filing plans and journaled application
+    │    └─ fileOrganization.ts        Agreed file destinations and journaled execution
     ├─ mcp/
     │    └─ workspaceTools.ts          MCP schemas, HTTP transport and cancellation
     └─ storage/
@@ -177,11 +177,10 @@ changed, then reads the saved file itself. Unsupported or failed native reads
 must produce an honest unread reason and keep the file in Inbox. There is no
 local read-tracking boolean that can veto successful native inspection.
 
-The Harness reads the workspace and submits one editable filing proposal,
-including whether each conclusion comes from content, the user's description,
-or an unread file. This is proposal data, not authorization to write. Future
-built-in parsers should address measured reliability or cost gaps and expose
-results through MCP; OCR and Office parsing remain deferred.
+The Harness distinguishes content it read, user-provided descriptions, and unread
+files when explaining recommendations. Future built-in parsers should address
+measured reliability or cost gaps and expose results through MCP; OCR and Office
+parsing remain deferred.
 
 Inbox receipt is a dedicated persisted timeline record, not a file-change card.
 It shows receiving/stored/failed/cancelled states and completes before the Harness
@@ -191,7 +190,7 @@ receipt creates no public undo actions. Only applied filing changes offer undo,
 which returns copied files to Inbox instead of deleting the received files.
 
 The composer uses the shared `ui/FileThumbnail` cell for images, documents and
-fallback paper assets. All confirmation rows reserve the same 32-by-26 cell.
+fallback paper assets.
 `main/libs/fileThumbnail.ts` reads an authorized file handle, decodes small images
 locally, and uses macOS Quick Look for document covers, HEIC and video thumbnails.
 Quick Look gets an owned temporary snapshot with the original extension, never an
@@ -199,44 +198,40 @@ external user path. Generation has a timeout, bounded output, a small deduplicat
 memory cache and unconditional temporary-file cleanup. Unsupported previews use
 the folded-paper fallback. This is local preview generation, not PDF/OCR parsing
 or additional model input. The composer accepts native file drops and workspace
-tree copies. A dismissible first-use notice explains model disclosure before sending.
+tree copies.
 Preview support is separate from model readability; an image thumbnail does not
 prove the selected model can inspect its content.
 
-Filing cards prioritize the original uploaded filename, including its extension.
-A different proposed filename appears on a separate, explicitly labeled row; it
-never silently replaces the original identity. Already informative filenames are
-preserved by default, and dates/authors stay in facts unless a naming convention
-requires them. Filenames wrap instead of competing with an inline summary. Optional `facts` carry short,
-verified label/value/source entries for document dates, authors, and other useful
-identifying information. Body statements, document properties and user descriptions
-have distinct provenance. A file timestamp is not a business date, a property
-listed as author is not proof of authorship, and missing facts stay absent. The
-optional identifying detail and facts wrap fully rather than being ellipsized.
+File organization is conversational: the Harness reads the files and workspace,
+explains destinations, renames and a short rationale, then ends its turn. A follow-up
+question explains or revises that recommendation; it does not cancel a pending call
+or imply approval. Only after explicit agreement does the Harness call
+`melo_organize_files`. The tool executes immediately without a second approval UI.
+There is no pending filing plan, approval timer, folder-picker state or suspended
+MCP call between messages. Recent dialogue carries the recommendation; recorded
+receipts, filing outcomes and undo status enter subsequent context separately from
+model text. Historical organization approval records remain read-only and are
+labeled as proposals rather than proof of execution.
 
-Human approval currently keeps the MCP call open. The card and AgentService have
-no approval countdown, but Harness tool deadlines still apply. Claude uses a
-30-minute timeout, as does Codex. The prewarmed process reserves a random MCP
-configuration name with that deadline; each task supplies its own URL and bearer
-under that name at `session/new`. Task endpoints and operation closures are never
-reassigned: closing a task aborts its requests and closes its server before reuse.
-The existing Codex MCP merge workaround preserves the reserved timeout and disabled
-inherited servers. No extra adapter patch or persistent configuration is needed.
-Cancelling a task or closing its workspace also
-invalidates the wait. Removing this user-facing deadline requires a durable pending
-plan independent of the active Harness/MCP request; normal connection/execution
-timeouts should remain. That lifecycle change is not part of the metadata layout.
+The execution request contains stable attachment IDs, reading status and agreed
+workspace-relative destinations. Unread files stay in place. Original filenames
+and extensions are preserved unless a rename was agreed. Verified dates, authors
+and useful identifying facts belong in the conversation, not a tool's UI payload.
+Note updates use the separate versioned document tool and its confirmation flow.
 
-`melo_organize_files` submits one structured approval grouped by destination.
-Users can edit names and folders using shared controls before approving, or
-provide a description for an unread file. Unread files stay in Inbox with the actual reason supplied by the Harness;
-user-described files are labeled separately. An optional append to an existing note
-is unchecked by default and previews the exact text. Approved destinations are
-revalidated together before any mutation, including extension preservation,
-conflicts, path containment, symlinks, source fingerprints and note revisions.
-Each completed folder/move/edit uses the existing journal and document session
-owner; partial failures retain independently undoable changes. The plan never
-replaces file operations with a second write implementation.
+WorkspaceAccess serializes filing with other mutations. Before creating folders
+or moving files, it validates the whole request for duplicate destinations,
+extensions, conflicts, path containment, symlinks and source fingerprints. Each
+move uses the document-session owner and existing journal; partial failures retain
+undoable changes. A no-op produces no filing receipt. Conversational consent is
+interpreted by the trusted Harness; it is not a host-enforced authorization token.
+Deletion, editing and other MCP approvals retain their existing controls.
+
+Other approval-bearing MCP calls still have a 30-minute Harness deadline. Codex
+reserves the configuration name and timeout during prewarming, then each task
+supplies a fresh URL and bearer. The existing MCP merge workaround preserves that
+timeout and disabled inherited servers. Task endpoints are never reassigned.
+Cancellation closes the task server and expires its pending approvals.
 
 `melo_resolve_attachment` resolves a stable UUID to an
 imported file in the same workspace; it cannot resolve draft snapshots or arbitrary
@@ -409,7 +404,7 @@ a change was applied; the change summary reports completed mutations.
 Edit previews use jsdiff with three context lines and a bounded computation time.
 The document revision is checked before review and again before applying the edit.
 Harness tool deadlines still apply while waiting for human review (see the
-file-organization lifecycle above). A timeout or cancellation leaves an expired
+MCP lifecycle above). A timeout or cancellation leaves an expired
 confirmation record.
 Reopening a hidden window keeps a live approval. A failed approval checkpoint
 rejects that request and expires its card without poisoning the queue for later
@@ -426,9 +421,11 @@ existing document session and revision checks, including unsaved content.
 Change summaries retain their conversation/workspace ownership even when a
 question is deleted or a history page starts mid-turn. Historical changes from
 another workspace can be read, but undo is disabled until that workspace is active.
-Ordinary changes retain their individual undo controls. Each confirmed filing
+Ordinary changes use a collapsed result line with undo (or restore for trash).
+A single change has one action; multiple changes also offer individual actions
+inside the details. Each confirmed filing
 has a persisted batch ID and an independent timeline marker. Journal entries
-carry that ID, including created folders and optional note edits; Inbox imports
+carry that ID, including created folders; Inbox imports
 are excluded. Filing receipts are read-only details with one batch undo action.
 The renderer sends only the batch ID, and the main process loads every applied
 entry for that batch within its conversation and workspace. It rejects attempts
@@ -519,8 +516,9 @@ handoff, business approval, file-change summaries, reverse-order undo,
 editor/disk synchronization and history. The installed Claude adapter also
 reads PDF/image/text attachments natively, runs compound inspection, temporary
 conversion, repeated native reads, workspace writes and local network requests
-without execution prompts. The filing plan still waits for business confirmation;
-rejection, cancellation and undo remain covered by the application tests.
+without execution prompts. Filing suggestions finish their turn without moving
+files; questions retain that recommendation, and explicit agreement executes it.
+Cancellation, other operation approvals and undo remain covered by application tests.
 API fixtures use isolated profiles and local endpoints, not native accounts.
 `MELO_E2E_NATIVE_MODELS=1` adds native Codex model/effort menu switching and
 narrow-panel checks, without a model turn. `MELO_NATIVE_MODELS_CHECK=1` enables

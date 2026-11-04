@@ -3,7 +3,7 @@ import type {
   AgentDocumentSnapshot,
   AgentHistorySearch,
 } from '../../../shared/types/agent'
-import type { OrganizationProposal } from '../../../shared/agentCapabilities'
+import type { OrganizationRequest } from '../../../shared/agentCapabilities'
 
 // Protocol-independent capabilities supplied by the workspace service.
 export interface AgentDocumentAccess {
@@ -20,7 +20,7 @@ export interface WorkspaceOperations {
   documents: AgentDocumentAccess
   actions?: {
     resolveAttachment?(id: string): Promise<AgentAttachment>
-    organize?(proposal: OrganizationProposal): Promise<{ files: { id: string; path: string }[] }>
+    organize?(organization: OrganizationRequest): Promise<{ files: { id: string; path: string }[] }>
     list(directory: string): Promise<{ path: string; directory: boolean }[]>
     search(
       query: string,

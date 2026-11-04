@@ -378,15 +378,6 @@ export const AgentWindow = () => {
                   activePlan={planMessage?.id}
                   activePermission={view?.permission?.id}
                   onRespond={respond}
-                  onDescribe={(name) => {
-                    setWindow((state) => ({
-                      ...state,
-                      draft: t('agent.organization.descriptionDraft', { name }),
-                    }))
-                    panel.current
-                      ?.querySelector<HTMLTextAreaElement>('.agent-compose textarea')
-                      ?.focus()
-                  }}
                   highlight={highlight}
                   onOpenFile={openFile}
                   onOpenMessage={openMessage}
@@ -486,7 +477,6 @@ export const AgentWindow = () => {
           {!settingsOpen && (
             <AgentComposer
               draggingFiles={draggingFiles}
-              reviewingOrganization={view?.permission?.operation.kind === 'organize'}
               attachments={attachments}
               receivingFiles={receivingFiles}
               onPasteAttachments={pasteAttachments}

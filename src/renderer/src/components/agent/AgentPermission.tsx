@@ -2,14 +2,12 @@ import {
   AGENT_OPERATIONS,
   operationLocation,
   type AgentNativeAccess,
-  type OrganizationEdits,
 } from '@shared/agentCapabilities'
 import { useTranslation } from 'react-i18next'
 import type { AgentApproval as Permission } from '@shared/types/agent'
 import { Icon } from '../Icon'
 import { Button } from '../ui/Button'
 import { AgentDiffPreview } from './AgentDiffPreview'
-import { AgentOrganization } from './AgentOrganization'
 
 export function NativePermissionDetail({
   detail,
@@ -87,16 +85,12 @@ export function AgentPermission({
   active,
   onRespond,
   workspaceName,
-  workspaceRoot,
-  onDescribe,
 }: {
   permission: Permission
   busy: boolean
   active: boolean
   workspaceName: string
-  onRespond(allow: boolean, conversation?: boolean, organization?: OrganizationEdits): void
-  workspaceRoot?: string
-  onDescribe?(name: string): void
+  onRespond(allow: boolean, conversation?: boolean): void
 }) {
   const { t } = useTranslation()
   const { operation } = permission
@@ -117,20 +111,30 @@ export function AgentPermission({
     operation.kind === 'move'
       ? t('agent.movedPath', { from: operation.source, to: operation.destination })
       : location
-  const pending = active && permission.status === 'pending'
-  const status = permission.status === 'pending' && !active ? 'expired' : permission.status
+  const pending = operation.kind !== 'organize' && active && permission.status === 'pending'
+  const status = permission.status === 'pending' && !pending ? 'expired' : permission.status
   const content =
     operation.kind === 'organize' ? (
       <>
-        <AgentOrganization
-          key={permission.id}
-          operation={operation}
-          pending={pending}
-          busy={busy}
-          workspaceRoot={workspaceRoot}
-          onRespond={onRespond}
-          onDescribe={onDescribe}
-        />
+        {operation.files.map((file) => (
+          <p key={file.id}>
+            {file.name}
+            <br />
+            {file.source} → {file.destination ?? file.source}
+            {file.detail && (
+              <>
+                <br />
+                {file.detail}
+              </>
+            )}
+            {file.facts?.map((fact) => (
+              <span key={fact.label}>
+                <br />
+                {fact.label}: {fact.value}
+              </span>
+            ))}
+          </p>
+        ))}
         {!pending && (
           <p className="agent-approval-status" role="status">
             {t(`agent.approvalStatus.${status}`)}

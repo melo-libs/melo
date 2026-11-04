@@ -185,16 +185,17 @@ export class WorkspaceAccess {
       actions: {
         ...(this.intake
           ? {
-              organize: (proposal) =>
-                organizeFiles({
-                  intake: this.intake!,
-                  documents: this.documents,
-                  journal: this.journal,
-                  request,
-                  proposal,
-                  assertActive,
-                  review: mutate,
-                }),
+              organize: (organization) =>
+                this.queue(() =>
+                  organizeFiles({
+                    intake: this.intake!,
+                    documents: this.documents,
+                    journal: this.journal,
+                    request,
+                    organization,
+                    assertActive,
+                  }),
+                ),
               resolveAttachment: async (id: string) => {
                 assertActive()
                 this.journal.reconcileAttachments()

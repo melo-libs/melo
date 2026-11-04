@@ -29,37 +29,27 @@ export function agentTool(name: string) {
   return Object.values(AGENT_TOOLS).find((tool) => tool.name === name)
 }
 
-export const organizationFactSchema = z.object({
+const organizationFactSchema = z.object({
   label: z.string().min(1).max(24),
   value: z.string().min(1).max(100),
   source: z.enum(['content', 'metadata', 'user']),
 })
-export type OrganizationFact = z.infer<typeof organizationFactSchema>
 
-export const organizationProposalSchema = z.object({
+export const organizationRequestSchema = z.object({
   files: z
     .array(
       z.object({
         id: z.string().uuid(),
         destination: z.string().min(1).max(4096).nullable(),
-        detail: z.string().max(240),
-        facts: z.array(organizationFactSchema).max(4).optional(),
         reading: z.enum(['read', 'user-described', 'unread']),
       }),
     )
     .min(1)
     .max(20),
-  note: z.object({ path: z.string().min(1).max(4096), content: z.string().max(32000) }).optional(),
 })
-export type OrganizationProposal = z.infer<typeof organizationProposalSchema>
-export const organizationEditsSchema = z.object({
-  destinations: z
-    .array(z.object({ id: z.string().uuid(), path: z.string().min(1).max(4096).nullable() }))
-    .max(20),
-  includeNote: z.boolean(),
-})
-export type OrganizationEdits = z.infer<typeof organizationEditsSchema>
+export type OrganizationRequest = z.infer<typeof organizationRequestSchema>
 
+// Existing conversations retain their old confirmation records for read-only history.
 export const agentOperationSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('organize'),
@@ -68,21 +58,14 @@ export const agentOperationSchema = z.discriminatedUnion('kind', [
         z.object({
           id: z.string().uuid(),
           name: z.string(),
-          size: z.number(),
           source: z.string(),
           destination: z.string().nullable(),
           detail: z.string(),
           facts: z.array(organizationFactSchema).max(4).optional(),
-          readable: z.boolean(),
-          described: z.boolean().optional(),
         }),
       )
       .min(1)
       .max(20),
-    folders: z.array(z.string()),
-    locations: z.array(z.string()),
-    note: z.object({ path: z.string(), content: z.string(), revision: z.string() }).optional(),
-    includeNote: z.boolean(),
   }),
   z.object({ kind: z.literal('create-folder'), path: z.string() }),
   z.object({ kind: z.literal('create-note'), path: z.string(), content: z.string() }),
@@ -104,7 +87,7 @@ export const agentOperationSchema = z.discriminatedUnion('kind', [
 export type AgentOperation = z.infer<typeof agentOperationSchema>
 
 export const AGENT_OPERATIONS = {
-  organize: { label: 'organizeFiles', approve: 'organize', allowRun: false },
+  organize: { label: 'organizeFiles', approve: null, allowRun: false },
   'create-folder': { label: 'createFolder', approve: 'create', allowRun: true },
   'create-note': { label: 'createNote', approve: 'create', allowRun: true },
   edit: { label: 'editDocument', approve: 'apply', allowRun: true },

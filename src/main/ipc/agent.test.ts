@@ -105,7 +105,7 @@ it('keeps stop and permission denial available when attachment reconciliation fa
     ).success,
   ).toBe(true)
   expect(cancel).toHaveBeenCalledWith(conversationId)
-  expect(respond).toHaveBeenCalledWith(conversationId, permissionId, false, undefined, undefined)
+  expect(respond).toHaveBeenCalledWith(conversationId, permissionId, false, undefined)
   expect(reconcile).not.toHaveBeenCalled()
 })
 
