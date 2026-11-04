@@ -3,6 +3,7 @@ import type { AgentConfiguration } from '../../../shared/types/agent'
 import { AcpConnection, type AcpConnectionOptions } from './acpConnection'
 import { claudeApiConfiguration } from './claudeAccess'
 import { claudeSession } from './claudeSession'
+import { EXECUTION_SECRET_ENV, executionInstructions } from './executionInstructions'
 import { RuntimeEnvironment, adapterEntry } from './runtimeEnvironment'
 import { codexLaunch, CODEX_API_PROVIDER, CODEX_API_KEY_ENV } from './codexLaunch'
 import { applyNativePreferences } from './nativeConfiguration'
@@ -16,13 +17,16 @@ export interface HarnessSessionOptions {
   configuration: AgentConfiguration
   apiKey?: string
   workspaceRoot: string
+  scratchDirectory?: string
   signal: AbortSignal
   mcpServers: Extract<McpServer, { type: 'http' }>[]
   onUpdate: AcpConnectionOptions['onUpdate']
   onPermission?: AcpConnectionOptions['onPermission']
 }
 
-export async function startHarnessConnection(options: HarnessSessionOptions) {
+export async function startHarnessConnection(
+  options: HarnessSessionOptions & { mcpServerName?: string },
+) {
   const { configuration, apiKey } = options
   const node = await options.environment.requireNode()
   const env = { ...process.env }
@@ -57,6 +61,7 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
     'MCP_TOOL_TIMEOUT',
     'MAX_THINKING_TOKENS',
     'CLAUDE_CODE_EFFORT_LEVEL',
+    'CLAUDE_CODE_TMPDIR',
   ])
     delete env[name]
   let disabledMcpServers: Awaited<ReturnType<typeof codexLaunch>> | undefined
@@ -78,7 +83,10 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
           }
         : undefined,
     )
-    env.INITIAL_AGENT_MODE = 'read-only'
+    env.INITIAL_AGENT_MODE = 'agent-full-access'
+    if (options.scratchDirectory) {
+      env.TMPDIR = options.scratchDirectory
+    }
     env.MELO_DISABLE_TITLE_GENERATION = '1'
     if (configuration.access === 'api') {
       if (!apiKey) throw new Error('AGENT_API_KEY_REQUIRED')
@@ -87,6 +95,10 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
     }
   }
   if (configuration.provider === 'claude') {
+    if (options.scratchDirectory) {
+      env.CLAUDE_CODE_TMPDIR = options.scratchDirectory
+      env.TMPDIR = options.scratchDirectory
+    }
     // Melo owns durable preferences; do not create a second harness-specific memory.
     env.MCP_TOOL_TIMEOUT = String(APPROVAL_TOOL_TIMEOUT_MS)
     env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
@@ -123,6 +135,16 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
         : undefined
     // Human review must not share the harness's short default tool deadline.
     env.CODEX_CONFIG = JSON.stringify({
+      sandbox_mode: 'danger-full-access',
+      approval_policy: 'never',
+      shell_environment_policy: { exclude: EXECUTION_SECRET_ENV },
+      allow_login_shell: false,
+      ...(options.scratchDirectory && {
+        developer_instructions: executionInstructions(
+          options.workspaceRoot,
+          options.scratchDirectory,
+        ),
+      }),
       // Process launch selects this provider; keep per-session routing consistent.
       ...(configuration.access === 'api'
         ? {
@@ -134,6 +156,11 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
         : {}),
       mcp_servers: {
         ...disabledMcpServers,
+        // ACP adds the task's transport at session/new. Reserve its timeout in
+        // the process config before that URL/token exists; never persist it.
+        ...(options.mcpServerName && {
+          [options.mcpServerName]: { tool_timeout_sec: APPROVAL_TOOL_TIMEOUT_MS / 1000 },
+        }),
         ...Object.fromEntries(
           options.mcpServers.map((server) => [
             server.name,
@@ -148,8 +175,8 @@ export async function startHarnessConnection(options: HarnessSessionOptions) {
         ),
       },
       features: {
-        shell_tool: false,
-        apply_patch_freeform: false,
+        shell_tool: true,
+        apply_patch_freeform: true,
         plugins: false,
         memories: false,
         hooks: false,
@@ -197,14 +224,22 @@ export async function createHarnessSession(
     configuration.provider === 'claude'
       ? claudeSession(
           options.mcpServers,
+          options.workspaceRoot,
           configuration.access === 'api' ? configuration.model : configuration.native?.model,
+          options.scratchDirectory,
         )
       : { mcpServers: options.mcpServers },
   )
+  // The adapter owns permissionMode and ignores it in forwarded SDK options.
+  // Select the advertised native mode through ACP before executing any tools.
+  const sessionOptions =
+    configuration.provider === 'claude' && options.scratchDirectory
+      ? await connection.setConfigOption('mode', 'bypassPermissions')
+      : (session.configOptions ?? [])
   const configOptions =
     configuration.access === 'native'
-      ? await applyNativePreferences(connection, session.configOptions ?? [], configuration.native)
-      : (session.configOptions ?? [])
+      ? await applyNativePreferences(connection, sessionOptions, configuration.native)
+      : sessionOptions
   options.signal.throwIfAborted()
   return { connection, configOptions }
 }

@@ -10,10 +10,14 @@ import type { AgentRuntime } from '../agentTypes'
 
 interface FixtureRequest {
   model: string
-  input: { type?: string; output?: string }[]
+  input: { type?: string; output?: string; call_id?: string }[]
   tools?: { type: string; name?: string; tools?: { type: string; name: string }[] }[]
   reasoning?: { effort?: string }
 }
+
+// Opt in to the real 60-second default-deadline regression; normal adapter
+// coverage stays fast. This never uses the user's account or model endpoint.
+const checkToolTimeout = process.env.MELO_CODEX_TIMEOUT_CHECK === '1'
 
 it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
   { service: 'deepseek', model: 'deepseek-flash', effort: 'high' },
@@ -29,15 +33,54 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'melo-codex-api-')))
     const home = path.join(root, 'codex-home')
     const claudeHome = path.join(root, 'claude-home')
+    const workspace = path.join(root, 'workspace')
     await mkdir(home)
     await mkdir(claudeHome)
+    await mkdir(workspace)
+    await writeFile(path.join(workspace, 'note.md'), '# Saved fixture')
+    await writeFile(path.join(root, 'outside.txt'), 'External fixture')
     vi.stubEnv('CODEX_HOME', home)
     vi.stubEnv('CLAUDE_CONFIG_DIR', claudeHome)
-    await writeFile(path.join(home, 'config.toml'), 'model_reasoning_effort = "xhigh"\n')
+    const nativeConfig =
+      'model_reasoning_effort = "xhigh"\n' +
+      (service === 'custom' ? 'sandbox_mode = "read-only"\napproval_policy = "on-request"\n' : '')
+    await writeFile(path.join(home, 'config.toml'), nativeConfig)
     const requests: FixtureRequest[] = []
     const errors: Error[] = []
     let answer = '',
-      reads = 0
+      reads = 0,
+      authorizations = 0
+    const readConversations: string[] = []
+    const executionDirectories = new Set<string>()
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    const nativeSteps = [
+      {
+        id: 'temporary_output',
+        cmd: 'printf "Parsed attachment\\n" > "$TMPDIR/intermediate.txt"; cat "$TMPDIR/intermediate.txt"; printf "execution-directory=%s\\n" "$TMPDIR"; if test -z "$MELO_CODEX_API_KEY$CODEX_CONFIG$MELO_CODEX_LAUNCH"; then printf "secrets-hidden\\n"; fi',
+        check(output: string) {
+          expect(output).toContain('Parsed attachment')
+          expect(output).toContain('secrets-hidden')
+          const directory = /execution-directory=(.+)/.exec(output)?.[1].trim()
+          expect(directory).toMatch(/\/melo-[A-Za-z0-9]{6}$/)
+          executionDirectories.add(directory!)
+        },
+      },
+      {
+        id: 'workspace_analysis',
+        cmd: `printf 'Analysis fixture' > ${quote(path.join(workspace, 'analysis.txt'))}; cat ${quote(path.join(workspace, 'analysis.txt'))}; pwd`,
+        check(output: string) {
+          expect(output).toContain('Analysis fixture')
+          expect(output).toContain(workspace)
+        },
+      },
+      {
+        id: 'outside_read',
+        cmd: `cat ${quote(path.join(root, 'outside.txt'))}`,
+        check(output: string) {
+          expect(output).toContain('External fixture')
+        },
+      },
+    ]
     const server = createServer((request, response) => {
       void (async () => {
         expect(request.url).toBe('/v1/responses')
@@ -51,20 +94,50 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
           expect(body.tools?.some((tool) => tool.name === 'collaboration')).toBe(false)
           expect(body.tools?.some((tool) => tool.type === 'web_search')).toBe(false)
         }
-        const result = body.input.find((item) => item.type === 'function_call_output')
-        const namespace = body.tools?.find(
+        const result = body.input.find(
+          (item) => item.type === 'function_call_output' && item.call_id === 'call_fixture',
+        )
+        let namespace = body.tools?.find(
           (tool) =>
             tool.type === 'namespace' &&
             tool.tools?.some((item) => item.name === 'melo_read_document'),
         )
-        const name =
+        let name =
           namespace?.tools?.find((item) => item.name === 'melo_read_document')?.name ??
           body.tools?.find((tool) => tool.name?.includes('melo_read_document'))?.name
         expect(
           name,
           `Request ${requests.length}: model ${body.model}, tools ${body.tools?.map((tool) => tool.name ?? tool.type).join(',')}`,
         ).toBeTruthy()
-        const callArguments = JSON.stringify({ path: 'note.md' })
+        let callArguments = JSON.stringify({ path: 'note.md' })
+        let callId = 'call_fixture'
+        if (service === 'custom' && !result) {
+          for (const step of nativeSteps) {
+            const completed = body.input.find(
+              (item) => item.type === 'function_call_output' && item.call_id === step.id,
+            )
+            if (completed) {
+              step.check(String(completed.output))
+              continue
+            }
+            const nativeTool = 'exec_command'
+            namespace = body.tools?.find(
+              (tool) =>
+                tool.type === 'namespace' && tool.tools?.some((item) => item.name === nativeTool),
+            )
+            name =
+              namespace?.tools?.find((tool) => tool.name === nativeTool)?.name ??
+              body.tools?.find((tool) => tool.name === nativeTool)?.name
+            expect(name).toBe(nativeTool)
+            callArguments = JSON.stringify({
+              cmd: step.cmd,
+              login: false,
+              max_output_tokens: 1200,
+            })
+            callId = step.id
+            break
+          }
+        }
         const content = { type: 'output_text', text: 'Connected.', annotations: [] }
         const item = result
           ? {
@@ -77,7 +150,7 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
           : {
               type: 'function_call',
               id: 'fc_fixture',
-              call_id: 'call_fixture',
+              call_id: callId,
               name,
               ...(namespace ? { namespace: namespace.name } : {}),
               arguments: callArguments,
@@ -178,12 +251,15 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
           hasApiKey: true,
         }),
         apiKey: () => 'fixture-key',
-        tools: () =>
+        tools: (request) =>
           startWorkspaceTools(() => ({
             documents: {
               read: async (file) => {
                 expect(file).toBe('note.md')
                 reads++
+                readConversations.push(request.conversation.id)
+                if (checkToolTimeout && service === 'custom' && reads === 2)
+                  await new Promise((resolve) => setTimeout(resolve, 65_000))
                 return { content: '# Fixture note', revision: 'fixture-revision' }
               },
               edit: async () => {
@@ -192,18 +268,28 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
             },
           })),
       })
+      await factory.prepare?.({
+        id: 'prewarm',
+        title: '',
+        workspaceRoot: workspace,
+        provider: 'codex',
+        updatedAt: Date.now(),
+      })
       for (let turn = 0; turn < 2; turn++) {
         runtime = await factory({
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(checkToolTimeout ? 90_000 : 20_000),
           isActive: () => true,
           conversation: {
-            id: 'fixture',
+            id: `fixture-${turn}`,
             title: '',
-            workspaceRoot: root,
+            workspaceRoot: workspace,
             provider: 'codex',
             updatedAt: Date.now(),
           },
-          authorize: async () => false,
+          authorize: async () => {
+            authorizations++
+            return false
+          },
           onEvent: (event) => {
             if (event.type === 'text') answer += event.text
           },
@@ -218,13 +304,20 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
       }
       expect(errors).toEqual([])
       expect(reads).toBe(2)
+      expect(readConversations).toEqual(['fixture-0', 'fixture-1'])
       expect(answer).toContain('Connected.')
       expect(requests.length).toBeGreaterThanOrEqual(4)
       expect(requests.every((request) => request.model === model)).toBe(true)
       expect(requests.every((request) => request.reasoning?.effort === effort)).toBe(true)
-      expect(await readFile(path.join(home, 'config.toml'), 'utf8')).toBe(
-        'model_reasoning_effort = "xhigh"\n',
-      )
+      expect(await readFile(path.join(workspace, 'note.md'), 'utf8')).toBe('# Saved fixture')
+      if (service === 'custom') expect(executionDirectories.size).toBe(1)
+      expect(authorizations).toBe(0)
+      await factory.close?.()
+      for (const directory of executionDirectories)
+        await expect(readFile(path.join(directory, 'intermediate.txt'))).rejects.toMatchObject({
+          code: 'ENOENT',
+        })
+      expect(await readFile(path.join(home, 'config.toml'), 'utf8')).toBe(nativeConfig)
       const homeFiles = await readdir(home)
       expect(homeFiles).not.toContain('models.json')
       expect(homeFiles).not.toContain('auth.json')
@@ -237,5 +330,5 @@ it.skipIf(process.env.MELO_CODEX_API_CHECK !== '1').each([
       await rm(root, { recursive: true, force: true })
     }
   },
-  30000,
+  checkToolTimeout ? 100_000 : 30_000,
 )

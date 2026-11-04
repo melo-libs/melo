@@ -632,6 +632,7 @@ export type IpcResponseType<K extends IpcChannels> = IpcChannelDefinitions[K]['r
 
 // API interface exposed to renderer
 export interface IpcApi {
+  getPathForFile(file: File): string
   channels: typeof IpcChannels
   send: <K extends IpcChannels>(channel: K, args: IpcChannelDefinitions[K]['args']) => void
   on: <K extends IpcChannels>(

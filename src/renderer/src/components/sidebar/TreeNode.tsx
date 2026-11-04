@@ -74,7 +74,7 @@ export const TreeNode = ({
         return
       }
       e.stopPropagation()
-      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.effectAllowed = 'copyMove'
       e.dataTransfer.setData('application/x-melo-node', node.id)
       e.dataTransfer.setData('text/plain', node.name)
       onDragNode?.(node.id)

@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { existsSync } from 'node:fs'
 import type { AcpConnection } from './acpConnection'
 import { RuntimeEnvironment } from './runtimeEnvironment'
 import {
@@ -74,7 +75,9 @@ it('coalesces prewarming and opens fresh turn sessions without restarting the pr
       ...options,
       mcpServers: [{ ...options.mcpServers[0], name: 'turn-two', url: 'http://127.0.0.1:5678' }],
     })
-    expect(second.toolName).not.toBe(first.toolName)
+    expect(second.toolName).toBe(first.toolName)
+    expect(startup.mcpServerName).toBe(first.toolName)
+    expect(startup.mcpServers).toEqual([])
     expect(vi.mocked(createHarnessSession).mock.calls[1][1].mcpServers).toEqual([
       expect.objectContaining({ name: second.toolName, url: 'http://127.0.0.1:5678' }),
     ])
@@ -83,6 +86,45 @@ it('coalesces prewarming and opens fresh turn sessions without restarting the pr
     expect(createHarnessSession).toHaveBeenCalledTimes(2)
     expect(connection.closeSession).toHaveBeenCalledTimes(2)
     expect(connection.close).not.toHaveBeenCalled()
+  } finally {
+    await host.close()
+  }
+})
+
+it.each(['claude', 'codex'] as const)(
+  'owns a private %s execution directory until the process closes',
+  async (provider) => {
+    const { options } = fixture()
+    options.configuration.provider = provider
+    const host = new HarnessProcess()
+    let scratch: string | undefined
+    try {
+      const first = await host.open(options)
+      scratch = vi.mocked(startHarnessConnection).mock.calls[0][0].scratchDirectory
+      expect(scratch).toBeTruthy()
+      expect(existsSync(scratch!)).toBe(true)
+      expect(vi.mocked(createHarnessSession).mock.calls[0][1].scratchDirectory).toBe(scratch)
+      await first.release(true)
+      expect(existsSync(scratch!)).toBe(true)
+      const next = await host.open(options)
+      expect(vi.mocked(createHarnessSession).mock.calls[1][1].scratchDirectory).toBe(scratch)
+      await next.release(false)
+      expect(existsSync(scratch!)).toBe(false)
+    } finally {
+      await host.close()
+    }
+  },
+)
+
+it('removes the scratch directory when Claude startup fails', async () => {
+  const { options } = fixture()
+  options.configuration.provider = 'claude'
+  vi.mocked(startHarnessConnection).mockRejectedValueOnce(new Error('startup failed'))
+  const host = new HarnessProcess()
+  try {
+    await expect(host.prepare(options)).rejects.toThrow('startup failed')
+    const scratch = vi.mocked(startHarnessConnection).mock.calls[0][0].scratchDirectory!
+    expect(existsSync(scratch)).toBe(false)
   } finally {
     await host.close()
   }
@@ -132,6 +174,7 @@ it('cancels prewarming without allowing its startup to outlive the owner', async
   const controller = new AbortController()
   const host = new HarnessProcess()
   const pending = host.open({ ...options, signal: controller.signal })
+  await vi.waitFor(() => expect(startHarnessConnection).toHaveBeenCalledTimes(1))
   controller.abort()
   await expect(pending).rejects.toThrow('startup cancelled')
   await host.prepare(options)

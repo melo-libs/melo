@@ -1,25 +1,29 @@
-import type { AgentOperation } from '../agentCapabilities'
+import type { AgentOperation, OrganizationEdits } from '../agentCapabilities'
 import type { AgentApiCatalog, AgentApiServiceId } from '../agentApi'
+import type { AttachmentReceipt } from '../agentAttachments'
+import type { AgentToolActivity } from '../agentActivity'
+import type { AgentChange, AgentFiling } from '../agentChanges'
+export type { AgentChange, AgentFiling } from '../agentChanges'
 
 export type AgentProvider = 'claude' | 'codex'
 export type AgentStatus = 'idle' | 'connecting' | 'running' | 'awaiting-permission' | 'error'
 
+export interface AgentAttachment {
+  id: string
+  name: string
+  size: number
+  path?: string
+}
+
 export interface AgentContext {
   filePath?: string
   selection?: string
+  attachments?: AgentAttachment[]
 }
 
 export interface AgentPlanEntry {
   content: string
   status: 'pending' | 'in_progress' | 'completed'
-}
-
-export interface AgentChange {
-  id: string
-  kind: 'create-folder' | 'create-note' | 'edit' | 'move' | 'trash'
-  path: string
-  source?: string
-  undone: boolean
 }
 
 export interface AgentMessage {
@@ -28,9 +32,12 @@ export interface AgentMessage {
   content: string
   context?: AgentContext
   change?: AgentChange
+  filing?: AgentFiling
+  receipt?: AttachmentReceipt
   plan?: AgentPlanEntry[]
   approval?: AgentApproval
   toolStatus?: 'pending' | 'completed' | 'failed'
+  toolActivity?: AgentToolActivity
   createdAt: number
 }
 
@@ -160,6 +167,12 @@ export type AgentCommand =
       apiService?: AgentApiServiceId
     }
   | { action: 'current'; workspaceRoot: string }
+  | { action: 'paste-attachments'; workspaceRoot: string }
+  | { action: 'drop-attachments'; workspaceRoot: string; files: string[] }
+  | { action: 'attachment-preview'; workspaceRoot: string; attachmentId: string }
+  | { action: 'draft-attachments'; workspaceRoot: string }
+  | { action: 'remove-attachment'; workspaceRoot: string; attachmentId: string }
+  | { action: 'attachment'; workspaceRoot: string; attachmentId: string }
   | { action: 'history'; before?: number; after?: number; around?: string }
   | { action: 'search-history'; query: string; before?: number }
   | { action: 'delete-message'; messageId: string }
@@ -173,10 +186,17 @@ export type AgentCommand =
       permissionId: string
       allow: boolean
       conversation?: boolean
+      organization?: OrganizationEdits
     }
   | { action: 'undo'; conversationId: string; changeIds: string[] }
+  | { action: 'undo-filing'; conversationId: string; batchId: string }
 
 export interface AgentCommandResult {
+  attachmentPreview?: string
+  intakeErrors?: { name: string; error: string }[]
+  intakeHandled?: boolean
+  intake?: { workspaceRoot: string; attachments: AgentAttachment[] }
+  attachment?: AgentAttachment
   apiCatalog?: AgentApiCatalog
   authentication?: AgentAuthentication
   setup?: AgentSetup

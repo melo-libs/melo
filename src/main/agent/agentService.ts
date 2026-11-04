@@ -1,7 +1,14 @@
-import { AGENT_OPERATIONS, type AgentOperation } from '../../shared/agentCapabilities'
+import {
+  AGENT_OPERATIONS,
+  type AgentOperation,
+  type OrganizationEdits,
+} from '../../shared/agentCapabilities'
 import { randomUUID } from 'node:crypto'
 import type {
   AgentApproval,
+  AgentChange,
+  AgentAttachment,
+  AgentConversation,
   AgentContext,
   AgentMessage,
   AgentProvider,
@@ -11,6 +18,7 @@ import type { AgentRuntime, RuntimeFactory, RuntimeEvent } from './agentTypes'
 import { ConversationStore } from './storage/conversationStore'
 import { MemoryService } from './storage/memory'
 import { assembleContext } from './context'
+import type { AttachmentReceipt } from '../../shared/agentAttachments'
 
 interface LiveConversation {
   view: AgentView
@@ -38,6 +46,11 @@ export class AgentService {
       conversationId: string,
       root: string,
     ) => Promise<void>,
+    private readonly receiveFile?: (
+      conversation: AgentConversation,
+      id: string,
+      signal: AbortSignal,
+    ) => Promise<AgentAttachment>,
   ) {}
 
   create(workspaceRoot: string, provider: AgentProvider): AgentView {
@@ -120,18 +133,24 @@ export class AgentService {
       throw new Error('A turn is already running in this conversation')
     const history = [...live.view.messages]
     const previousContext = history.filter((message) => message.role === 'user').at(-1)?.context
-    if (!context.filePath && previousContext?.filePath)
+    if (
+      !context.filePath &&
+      !context.attachments?.length &&
+      previousContext?.filePath &&
+      !previousContext.attachments?.length
+    )
       context = { ...context, filePath: previousContext.filePath }
     const controller = new AbortController()
     live.turn = controller
     live.turnId = randomUUID()
     live.view.error = null
     live.view.status = live.runtime ? 'running' : 'connecting'
+    const submittedContext = structuredClone(context)
     live.view.messages.push({
       id: randomUUID(),
       role: 'user',
       content: text,
-      context: structuredClone(context),
+      context: submittedContext,
       createdAt: Date.now(),
     })
     live.dirtyMessages.add(live.view.messages.at(-1)!.id)
@@ -146,7 +165,7 @@ export class AgentService {
       live.view.error = 'AGENT_STORAGE_FAILED'
       throw error
     }
-    live.completion = this.run(live, text, context, history, controller)
+    live.completion = this.run(live, text, submittedContext, history, controller)
       .catch(() => {
         live.view.status = 'error'
         live.view.error = 'AGENT_STORAGE_OR_CLEANUP_FAILED'
@@ -158,6 +177,52 @@ export class AgentService {
     return live.view
   }
 
+  private async receiveAttachments(
+    live: LiveConversation,
+    submitted: AgentMessage,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const files = submitted.context?.attachments
+    if (!files?.length) return
+    const receipt: AttachmentReceipt = {
+      files: files.map((file) => ({ id: file.id, name: file.name, status: 'pending' })),
+    }
+    const message: AgentMessage = {
+      id: `receipt:${live.turnId}`,
+      role: 'tool',
+      content: '',
+      createdAt: Date.now(),
+      receipt,
+    }
+    live.view.messages.push(message)
+    live.dirtyMessages.add(message.id)
+    this.emit(live, true)
+    try {
+      for (const [index, file] of files.entries()) {
+        const item = receipt.files[index]
+        try {
+          const received = await this.receiveFile!(live.view.conversation, file.id, signal)
+          Object.assign(file, received)
+          item.path = received.path
+          item.status = 'stored'
+          live.dirtyMessages.add(submitted.id)
+          live.dirtyMessages.add(message.id)
+          this.emit(live, true)
+        } catch (error) {
+          item.status = signal.aborted ? 'cancelled' : 'failed'
+          live.dirtyMessages.add(message.id)
+          throw error
+        }
+      }
+    } finally {
+      for (const file of receipt.files)
+        if (file.status === 'pending') {
+          file.status = 'cancelled'
+          live.dirtyMessages.add(message.id)
+        }
+    }
+  }
+
   private async run(
     live: LiveConversation,
     text: string,
@@ -166,6 +231,8 @@ export class AgentService {
     turn: AbortController,
   ): Promise<void> {
     try {
+      const submitted = live.view.messages.at(-1)!
+      await this.receiveAttachments(live, submitted, turn.signal)
       const memory = await this.memory.read(live.view.conversation.workspaceRoot)
       if (turn.signal.aborted) return
       live.runtime ??= await this.createRuntime({
@@ -173,7 +240,10 @@ export class AgentService {
         isActive: () => this.suspensions.size === 0 && !!live.turn && !live.turn.signal.aborted,
         conversation: live.view.conversation,
         onEvent: (event) => {
-          if (live.turn && (!live.turn.signal.aborted || event.type === 'change'))
+          if (
+            live.turn &&
+            (!live.turn.signal.aborted || event.type === 'change' || event.type === 'filing')
+          )
             this.onEvent(live, event)
         },
         authorize: (operation, signal) => this.authorize(live, operation, signal),
@@ -222,7 +292,40 @@ export class AgentService {
     }
   }
 
+  private updateFiling(live: LiveConversation, batchId: string): void {
+    const conversation = live.view.conversation
+    const filing = this.store.filing(batchId, conversation.id, conversation.workspaceRoot)
+    const changes = new Map(filing.changes.map((change) => [change.id, change]))
+    for (const message of live.view.messages) {
+      if (message.filing?.id === batchId) message.filing = filing
+      if (message.change?.batchId === batchId) {
+        const change = changes.get(message.change.id)
+        if (change && message.change.undone !== change.undone) {
+          message.change = change
+          live.dirtyMessages.add(message.id)
+        }
+      }
+    }
+    const id = `filing:${batchId}`
+    const message = live.view.messages.find((item) => item.id === id)
+    if (message) message.filing = filing
+    else
+      live.view.messages.push({
+        id,
+        role: 'tool',
+        content: '',
+        filing,
+        createdAt: filing.createdAt,
+      })
+    live.dirtyMessages.add(id)
+  }
+
   private onEvent(live: LiveConversation, event: RuntimeEvent): void {
+    if (event.type === 'filing') {
+      this.updateFiling(live, event.batchId)
+      this.emit(live, true)
+      return
+    }
     if (event.type === 'change' || event.type === 'plan') {
       const id = event.type === 'change' ? `change:${event.change.id}` : `plan:${live.turnId}`
       const index = live.view.messages.findIndex((item) => item.id === id)
@@ -236,6 +339,8 @@ export class AgentService {
       if (index === -1) live.view.messages.push(message)
       else live.view.messages[index] = message
       live.dirtyMessages.add(id)
+      if (event.type === 'change' && event.change.batchId)
+        this.updateFiling(live, event.change.batchId)
       this.emit(live, true)
       return
     }
@@ -262,12 +367,14 @@ export class AgentService {
       if (existing) {
         existing.content = event.title
         existing.toolStatus = event.status
+        if (event.activity) existing.toolActivity = { ...existing.toolActivity, ...event.activity }
       } else
         live.view.messages.push({
           id,
           role: 'tool',
           content: event.title,
           toolStatus: event.status,
+          toolActivity: event.activity,
           createdAt: Date.now(),
         })
     }
@@ -328,16 +435,61 @@ export class AgentService {
     return result
   }
 
-  respond(id: string, permissionId: string, allow: boolean, conversation = false): void {
+  respond(
+    id: string,
+    permissionId: string,
+    allow: boolean,
+    conversation = false,
+    organization?: OrganizationEdits,
+  ): void {
     const live = this.live.get(id)
     if (!live || live.view.permission?.id !== permissionId)
       throw new Error('Permission request is no longer active')
+    if (allow && organization) {
+      const operation = live.view.permission.operation
+      if (
+        operation.kind !== 'organize' ||
+        organization.destinations.length !== operation.files.length ||
+        new Set(organization.destinations.map((file) => file.id)).size !== operation.files.length ||
+        organization.destinations.some(
+          (file) => !operation.files.some((original) => original.id === file.id),
+        )
+      )
+        throw new Error('Invalid organization approval')
+      for (const file of operation.files)
+        file.destination = organization.destinations.find((item) => item.id === file.id)!.path
+      operation.includeNote = !!operation.note && organization.includeNote
+    }
     if (allow && conversation && AGENT_OPERATIONS[live.view.permission.operation.kind].allowRun)
       live.view.allowChanges = true
     live.permission?.(allow)
   }
 
   async undo(id: string, changeIds: string[]): Promise<AgentView> {
+    const messages = this.store.changeMessages(id, changeIds)
+    if (
+      messages.length !== new Set(changeIds).size ||
+      messages.some((message) => message.change?.batchId)
+    )
+      throw new Error('AGENT_UNDO_UNAVAILABLE')
+    return this.undoChanges(
+      id,
+      messages.map((message) => message.change!),
+    )
+  }
+
+  async undoFiling(id: string, batchId: string): Promise<AgentView> {
+    const view = this.open(id)
+    const filing = this.store.filing(batchId, id, view.conversation.workspaceRoot)
+    if (filing.state === 'applying') throw new Error('Stop the current turn before undoing changes')
+    return this.undoChanges(id, filing.changes, batchId)
+  }
+
+  private async undoChanges(
+    id: string,
+    changes: AgentChange[],
+    batchId?: string,
+  ): Promise<AgentView> {
     if (this.suspensions.size) throw new Error('Agent workspace is closing')
     this.open(id)
     const live = this.live.get(id)!
@@ -345,28 +497,39 @@ export class AgentService {
       throw new Error('Stop the current turn before undoing changes')
     const undo = this.undoChange
     if (!undo) throw new Error('AGENT_UNDO_UNAVAILABLE')
-    const messages = this.store.changeMessages(id, changeIds)
-    if (messages.length !== new Set(changeIds).size) throw new Error('AGENT_UNDO_UNAVAILABLE')
     live.view.status = 'running'
     this.emit(live)
     const operation = async () => {
       // The harness cached file context is stale after undo.
       await live.runtime?.close()
       live.runtime = null
-      for (const message of messages.reverse()) {
-        if (message.change!.undone) continue
-        await undo(message.change!.id, id, live.view.conversation.workspaceRoot)
-        message.change!.undone = true
-        const index = live.view.messages.findIndex((item) => item.id === message.id)
-        if (index >= 0) live.view.messages[index] = message
-        else live.view.messages.push(message)
-        live.dirtyMessages.add(message.id)
+      for (const change of [...changes].reverse()) {
+        // Even an already committed inverse may still need registry reconciliation.
+        await undo(change.id, id, live.view.conversation.workspaceRoot)
+        if (change.undone) continue
+        change.undone = true
+        const messageId = `change:${change.id}`
+        let message = live.view.messages.find((item) => item.id === messageId)
+        if (!message) {
+          message = this.store.changeMessages(id, [change.id])[0] ?? {
+            id: messageId,
+            role: 'tool',
+            content: '',
+            createdAt: Date.now(),
+          }
+          live.view.messages.push(message)
+        }
+        message.change = change
+        live.dirtyMessages.add(messageId)
+        if (change.batchId) this.updateFiling(live, change.batchId)
         this.emit(live, true)
       }
     }
     live.completion = operation().finally(() => {
       live.view.status = 'idle'
       live.completion = null
+      // A failed callback can still have committed its inverse, and retries may skip every entry.
+      if (batchId) this.updateFiling(live, batchId)
       this.emit(live, true)
     })
     await live.completion

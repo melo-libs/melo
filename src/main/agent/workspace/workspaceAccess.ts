@@ -1,15 +1,22 @@
 import type { AgentOperation } from '../../../shared/agentCapabilities'
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { renameFile, trashFile } from '../../api/fileOperations/fileOperations'
 import { activeWorkspaceRoot, searchIndex } from '../../api/indexer'
 import type { RuntimeRequest } from '../agentTypes'
 import { MemoryService } from '../storage/memory'
 import { ChangeJournal } from './changeJournal'
-import type { AgentChange, AgentHistorySearch } from '../../../shared/types/agent'
+import type {
+  AgentAttachment,
+  AgentChange,
+  AgentConversation,
+  AgentHistorySearch,
+} from '../../../shared/types/agent'
+import type { FileIntake } from '../storage/fileIntake'
 import type { WorkspaceOperations, WorkspaceDocumentAccess } from './workspaceTypes'
 import { editPreview } from './editPreview'
+import { organizeFiles } from './fileOrganization'
 
 const hash = (content: string) => createHash('sha256').update(content).digest('hex')
 
@@ -20,18 +27,63 @@ export class WorkspaceAccess {
     private readonly memory: MemoryService,
     private readonly journal: ChangeJournal,
     private readonly searchHistory: (query: string) => AgentHistorySearch,
+    private readonly intake?: FileIntake,
   ) {}
 
-  undo(id: string, conversationId: string, root: string): Promise<void> {
-    const run = this.mutation.then(async () => {
-      if (activeWorkspaceRoot() !== root) throw new Error('Workspace is no longer active')
-      await this.journal.undo(id, conversationId, root)
-    })
+  private queue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.mutation.then(operation)
     this.mutation = run.then(
       () => {},
       () => {},
     )
     return run
+  }
+
+  receiveAttachment(
+    conversation: AgentConversation,
+    id: string,
+    signal: AbortSignal,
+  ): Promise<AgentAttachment> {
+    return this.queue(async () => {
+      const root = conversation.workspaceRoot
+      const assertActive = () => {
+        signal.throwIfAborted()
+        if (activeWorkspaceRoot() !== root) throw new Error('Workspace is no longer active')
+      }
+      assertActive()
+      this.journal.reconcileAttachments()
+      const intake = this.intake!
+      const file = intake.get(root, id)
+      if (file.path) return file
+      const inbox = path.join(root, 'Inbox')
+      try {
+        const existing = await lstat(inbox)
+        if (!existing.isDirectory() || existing.isSymbolicLink())
+          throw new Error('AGENT_ATTACHMENT_INBOX_INVALID')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        await this.journal.apply(conversation, { kind: 'create-folder', path: 'Inbox' }, () =>
+          mkdir(inbox),
+        )
+      }
+      const source = await intake.prepare(root, id, signal)
+      const imported = await this.journal.importFile(
+        conversation,
+        id,
+        source.file,
+        source.attachment.name,
+        source.fingerprint,
+        assertActive,
+      )
+      return intake.imported(root, id, imported.path)
+    })
+  }
+
+  undo(id: string, conversationId: string, root: string): Promise<void> {
+    return this.queue(async () => {
+      if (activeWorkspaceRoot() !== root) throw new Error('Workspace is no longer active')
+      await this.journal.undo(id, conversationId, root)
+    })
   }
 
   operations(request: RuntimeRequest, signal?: AbortSignal): WorkspaceOperations {
@@ -73,15 +125,10 @@ export class WorkspaceAccess {
     const mutate = async <T>(action: AgentOperation, operation: () => Promise<T>): Promise<T> => {
       assertActive()
       if (!(await request.authorize(action, signal))) throw new Error('User declined this change')
-      const run = this.mutation.then(async () => {
+      return this.queue(async () => {
         assertActive()
         return operation()
       })
-      this.mutation = run.then(
-        () => {},
-        () => {},
-      )
-      return run
     }
     const change = async <T>(
       metadata: Pick<AgentChange, 'kind' | 'path' | 'source'>,
@@ -136,6 +183,31 @@ export class WorkspaceAccess {
         },
       },
       actions: {
+        ...(this.intake
+          ? {
+              organize: (proposal) =>
+                organizeFiles({
+                  intake: this.intake!,
+                  documents: this.documents,
+                  journal: this.journal,
+                  request,
+                  proposal,
+                  assertActive,
+                  review: mutate,
+                }),
+              resolveAttachment: async (id: string) => {
+                assertActive()
+                this.journal.reconcileAttachments()
+                const { file, attachment } = await this.intake!.openImported(root, id)
+                try {
+                  if (!(await file.stat()).isFile()) throw new Error('AGENT_ATTACHMENT_UNAVAILABLE')
+                  return attachment
+                } finally {
+                  await file.close()
+                }
+              },
+            }
+          : {}),
         searchHistory: async (query) => {
           assertActive()
           return this.searchHistory(query)

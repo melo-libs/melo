@@ -9,6 +9,127 @@ import type { AcpConnectionOptions } from './acpConnection'
 import { RuntimeEnvironment } from './runtimeEnvironment'
 import { startWorkspaceTools } from '../mcp/workspaceTools'
 
+it.each([
+  { kind: 'execute', allow: true, cancel: false },
+  { kind: 'execute', allow: false, cancel: false },
+  { kind: 'execute', allow: true, cancel: true },
+  { kind: 'edit', allow: true, cancel: false },
+  { kind: 'delete', allow: false, cancel: false },
+  { kind: 'read', allow: true, cancel: false },
+] as const)(
+  'routes native $kind permission through Melo (allow=$allow, cancel=$cancel)',
+  async ({ kind, allow, cancel }) => {
+    const environment = new RuntimeEnvironment('unused')
+    vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+    let handlers!: AcpConnectionOptions
+    vi.spyOn(AcpConnection, 'start').mockImplementation(async (options) => {
+      handlers = options
+      return {
+        createSession: async () => ({ sessionId: 'fixture' }),
+        setConfigOption: async () => [],
+        closeSession: async () => {},
+        close: async () => {},
+      } as unknown as AcpConnection
+    })
+    const controller = new AbortController()
+    const authorize = vi.fn(async () => {
+      if (cancel) controller.abort()
+      return allow
+    })
+    const onEvent = vi.fn()
+    const factory = createRuntimeFactory({
+      environment,
+      codexLauncher: '',
+      configuration: () => ({
+        provider: 'claude',
+        access: 'native',
+        baseUrl: '',
+        model: '',
+        hasApiKey: false,
+      }),
+      apiKey: () => undefined,
+      tools: async () => ({
+        config: { type: 'http', name: 'fixture', url: 'http://127.0.0.1:1234', headers: [] },
+        close: async () => {},
+      }),
+    })
+    try {
+      const runtime = await factory({
+        conversation: {
+          id: 'fixture',
+          workspaceRoot: process.cwd(),
+          provider: 'claude',
+          title: '',
+          updatedAt: 1,
+        },
+        signal: controller.signal,
+        isActive: () => true,
+        authorize,
+        onEvent,
+      })
+      handlers.onUpdate({
+        sessionId: 'fixture',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'native',
+          title: 'Native action',
+          kind,
+          locations: [{ path: '/fixture/report.pdf' }],
+          status: 'pending',
+        },
+      })
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'tool',
+          activity: { kind, target: '/fixture/report.pdf' },
+        }),
+      )
+      handlers.onUpdate({
+        sessionId: 'fixture',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'native',
+          rawInput: { file_path: '/fixture/final.pdf' },
+          status: 'completed',
+        },
+      })
+      expect(onEvent).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          activity: { kind, target: '/fixture/final.pdf' },
+          status: 'completed',
+        }),
+      )
+      const outcome = await handlers.onPermission!({
+        sessionId: 'fixture',
+        toolCall: {
+          toolCallId: 'native',
+          kind,
+          title: 'Native action',
+          rawInput: { command: 'fixture command' },
+        },
+        options: [
+          { optionId: 'always', kind: 'allow_always', name: 'Always' },
+          { optionId: 'once', kind: 'allow_once', name: 'Once' },
+          { optionId: 'reject', kind: 'reject_once', name: 'Reject' },
+        ],
+      })
+      expect(authorize).toHaveBeenCalledWith({
+        kind: 'native',
+        title: 'Native action',
+        detail: JSON.stringify({ command: 'fixture command' }),
+      })
+      expect(outcome).toEqual({
+        outcome:
+          allow && !cancel ? { outcome: 'selected', optionId: 'once' } : { outcome: 'cancelled' },
+      })
+      await runtime.close()
+    } finally {
+      await factory.close!()
+      vi.restoreAllMocks()
+    }
+  },
+)
+
 it('reuses the prepared adapter while giving each turn fresh tools, callbacks and session context', async () => {
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
@@ -21,6 +142,7 @@ it('reuses the prepared adapter while giving each turn fresh tools, callbacks an
     handlers = options
     return {
       createSession,
+      setConfigOption: async () => [],
       closeSession,
       close,
       prompt: async (prompt: { text: string }[]) => {
@@ -109,6 +231,7 @@ it.each(['native', 'api'] as const)(
     const close = vi.fn(async () => {})
     const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
       createSession: async () => ({ sessionId: 'fixture' }),
+      setConfigOption: async () => [],
       prompt: async () => {
         await Promise.resolve()
         throw RequestError.authRequired()

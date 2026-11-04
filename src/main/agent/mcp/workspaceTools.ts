@@ -1,4 +1,4 @@
-import { AGENT_TOOLS } from '../../../shared/agentCapabilities'
+import { AGENT_TOOLS, organizationProposalSchema } from '../../../shared/agentCapabilities'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
@@ -63,10 +63,38 @@ export async function startWorkspaceTools(
     )
     const actions = options.actions
     if (actions) {
+      if (actions.resolveAttachment)
+        mcp.registerTool(
+          AGENT_TOOLS.resolveAttachment.name,
+          {
+            description:
+              'Resolve an imported attachment by stable Melo ID to its current workspace-relative path, original name, and size. Use when a historical path may have changed after filing or undo. This returns metadata only; read and parse the saved file with your native tools. Use melo_read_document for Markdown including unsaved edits. Drafts, removed files, and paths outside the workspace are unavailable.',
+            inputSchema: { id: z.string().uuid() },
+            annotations: { readOnlyHint: true },
+          },
+          async ({ id }) => {
+            if (closed) throw new Error('Workspace tools are closed')
+            const attachment = await actions.resolveAttachment!(id)
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(attachment) }],
+            }
+          },
+        )
       const result = async (work: () => Promise<unknown>) => {
         if (closed) throw new Error('Workspace tools are closed')
         return { content: [{ type: 'text' as const, text: JSON.stringify(await work()) }] }
       }
+      if (actions.organize)
+        mcp.registerTool(
+          AGENT_TOOLS.organize.name,
+          {
+            description:
+              'After reading the files and workspace, propose ONE editable filing plan. Include each imported attachment ID, reading (read, user-described, or unread), and a workspace-relative destination preserving its extension. Preserve an already informative original filename; propose a concise rename only when it improves identification or follows a user-requested convention. Do not automatically append dates, authors or other metadata to the filename: report them in facts. For readable files, detail is one brief identifying fact that adds useful information beyond the filename, or empty; never a paragraph or repeated file type. Optional facts contains up to four verified, short label/value/source items: prioritize a meaningful document date and an explicitly identified author, then useful basic information such as project, parties, version or period. Label dates precisely (e.g. signed, published, created or modified); use source=metadata to distinguish document-property times, and never substitute filesystem timestamps for document dates. Attribute document-property authors and dates to source=metadata, actual document statements to content, and user-provided facts to user. Do not guess missing values or show unknown placeholders. Keep human-facing labels and values in the user language, and avoid repeating the filename, detail or other facts. For unread files, detail explains the actual unread reason and destination is null to keep them in Inbox; metadata facts do not prove content was read. Read can come from Melo or native Harness tools; never claim a thumbnail or filename proves content understanding. Optionally propose text to append to a relevant existing Markdown note after reading it. Nothing moves until the user approves; users may edit destinations. Returns the actual final locations.',
+            inputSchema: organizationProposalSchema.shape,
+            annotations: { readOnlyHint: false, destructiveHint: true },
+          },
+          (proposal) => result(() => actions.organize!(proposal)),
+        )
       mcp.registerTool(
         AGENT_TOOLS.listFiles.name,
         {

@@ -1,9 +1,85 @@
-import { AGENT_OPERATIONS, operationLocation } from '@shared/agentCapabilities'
+import {
+  AGENT_OPERATIONS,
+  operationLocation,
+  type AgentNativeAccess,
+  type OrganizationEdits,
+} from '@shared/agentCapabilities'
 import { useTranslation } from 'react-i18next'
 import type { AgentApproval as Permission } from '@shared/types/agent'
 import { Icon } from '../Icon'
 import { Button } from '../ui/Button'
 import { AgentDiffPreview } from './AgentDiffPreview'
+import { AgentOrganization } from './AgentOrganization'
+
+export function NativePermissionDetail({
+  detail,
+  expanded = false,
+  access,
+}: {
+  detail: string
+  expanded?: boolean
+  access?: AgentNativeAccess
+}) {
+  const { t } = useTranslation()
+  if (access)
+    return (
+      <>
+        <p className="agent-native-purpose">
+          {t(
+            access.scope === 'operation'
+              ? 'agent.resourceAccess.operationScope'
+              : 'agent.resourceAccess.scope',
+          )}
+        </p>
+        {access.read.length > 0 && (
+          <>
+            <p>{t('agent.resourceAccess.read')}</p>
+            <pre>{access.read.join('\n')}</pre>
+          </>
+        )}
+        {access.write.length > 0 && (
+          <>
+            <p>{t('agent.resourceAccess.write')}</p>
+            <pre>{access.write.join('\n')}</pre>
+          </>
+        )}
+        {access.network && <p>{t('agent.resourceAccess.network')}</p>}
+        <details className="agent-native-parameters" open={expanded}>
+          <summary>{t('agent.operationDetails')}</summary>
+          <pre>{detail}</pre>
+        </details>
+      </>
+    )
+  let input: unknown
+  try {
+    input = JSON.parse(detail)
+  } catch {
+    // Older or non-shell requests can contain an opaque adapter description.
+    return <pre>{detail}</pre>
+  }
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    !('command' in input) ||
+    typeof input.command !== 'string'
+  )
+    return <pre>{detail}</pre>
+  const { command, ...parameters } = input
+  const description =
+    'description' in parameters && typeof parameters.description === 'string'
+      ? parameters.description.trim() || undefined
+      : undefined
+  return (
+    <>
+      {description && <p className="agent-native-purpose">{description}</p>}
+      <details className="agent-native-parameters" open={expanded || !description}>
+        <summary>{t('agent.operationDetails')}</summary>
+        <pre>{command}</pre>
+        {Object.keys(parameters).length > 0 && <pre>{JSON.stringify(parameters, null, 2)}</pre>}
+      </details>
+    </>
+  )
+}
 
 export function AgentPermission({
   permission,
@@ -11,12 +87,16 @@ export function AgentPermission({
   active,
   onRespond,
   workspaceName,
+  workspaceRoot,
+  onDescribe,
 }: {
   permission: Permission
   busy: boolean
   active: boolean
   workspaceName: string
-  onRespond(allow: boolean, conversation?: boolean): void
+  onRespond(allow: boolean, conversation?: boolean, organization?: OrganizationEdits): void
+  workspaceRoot?: string
+  onDescribe?(name: string): void
 }) {
   const { t } = useTranslation()
   const { operation } = permission
@@ -24,6 +104,7 @@ export function AgentPermission({
   const location = operationLocation(operation)
   const folder = operation.kind === 'create-folder'
   const edit = operation.kind === 'edit'
+  const native = operation.kind === 'native'
   const name = location.split('/').pop()
   const parent = location.includes('/')
     ? location.slice(0, location.lastIndexOf('/'))
@@ -38,68 +119,99 @@ export function AgentPermission({
       : location
   const pending = active && permission.status === 'pending'
   const status = permission.status === 'pending' && !active ? 'expired' : permission.status
-  const content = (
-    <>
-      {edit ? (
-        <div className="agent-edit-heading">
-          <span className="agent-edit-file-icon">
-            <Icon name="fileMd" size={18} />
-          </span>
-          <div>
-            <strong>{name}</strong>
-            <span>{parent}</span>
-          </div>
-          <span className="agent-edit-heading-label">{t('agent.editDiff')}</span>
-        </div>
-      ) : (
-        <div className="agent-card-heading">
-          <strong>{title}</strong>
-          {folder && <span title={parent}>{t('agent.inFolder', { folder: parent })}</span>}
-        </div>
-      )}
-      {folder ? (
-        <div className="agent-permission-items">
-          <span className="agent-folder-chip" title={location}>
-            <Icon name="folderFilled" size={20} />
-            <span>{name}</span>
-          </span>
-        </div>
-      ) : (
-        !edit && (
-          <div className="agent-change-preview">
-            <span className="agent-change-icon">
-              <Icon name={operation.kind === 'trash' ? 'trash' : 'file'} size={18} />
+  const content =
+    operation.kind === 'organize' ? (
+      <>
+        <AgentOrganization
+          key={permission.id}
+          operation={operation}
+          pending={pending}
+          busy={busy}
+          workspaceRoot={workspaceRoot}
+          onRespond={onRespond}
+          onDescribe={onDescribe}
+        />
+        {!pending && (
+          <p className="agent-approval-status" role="status">
+            {t(`agent.approvalStatus.${status}`)}
+          </p>
+        )}
+      </>
+    ) : (
+      <>
+        {edit ? (
+          <div className="agent-edit-heading">
+            <span className="agent-edit-file-icon">
+              <Icon name="fileMd" size={18} />
             </span>
-            <span>{target}</span>
+            <div>
+              <strong>{name}</strong>
+              <span>{parent}</span>
+            </div>
+            <span className="agent-edit-heading-label">{t('agent.editDiff')}</span>
           </div>
-        )
-      )}
-      {diff ? <AgentDiffPreview source={diff} /> : preview.trim() && <pre>{preview}</pre>}
-      {pending ? (
-        <div className="agent-card-actions">
-          <Button className="agent-primary" disabled={busy} onClick={() => onRespond(true)}>
-            {metadata.approve ? t(`agent.approve.${metadata.approve}`) : t('agent.allow')}
-          </Button>
-          <Button className="agent-secondary" disabled={busy} onClick={() => onRespond(false)}>
-            {t('agent.decline')}
-          </Button>
-          {metadata.allowRun && (
-            <button
-              className="agent-quiet agent-allow-conversation"
-              disabled={busy}
-              onClick={() => onRespond(true, true)}
-            >
-              {t('agent.allowConversation')}
-            </button>
-          )}
-        </div>
-      ) : (
-        <p className="agent-approval-status" role="status">
-          {t(`agent.approvalStatus.${status}`)}
-        </p>
-      )}
-    </>
-  )
+        ) : (
+          <div className="agent-card-heading">
+            <strong>{native ? t('agent.nativeAccessTitle') : title}</strong>
+            {folder && <span title={parent}>{t('agent.inFolder', { folder: parent })}</span>}
+          </div>
+        )}
+        {folder ? (
+          <div className="agent-permission-items">
+            <span className="agent-folder-chip" title={location}>
+              <Icon name="folderFilled" size={20} />
+              <span>{name}</span>
+            </span>
+          </div>
+        ) : (
+          !edit &&
+          !native && (
+            <div className="agent-change-preview">
+              <span className="agent-change-icon">
+                <Icon name={operation.kind === 'trash' ? 'trash' : 'file'} size={18} />
+              </span>
+              <span>{target}</span>
+            </div>
+          )
+        )}
+        {native ? (
+          <NativePermissionDetail detail={operation.detail} access={operation.access} />
+        ) : diff ? (
+          <AgentDiffPreview source={diff} />
+        ) : (
+          preview.trim() && <pre>{preview}</pre>
+        )}
+        {pending ? (
+          <div className="agent-card-actions">
+            <Button className="agent-primary" disabled={busy} onClick={() => onRespond(true)}>
+              {metadata.approve
+                ? t(`agent.approve.${metadata.approve}`)
+                : t(
+                    native && operation.access?.scope === 'task'
+                      ? 'agent.resourceAccess.allow'
+                      : 'agent.allow',
+                  )}
+            </Button>
+            <Button className="agent-secondary" disabled={busy} onClick={() => onRespond(false)}>
+              {t('agent.decline')}
+            </Button>
+            {metadata.allowRun && (
+              <button
+                className="agent-quiet agent-allow-conversation"
+                disabled={busy}
+                onClick={() => onRespond(true, true)}
+              >
+                {t('agent.allowConversation')}
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="agent-approval-status" role="status">
+            {t(native ? `agent.nativeApproval.${status}` : `agent.approvalStatus.${status}`)}
+          </p>
+        )}
+      </>
+    )
   if (pending)
     return (
       <section
@@ -112,7 +224,7 @@ export function AgentPermission({
       </section>
     )
   return (
-    <details className="agent-permission agent-approval-record" open={status === 'expired'}>
+    <details className="agent-permission agent-approval-record">
       <summary>
         {title} · {t(`agent.approvalLabel.${status}`)}
       </summary>

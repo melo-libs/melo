@@ -84,7 +84,7 @@ describe.skipIf(!process.env.MELO_CLAUDE_ACP_ENTRY || !process.env.MELO_AGENT_NO
           expect(access.status).not.toBe('not-reported')
           return
         }
-        await connection.createSession(claudeSession([tools.config], provider?.model))
+        await connection.createSession(claudeSession([tools.config], root, provider?.model))
         await connection.prompt([
           {
             type: 'text',

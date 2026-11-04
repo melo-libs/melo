@@ -13,7 +13,8 @@ const CODEX_META = z.object({ is_mcp_tool_call: z.literal(true) })
 const CODEX_INPUT = z.object({ server: z.string(), tool: z.string() })
 
 /** Adapter-provided provenance, not a model-authored display title, grants
- * access to the owned server. The random server name is scoped to one runtime. */
+ * access to the owned server. Session IDs fence events; each task owns its
+ * transport/token under the process's random configuration name. */
 export function ownedMcpTool(
   call: Pick<ToolCallUpdate, '_meta' | 'rawInput'>,
   provider: AgentProvider,
@@ -21,7 +22,7 @@ export function ownedMcpTool(
 ): AgentToolName | null {
   if (provider === 'claude') {
     // ACP HTTP/stdio servers use "dynamic"; "sdk" denotes in-process ones.
-    // strictMcpConfig and the fresh per-runtime name exclude configured servers.
+    // strictMcpConfig and the process-owned name exclude configured servers.
     const parsed = CLAUDE_META.safeParse(call._meta)
     if (!parsed.success || parsed.data.claudeCode.mcpServer.name !== server) return null
     const prefix = `mcp__${server}__`

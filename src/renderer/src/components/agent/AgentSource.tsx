@@ -2,12 +2,13 @@ import { useTranslation } from 'react-i18next'
 import { stripMarkdownExtension } from '@shared/fileKinds'
 import { Icon } from '../Icon'
 
-export function AgentSource({ path, at, onOpen }: { path: string; at: number; onOpen(): void }) {
+export function AgentSource({ path, at, onOpen }: { path: string; at: number; onOpen?(): void }) {
   const { i18n } = useTranslation()
+  const Tag = onOpen ? 'button' : 'span'
   return (
     <div className="agent-source-divider">
-      <button onClick={onOpen} title={path}>
-        <Icon name="file" size={14} />
+      <Tag onClick={onOpen} title={path}>
+        {onOpen && <Icon name="file" size={14} />}
         <strong>{stripMarkdownExtension(path.split('/').pop()!)}</strong>
         <time dateTime={new Date(at).toISOString()}>
           {new Intl.DateTimeFormat(i18n.language, {
@@ -17,7 +18,7 @@ export function AgentSource({ path, at, onOpen }: { path: string; at: number; on
             minute: '2-digit',
           }).format(at)}
         </time>
-      </button>
+      </Tag>
     </div>
   )
 }

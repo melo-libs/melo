@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent, webUtils } from 'electron'
 // import { electronAPI } from '@electron-toolkit/preload'
 import { IpcChannels, IpcRequestType, IpcResponseType, IpcApi } from '../shared/types/ipc'
 
@@ -11,6 +11,7 @@ if (process.contextIsolated) {
   try {
     // contextBridge.exposeInMainWorld('electron', electronAPI)
     const api: IpcApi = {
+      getPathForFile: (file) => webUtils.getPathForFile(file),
       channels: IpcChannels,
       send: <K extends IpcChannels>(channel: K, args: IpcRequestType<K>['args']): void => {
         if (validChannels.includes(channel)) {

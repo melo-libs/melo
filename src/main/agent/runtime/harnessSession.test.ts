@@ -4,6 +4,7 @@ import { AcpConnection } from './acpConnection'
 import { openHarnessSession } from './harnessSession'
 import { RuntimeEnvironment } from './runtimeEnvironment'
 import { codexLaunch } from './codexLaunch'
+import { HarnessProcess } from './harnessProcess'
 
 vi.mock('./codexLaunch', () => ({
   CODEX_API_PROVIDER: 'melo-api',
@@ -11,6 +12,54 @@ vi.mock('./codexLaunch', () => ({
   codexLaunch: vi.fn(async () => ({})),
 }))
 afterEach(() => vi.restoreAllMocks())
+
+it('reserves the MCP deadline during prewarm and supplies task transports under that key', async () => {
+  const environment = new RuntimeEnvironment('unused')
+  vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  const createSession = vi.fn(async () => ({ sessionId: 'test', configOptions: [] }))
+  const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
+    isClosed: false,
+    close: async () => {},
+    closeSession: async () => {},
+    createSession,
+  } as unknown as AcpConnection)
+  const options = {
+    environment,
+    codexLauncher: '',
+    workspaceRoot: '/fixture',
+    configuration: {
+      provider: 'codex' as const,
+      access: 'native' as const,
+      model: '',
+      baseUrl: '',
+      hasApiKey: false,
+    },
+  }
+  const host = new HarnessProcess()
+  try {
+    await host.prepare(options)
+    const config = JSON.parse(start.mock.calls[0][0].launch.env!.CODEX_CONFIG!)
+    expect(createSession).not.toHaveBeenCalled()
+    for (const port of [1234, 5678]) {
+      const lease = await host.open({
+        ...options,
+        signal: new AbortController().signal,
+        mcpServers: [{ type: 'http', name: 'task', url: `http://127.0.0.1:${port}`, headers: [] }],
+        onUpdate: () => {},
+      })
+      expect(config.mcp_servers[lease.toolName]).toEqual({ tool_timeout_sec: 1800 })
+      expect(createSession).toHaveBeenLastCalledWith({
+        mcpServers: [
+          { type: 'http', name: lease.toolName, url: `http://127.0.0.1:${port}`, headers: [] },
+        ],
+      })
+      await lease.release(true)
+    }
+    expect(start).toHaveBeenCalledTimes(1)
+  } finally {
+    await host.close()
+  }
+})
 
 it.each(['claude', 'codex'] as const)(
   'pins %s preferences only in the owned subprocess/session',
@@ -48,10 +97,13 @@ it.each(['claude', 'codex'] as const)(
     expect(env.OPENAI_API_KEY).toBeUndefined()
     if (provider === 'codex') {
       expect(codexLaunch).toHaveBeenCalled()
+      expect(env.INITIAL_AGENT_MODE).toBe('agent-full-access')
       expect(JSON.parse(env.CODEX_CONFIG!)).toMatchObject({
+        sandbox_mode: 'danger-full-access',
+        approval_policy: 'never',
         model: 'saved-native-model',
         model_reasoning_effort: 'high',
-        features: { shell_tool: false, hooks: false, memories: false },
+        features: { shell_tool: true, apply_patch_freeform: true, hooks: false, memories: false },
       })
     } else {
       expect(createSession).toHaveBeenCalledWith(
@@ -61,6 +113,9 @@ it.each(['claude', 'codex'] as const)(
               options: expect.objectContaining({
                 model: 'saved-native-model',
                 settingSources: [],
+                tools: { type: 'preset', preset: 'claude_code' },
+                allowDangerouslySkipPermissions: true,
+                sandbox: { enabled: false },
                 settings: { disableAllHooks: true },
               }),
             },
@@ -105,6 +160,58 @@ it('closes the adapter when cancellation occurs after initialize but during sess
     }),
   ).rejects.toThrow('disconnected')
   expect(close).toHaveBeenCalled()
+})
+
+it('selects native full access without changing the workspace or persistent settings', async () => {
+  const environment = new RuntimeEnvironment('unused')
+  vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  const createSession = vi.fn(async () => ({ sessionId: 'scratch', configOptions: [] }))
+  const close = vi.fn(async () => {})
+  const setConfigOption = vi.fn(async () => [])
+  const start = vi
+    .spyOn(AcpConnection, 'start')
+    .mockResolvedValue({ createSession, setConfigOption, close } as unknown as AcpConnection)
+  const scratchDirectory = '/private/tmp/melo-fixture'
+  const original = process.env.CLAUDE_CODE_TMPDIR
+  const session = await openHarnessSession({
+    environment,
+    codexLauncher: '',
+    workspaceRoot: '/workspace',
+    scratchDirectory,
+    signal: new AbortController().signal,
+    configuration: {
+      provider: 'claude',
+      access: 'native',
+      model: '',
+      baseUrl: '',
+      hasApiKey: false,
+    },
+    mcpServers: [],
+    onUpdate: () => {},
+  })
+  await session.connection.close()
+  expect(process.env.CLAUDE_CODE_TMPDIR).toBe(original)
+  expect(setConfigOption).toHaveBeenCalledWith('mode', 'bypassPermissions')
+  expect(start.mock.calls[0][0].workspaceRoot).toBe('/workspace')
+  expect(start.mock.calls[0][0].launch.env!.CLAUDE_CODE_TMPDIR).toBe(scratchDirectory)
+  expect(createSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      _meta: {
+        claudeCode: {
+          options: expect.objectContaining({
+            systemPrompt: {
+              type: 'preset',
+              preset: 'claude_code',
+              append: expect.stringContaining(scratchDirectory),
+            },
+            allowDangerouslySkipPermissions: true,
+            sandbox: { enabled: false },
+            settings: { disableAllHooks: true },
+          }),
+        },
+      },
+    }),
+  )
 })
 
 it('pins API routing for Codex without placing credentials in config or native preferences', async () => {

@@ -20,6 +20,7 @@ vi.mock('../../store/agent', () => ({
   agentViewAtom: atom<AgentView | null>(null),
   agentWindowAtom: atom({ open: false, collapsed: false, context: {}, anchor: null, draft: '' }),
   agentHistoryAtom: atom(null),
+  agentIntakeAtom: atom(null),
   agentSetupAtom: atom<AgentSetup | null>(null),
   agentNativeCatalogsAtom: atom({}),
   agentAccountsAtom: atom({ claude: { status: 'signed-out' }, codex: { status: 'signed-in' } }),

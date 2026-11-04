@@ -1,6 +1,7 @@
 import { atom } from 'jotai'
 import type {
   AgentAuthentication,
+  AgentAttachment,
   AgentProvider,
   AgentCommand,
   AgentCommandResult,
@@ -9,6 +10,8 @@ import type {
   AgentView,
   AgentHistoryPage,
   AgentModelControl,
+  AgentFiling,
+  AgentMessage,
 } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
 import { appStore } from './appStore'
@@ -16,8 +19,38 @@ import { workspacePathAtom } from './workspace'
 import { activeTabIdAtom } from './editor'
 import { handleAgentDocument } from './documentSession'
 
-export const agentHistoryAtom = atom<AgentHistoryPage | null>(null)
-export const agentViewAtom = atom<AgentView | null>(null)
+const agentFilingsAtom = atom(new Map<string, AgentFiling>())
+const cacheFilingsAtom = atom(null, (get, set, messages: AgentMessage[]) => {
+  const current = get(agentFilingsAtom)
+  let next = current
+  for (const { filing } of messages) {
+    if (!filing || (next.get(filing.id)?.version ?? -1) >= filing.version) continue
+    if (next === current) next = new Map(current)
+    next.set(filing.id, filing)
+  }
+  if (next !== current) set(agentFilingsAtom, next)
+})
+const agentHistoryStateAtom = atom<AgentHistoryPage | null>(null)
+export const agentHistoryAtom = atom(
+  (get) => get(agentHistoryStateAtom),
+  (_get, set, history: AgentHistoryPage | null) => {
+    if (history) set(cacheFilingsAtom, history.messages)
+    else set(agentFilingsAtom, new Map())
+    set(agentHistoryStateAtom, history)
+  },
+)
+const agentViewStateAtom = atom<AgentView | null>(null)
+export const agentViewAtom = atom(
+  (get) => get(agentViewStateAtom),
+  (_get, set, view: AgentView | null) => {
+    if (view) set(cacheFilingsAtom, view.messages)
+    set(agentViewStateAtom, view)
+  },
+)
+export const agentIntakeAtom = atom<{
+  workspaceRoot: string
+  attachments: AgentAttachment[]
+} | null>(null)
 export const agentSetupAtom = atom<AgentSetup | null>(null)
 export const agentNativeCatalogsAtom = atom<
   Partial<
@@ -57,7 +90,12 @@ export const agentMessagesAtom = atom((get) => {
   if (view) {
     for (const message of view.messages) {
       const savedMessage = map.get(message.id)
-      if (savedMessage) map.set(message.id, { ...savedMessage, ...message })
+      if (savedMessage)
+        map.set(message.id, {
+          ...savedMessage,
+          ...message,
+          filing: message.filing ?? savedMessage.filing,
+        })
     }
   }
   if (!history?.hasNewer && view) {
@@ -71,13 +109,21 @@ export const agentMessagesAtom = atom((get) => {
       map.set(message.id, {
         ...map.get(message.id),
         ...message,
+        filing: message.filing ?? map.get(message.id)?.filing,
         conversationId: view.conversation.id,
         workspaceRoot: view.conversation.workspaceRoot,
         sequence: map.get(message.id)?.sequence ?? Number.MAX_SAFE_INTEGER,
       })
     }
   }
-  return [...map.values()].sort((a, b) => a.createdAt - b.createdAt || a.sequence - b.sequence)
+  const filings = get(agentFilingsAtom)
+  return [...map.values()]
+    .map((message) =>
+      message.filing
+        ? { ...message, filing: filings.get(message.filing.id) ?? message.filing }
+        : message,
+    )
+    .sort((a, b) => a.createdAt - b.createdAt || a.sequence - b.sequence)
 })
 
 let setupGeneration = 0
@@ -110,6 +156,11 @@ export async function agentCommand(command: AgentCommand): Promise<AgentCommandR
       : historyGeneration
   const response = await window.api.invoke(IpcChannels.AgentCommand, command)
   if (!response.success || !response.data) throw new Error(response.error ?? 'Agent request failed')
+  if (command.action === 'clear-history') appStore.set(agentFilingsAtom, new Map())
+  if (response.data.view) appStore.set(cacheFilingsAtom, response.data.view.messages)
+  if (response.data.history) appStore.set(cacheFilingsAtom, response.data.history.messages)
+  if (response.data.intake?.workspaceRoot === appStore.get(workspacePathAtom))
+    appStore.set(agentIntakeAtom, response.data.intake)
   if (
     response.data.view &&
     response.data.view.conversation.workspaceRoot === appStore.get(workspacePathAtom)
@@ -196,6 +247,7 @@ export function openAgent(
 export function connectAgent(): () => void {
   const requests = new Map<string, AbortController>()
   const offView = window.api.on(IpcChannels.OnAgentView, (view) => {
+    appStore.set(cacheFilingsAtom, view.messages)
     if (view.conversation.workspaceRoot !== appStore.get(workspacePathAtom)) return
     if (appStore.get(agentViewAtom)?.conversation.id === view.conversation.id)
       appStore.set(agentViewAtom, view)

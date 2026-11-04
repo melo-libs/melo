@@ -3,7 +3,7 @@ import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import type { AgentContext } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
-import { agentMessagesAtom } from '../../store/agent'
+import { agentCommand, agentMessagesAtom } from '../../store/agent'
 import { workspacePathAtom, treeSelectionAtom, recentNotesAtom } from '../../store/workspace'
 import { openFileAtom } from '../../store/editor'
 import { activeSmartIdAtom } from '../../store/smart'
@@ -32,6 +32,7 @@ export const AgentWindow = () => {
     [showLatest, setShowLatest] = useState(false),
     [headerScrolling, setHeaderScrolling] = useState(false),
     [highlight, setHighlight] = useState<string | null>(null)
+  const [draggingFiles, setDraggingFiles] = useState(false)
   const {
     state,
     setWindow,
@@ -47,6 +48,10 @@ export const AgentWindow = () => {
     selectedProvider,
     ready,
     canSend,
+    attachments,
+    receivingFiles,
+    pasteAttachments,
+    removeAttachment,
     send,
     changeProvider,
     loadModels,
@@ -54,6 +59,7 @@ export const AgentWindow = () => {
     loadHistory,
     respond,
     undo,
+    undoFiling,
     deleteMessage,
     cancel,
   } = useAgentController(setSettingsOpen, connectionBusy)
@@ -84,7 +90,13 @@ export const AgentWindow = () => {
     inProgress = plan?.findIndex((entry) => entry.status === 'in_progress') ?? -1
   const step =
     inProgress >= 0 ? inProgress : (plan?.findIndex((entry) => entry.status === 'pending') ?? -1)
-  const status = t(view?.permission ? 'agent.waitingForYou' : 'agent.working')
+  const status = t(
+    view?.permission
+      ? 'agent.waitingForYou'
+      : view?.messages[turnStart]?.context?.attachments?.length
+        ? 'agent.processingFiles'
+        : 'agent.working',
+  )
   const progress =
     plan && step >= 0 && !busy
       ? t('agent.stepProgress', { step: step + 1, total: plan.length, status })
@@ -144,6 +156,15 @@ export const AgentWindow = () => {
   const openFile = useCallback(
     async (relative: string, workspace = root) => {
       try {
+        if (relative.startsWith('melo-attachment:') && workspace) {
+          const response = await agentCommand({
+            action: 'attachment',
+            workspaceRoot: workspace,
+            attachmentId: relative.slice(16),
+          })
+          if (!response.attachment?.path) throw Error(t('agent.fileUnavailable'))
+          relative = response.attachment.path
+        }
         if (!workspace || !agentFilePath(relative)) throw Error(t('agent.fileUnavailable'))
         const expected = workspace.replace(/\/$/, '') + '/'
         const response = await window.api.invoke(IpcChannels.InvokeGetFileStats, {
@@ -168,7 +189,10 @@ export const AgentWindow = () => {
     },
     [root, t],
   )
-  const submit = (text = state.draft.trim(), context: AgentContext = state.context) => {
+  const submit = (
+    text = state.draft.trim() || (attachments.length ? t('agent.organizeAttachments') : ''),
+    context: AgentContext = state.context,
+  ) => {
     if (send(text, context)) {
       setSearching(false)
       nearBottom.current = true
@@ -210,6 +234,36 @@ export const AgentWindow = () => {
     <div
       ref={panel}
       className="agent-window"
+      onDragOver={(event) => {
+        if (
+          settingsOpen ||
+          state.collapsed ||
+          !event.dataTransfer.types.some(
+            (type) => type === 'Files' || type === 'application/x-melo-node',
+          )
+        )
+          return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+        setDraggingFiles(true)
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setDraggingFiles(false)
+      }}
+      onDrop={(event) => {
+        setDraggingFiles(false)
+        if (settingsOpen || state.collapsed) return
+        const files = Array.from(event.dataTransfer.files)
+        const workspaceFile = event.dataTransfer.getData('application/x-melo-node')
+        if (!files.length && !workspaceFile) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (files.length) void pasteAttachments(files)
+        else if (workspaceFile.startsWith(root! + '/'))
+          void pasteAttachments(undefined, workspaceFile)
+      }}
       role="dialog"
       aria-label={t('agent.title')}
       onPointerDown={state.collapsed ? drag : undefined}
@@ -324,18 +378,32 @@ export const AgentWindow = () => {
                   activePlan={planMessage?.id}
                   activePermission={view?.permission?.id}
                   onRespond={respond}
+                  onDescribe={(name) => {
+                    setWindow((state) => ({
+                      ...state,
+                      draft: t('agent.organization.descriptionDraft', { name }),
+                    }))
+                    panel.current
+                      ?.querySelector<HTMLTextAreaElement>('.agent-compose textarea')
+                      ?.focus()
+                  }}
                   highlight={highlight}
                   onOpenFile={openFile}
                   onOpenMessage={openMessage}
                   onDelete={deleteMessage}
                   onUndo={undo}
+                  onUndoFiling={undoFiling}
                 />
-                {pendingSource && (
-                  <AgentSource
-                    path={state.context.filePath!}
-                    at={Date.now()}
-                    onOpen={() => openFile(state.context.filePath!)}
-                  />
+                {attachments.length > 0 && !state.context.selection ? (
+                  <AgentSource path="Inbox" at={Date.now()} />
+                ) : (
+                  pendingSource && (
+                    <AgentSource
+                      path={state.context.filePath!}
+                      at={Date.now()}
+                      onOpen={() => openFile(state.context.filePath!)}
+                    />
+                  )
                 )}
                 {(!messages.length || !!state.context.selection) && (
                   <div className="agent-empty">
@@ -417,6 +485,12 @@ export const AgentWindow = () => {
           )}
           {!settingsOpen && (
             <AgentComposer
+              draggingFiles={draggingFiles}
+              reviewingOrganization={view?.permission?.operation.kind === 'organize'}
+              attachments={attachments}
+              receivingFiles={receivingFiles}
+              onPasteAttachments={pasteAttachments}
+              onRemoveAttachment={removeAttachment}
               draft={state.draft}
               context={state.context}
               setup={setup}

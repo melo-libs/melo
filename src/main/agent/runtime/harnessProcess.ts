@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AcpConnection } from './acpConnection'
 import {
   createHarnessSession,
@@ -13,10 +16,13 @@ type ProcessOptions = Pick<
 >
 interface OwnedProcess {
   key: string
+  toolName: string
   controller: AbortController
   connection: Promise<AcpConnection>
   handlers: Pick<HarnessSessionOptions, 'onUpdate' | 'onPermission'> | null
   leased: boolean
+  scratchDirectory?: string
+  closing?: Promise<void>
 }
 
 /** Keep one owned adapter warm, while each turn gets a fresh, disposable session. */
@@ -56,17 +62,27 @@ export class HarnessProcess {
     const controller = new AbortController()
     const owned: OwnedProcess = {
       key,
+      toolName: `melo_${randomUUID().replaceAll('-', '')}`,
       controller,
       handlers: null,
       leased: false,
-      connection: startHarnessConnection({
-        ...options,
-        signal: controller.signal,
-        mcpServers: [],
-        onUpdate: (update) => owned.handlers?.onUpdate(update),
-        onPermission: (request) =>
-          owned.handlers?.onPermission?.(request) ??
-          Promise.resolve({ outcome: { outcome: 'cancelled' as const } }),
+      connection: Promise.resolve().then(async () => {
+        // Claude falls back to its shared temp path when an override is too long.
+        const base = process.platform === 'win32' ? tmpdir() : '/tmp'
+        owned.scratchDirectory = await mkdtemp(join(base, 'melo-'))
+        owned.scratchDirectory = await realpath(owned.scratchDirectory)
+        controller.signal.throwIfAborted()
+        return startHarnessConnection({
+          ...options,
+          scratchDirectory: owned.scratchDirectory,
+          signal: controller.signal,
+          mcpServers: [],
+          mcpServerName: owned.toolName,
+          onUpdate: (update) => owned.handlers?.onUpdate(update),
+          onPermission: (request) =>
+            owned.handlers?.onPermission?.(request) ??
+            Promise.resolve({ outcome: { outcome: 'cancelled' as const } }),
+        })
       }),
     }
     this.owned = owned
@@ -76,7 +92,7 @@ export class HarnessProcess {
       if (this.owned === owned) this.scheduleIdle()
       return owned
     } catch (error) {
-      if (this.owned === owned) this.owned = null
+      await this.discard(owned)
       throw error
     }
   }
@@ -103,11 +119,15 @@ export class HarnessProcess {
       active.leased = true
       active.handlers = options
       const connection = await active.connection
-      // Codex caches MCP clients by name across sessions. A fresh identity
-      // prevents the next turn from retaining a closed tool server's connection.
-      const toolName = `melo_${randomUUID().replaceAll('-', '')}`
+      // Keep the config key available at prewarm time. Each task still owns a
+      // fresh URL/token, so a closed task cannot call into its successor.
+      const toolName = active.toolName
       const mcpServers = options.mcpServers.map((server) => ({ ...server, name: toolName }))
-      await createHarnessSession(connection, { ...options, mcpServers })
+      await createHarnessSession(connection, {
+        ...options,
+        mcpServers,
+        scratchDirectory: active.scratchDirectory,
+      })
       options.signal.throwIfAborted()
       return {
         connection,
@@ -144,19 +164,22 @@ export class HarnessProcess {
     if (owned) await this.discard(owned)
   }
 
-  private async discard(owned: OwnedProcess): Promise<void> {
+  private discard(owned: OwnedProcess): Promise<void> {
     if (this.owned === owned) {
       this.owned = null
       clearTimeout(this.idle)
     }
-    owned.controller.abort()
-    owned.handlers = null
-    // Initialization owns its original failure; shutdown still drains its process.
-    const connection = await owned.connection.then(
-      (connection) => connection,
-      () => null,
-    )
-    await connection?.close()
+    return (owned.closing ??= Promise.resolve().then(async () => {
+      owned.controller.abort()
+      owned.handlers = null
+      // Initialization owns its original failure; shutdown still drains its process.
+      const connection = await owned.connection.then(
+        (connection) => connection,
+        () => null,
+      )
+      await connection?.close()
+      if (owned.scratchDirectory) await rm(owned.scratchDirectory, { recursive: true, force: true })
+    }))
   }
 
   private scheduleIdle(): void {

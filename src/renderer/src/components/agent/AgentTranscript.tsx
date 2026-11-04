@@ -3,10 +3,14 @@ import { Fragment } from 'react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { useTranslation } from 'react-i18next'
 import type { AgentHistoryMessage } from '@shared/types/agent'
-import { AgentMessage, AgentActivity } from './AgentMessage'
+import { AgentMessage } from './AgentMessage'
+import { AgentActivity } from './AgentActivity'
 import { AgentChanges, AgentPlan } from './AgentChanges'
 import { AgentSource } from './AgentSource'
 import { AgentPermission } from './AgentPermission'
+import { AgentReceipt } from './AgentReceipt'
+import { AgentFilingResult } from './AgentFilingResult'
+import type { OrganizationEdits } from '@shared/agentCapabilities'
 
 export function AgentTranscript({
   messages,
@@ -21,7 +25,9 @@ export function AgentTranscript({
   onOpenFile,
   onOpenMessage,
   onUndo,
+  onUndoFiling,
   onDelete,
+  onDescribe,
 }: {
   messages: AgentHistoryMessage[]
   running: boolean
@@ -30,11 +36,19 @@ export function AgentTranscript({
   activeWorkspace: string
   activePlan?: string
   activePermission?: string
-  onRespond?(conversationId: string, permissionId: string, allow: boolean, run?: boolean): void
+  onRespond?(
+    conversationId: string,
+    permissionId: string,
+    allow: boolean,
+    run?: boolean,
+    organization?: OrganizationEdits,
+  ): void
+  onDescribe?(name: string): void
   highlight: string | null
   onOpenFile(path: string, workspace: string): void
   onOpenMessage(id: string): void
   onUndo(conversationId: string, ids: string[]): void
+  onUndoFiling(conversationId: string, batchId: string): void
   onDelete(id: string): void
 }) {
   const { t } = useTranslation()
@@ -50,18 +64,43 @@ export function AgentTranscript({
     <>
       {groups.map((group) => {
         const first = group[0],
-          source = first.context?.filePath
+          inbox = !!first.context?.attachments?.length && !first.context.selection,
+          source = inbox ? 'Inbox' : first.context?.filePath
         const sourceKey = source ? `${first.workspaceRoot}/${source}` : ''
         // A new selection starts a visible reference boundary even within the same note.
         const showSource = sourceKey && (sourceKey !== lastSource || !!first.context?.selection)
         if (sourceKey) lastSource = sourceKey
-        const changes = group.filter((message) => message.change)
+        const imported = group.filter((message) => message.change?.kind === 'import')
+        const changes = group.filter(
+          (message) =>
+            message.change &&
+            message.change.kind !== 'import' &&
+            !message.change.batchId &&
+            !(
+              imported.length &&
+              message.change.kind === 'create-folder' &&
+              message.change.path === 'Inbox'
+            ),
+        )
+        const filings = [
+          ...new Map(
+            group.flatMap((message) =>
+              message.filing ? [[message.filing.id, message.filing] as const] : [],
+            ),
+          ).values(),
+        ]
         const activity = group.filter(
           (message) =>
             message.role === 'tool' &&
             !message.plan &&
             !message.change &&
-            !message.approval &&
+            !message.receipt &&
+            !message.filing &&
+            (!message.approval ||
+              (message.approval.operation.kind === 'native' &&
+                (message.approval.status !== 'pending' ||
+                  message.approval.id !== activePermission ||
+                  message.conversationId !== activeConversation))) &&
             !(
               message.toolStatus !== 'failed' &&
               group.some((item) => item.approval || item.change) &&
@@ -74,11 +113,45 @@ export function AgentTranscript({
               <AgentSource
                 path={source!}
                 at={first.createdAt}
-                onOpen={() => onOpenFile(source!, first.workspaceRoot)}
+                onOpen={inbox ? undefined : () => onOpenFile(source!, first.workspaceRoot)}
+              />
+            )}
+            {imported.length > 0 && !group.some((message) => message.receipt) && (
+              <AgentReceipt
+                receipt={{
+                  files: imported.map((message) => ({
+                    id: message.change!.id,
+                    name: message.change!.path.split('/').pop()!,
+                    path: message.change!.path,
+                    status: 'stored',
+                  })),
+                }}
+                onOpen={(id) => onOpenFile(`melo-attachment:${id}`, first.workspaceRoot)}
               />
             )}
             {group.map((message) => {
-              if (message.change) return null
+              if (message.id === activity[0]?.id)
+                return (
+                  <AgentActivity
+                    key={message.id}
+                    messages={activity}
+                    active={
+                      running &&
+                      group === groups.at(-1) &&
+                      first.conversationId === activeConversation
+                    }
+                  />
+                )
+              if (activity.includes(message)) return null
+              if (message.change || message.filing) return null
+              if (message.receipt)
+                return (
+                  <AgentReceipt
+                    key={message.id}
+                    receipt={message.receipt}
+                    onOpen={(id) => onOpenFile(`melo-attachment:${id}`, message.workspaceRoot)}
+                  />
+                )
               if (message.approval)
                 return (
                   <AgentPermission
@@ -89,9 +162,17 @@ export function AgentTranscript({
                       message.conversationId === activeConversation
                     }
                     workspaceName={message.workspaceRoot.split('/').pop()!}
+                    workspaceRoot={message.workspaceRoot}
+                    onDescribe={onDescribe}
                     busy={busy}
-                    onRespond={(allow, run) =>
-                      onRespond?.(message.conversationId, message.approval!.id, allow, run)
+                    onRespond={(allow, run, organization) =>
+                      onRespond?.(
+                        message.conversationId,
+                        message.approval!.id,
+                        allow,
+                        run,
+                        organization,
+                      )
                     }
                   />
                 )
@@ -112,11 +193,7 @@ export function AgentTranscript({
                   />
                 )
               }
-              if (message.role === 'tool') {
-                return message.id === activity[0]?.id ? (
-                  <AgentActivity key={message.id} messages={activity} />
-                ) : null
-              }
+              if (message.role === 'tool') return null
               return (
                 <ContextMenu.Root key={message.id}>
                   <ContextMenu.Trigger asChild>
@@ -126,6 +203,7 @@ export function AgentTranscript({
                       data-highlight={highlight === message.id || undefined}
                     >
                       <AgentMessage
+                        workspaceRoot={message.workspaceRoot}
                         content={message.content}
                         role={message.role}
                         context={message.context}
@@ -153,6 +231,15 @@ export function AgentTranscript({
                 </ContextMenu.Root>
               )
             })}
+            {filings.map((filing) => (
+              <AgentFilingResult
+                key={filing.id}
+                filing={filing}
+                disabled={running || busy || first.workspaceRoot !== activeWorkspace}
+                onOpenFile={(path) => onOpenFile(path, first.workspaceRoot)}
+                onUndo={() => onUndoFiling(first.conversationId, filing.id)}
+              />
+            ))}
             {changes.length > 0 && (
               <AgentChanges
                 messages={changes}

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { expect, it, vi } from 'vitest'
@@ -22,10 +22,15 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each([
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'melo-claude-gateway-')))
     const home = path.join(root, 'claude-home')
     await mkdir(home)
+    const nativeSettings = JSON.stringify({ permissions: { defaultMode: 'plan' } })
+    await writeFile(path.join(home, 'settings.json'), nativeSettings)
+    await writeFile(path.join(root, 'attachment.txt'), 'Attachment fixture')
     vi.stubEnv('CLAUDE_CONFIG_DIR', home)
     const models: string[] = []
     let answer = ''
     const authenticated: boolean[] = []
+    const inspectionResults: { is_error?: boolean; content?: unknown }[] = []
+    const permissionRequests: string[] = []
     const server = createServer(async (request, response) => {
       if (!new URL(request.url!, 'http://localhost').pathname.endsWith('/messages')) {
         response.writeHead(404)
@@ -34,7 +39,18 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each([
       }
       const chunks: Buffer[] = []
       for await (const chunk of request) chunks.push(Buffer.from(chunk))
-      const body = JSON.parse(Buffer.concat(chunks).toString()) as { model: string }
+      const body = JSON.parse(Buffer.concat(chunks).toString()) as {
+        model: string
+        messages: {
+          content:
+            | string
+            | { type: string; tool_use_id?: string; is_error?: boolean; content?: unknown }[]
+        }[]
+      }
+      const inspection = body.messages
+        .flatMap((message) => (typeof message.content === 'string' ? [] : message.content))
+        .find((item) => item.type === 'tool_result' && item.tool_use_id === 'scope_inspection')
+      if (inspection) inspectionResults.push(inspection)
       models.push(body.model)
       authenticated.push(
         header === 'Authorization'
@@ -66,11 +82,38 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each([
           usage: { input_tokens: 1, output_tokens: 0 },
         },
       })
-      event('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
-      event('content_block_delta', { index: 0, delta: { type: 'text_delta', text: 'Connected.' } })
+      const inspecting = service === 'custom' && !inspection
+      if (inspecting) {
+        const quoted = `'${root.replaceAll("'", "'\\''")}'`
+        event('content_block_start', {
+          index: 0,
+          content_block: {
+            type: 'tool_use',
+            id: 'scope_inspection',
+            name: 'Bash',
+            input: {},
+          },
+        })
+        event('content_block_delta', {
+          index: 0,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: JSON.stringify({
+              command: `(cd ${quoted}; cat attachment.txt; printf 'Parsed fixture' > "$TMPDIR/parsed.txt"; cat "$TMPDIR/parsed.txt")`,
+              description: 'Inspect an attachment and create temporary analysis output',
+            }),
+          },
+        })
+      } else {
+        event('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
+        event('content_block_delta', {
+          index: 0,
+          delta: { type: 'text_delta', text: 'Connected.' },
+        })
+      }
       event('content_block_stop', { index: 0 })
       event('message_delta', {
-        delta: { stop_reason: 'end_turn', stop_sequence: null },
+        delta: { stop_reason: inspecting ? 'tool_use' : 'end_turn', stop_sequence: null },
         usage: { output_tokens: 2 },
       })
       event('message_stop', {})
@@ -116,7 +159,10 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each([
           provider: 'claude',
           updatedAt: Date.now(),
         },
-        authorize: async () => false,
+        authorize: async (operation) => {
+          permissionRequests.push(JSON.stringify(operation))
+          return false
+        },
         onEvent: (event) => {
           if (event.type === 'text') answer += event.text
         },
@@ -126,6 +172,17 @@ it.skipIf(process.env.MELO_CLAUDE_API_CHECK !== '1').each([
       expect(models.length).toBeGreaterThan(0)
       expect(models.every((value) => value === model)).toBe(true)
       expect(authenticated.every(Boolean)).toBe(true)
+      expect(await readFile(path.join(home, 'settings.json'), 'utf8')).toBe(nativeSettings)
+      if (service === 'custom') {
+        expect(permissionRequests).toEqual([])
+        expect(inspectionResults).toHaveLength(1)
+        expect(
+          inspectionResults[0].is_error,
+          JSON.stringify(inspectionResults[0].content),
+        ).not.toBe(true)
+        expect(JSON.stringify(inspectionResults[0].content)).toContain('Attachment fixture')
+        expect(JSON.stringify(inspectionResults[0].content)).toContain('Parsed fixture')
+      }
     } finally {
       await runtime?.close()
       await factory?.close?.()

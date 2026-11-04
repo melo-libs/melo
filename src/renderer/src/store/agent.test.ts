@@ -10,6 +10,7 @@ import {
   agentViewAtom,
   agentHistoryAtom,
   agentMessagesAtom,
+  connectAgent,
   openAgent,
 } from './agent'
 import type {
@@ -17,7 +18,9 @@ import type {
   AgentHistoryMessage,
   AgentSetup,
   AgentCommandResult,
+  AgentFiling,
 } from '@shared/types/agent'
+import { IpcChannels } from '@shared/types/ipc'
 
 vi.mock('./documentSession', () => ({ handleAgentDocument: vi.fn() }))
 afterEach(() => {
@@ -83,6 +86,31 @@ const savedMessage = (id: string, sequence: number, content = id): AgentHistoryM
   createdAt: sequence,
   role: 'assistant',
 })
+const filingSnapshot = (version: number, undone = false): AgentFiling => ({
+  id: 'batch',
+  version,
+  state: 'completed',
+  unresolved: [],
+  fileCount: 1,
+  createdAt: 1,
+  changes: [
+    {
+      id: 'move',
+      batchId: 'batch',
+      kind: 'move',
+      source: 'Inbox/a.pdf',
+      path: 'Filed/a.pdf',
+      undone,
+    },
+  ],
+})
+const filingMessage = (filing: AgentFiling): AgentView['messages'][number] => ({
+  id: 'filing:batch',
+  role: 'tool',
+  content: '',
+  createdAt: 1,
+  filing,
+})
 
 it('reconciles streamed messages without losing saved timeline metadata', () => {
   appStore.set(agentHistoryAtom, {
@@ -101,6 +129,138 @@ it('reconciles streamed messages without losing saved timeline metadata', () => 
     { id: 'reply', sequence: 10, content: 'Complete' },
     { id: 'next', workspaceRoot: '/notes', conversationId: 'current' },
   ])
+})
+
+it('refreshes filing summaries attached to older history pages after batch undo', () => {
+  const filing = filingSnapshot(1)
+  appStore.set(agentHistoryAtom, {
+    messages: [{ ...savedMessage('change:move', 10), filing }],
+    hasOlder: true,
+    hasNewer: true,
+  })
+  appStore.set(agentViewAtom, liveView([filingMessage(filingSnapshot(2, true))]))
+  expect(appStore.get(agentMessagesAtom)[0].filing!.changes[0].undone).toBe(true)
+  appStore.set(agentViewAtom, null)
+  expect(appStore.get(agentMessagesAtom)[0].filing!.changes[0].undone).toBe(true)
+  appStore.set(workspacePathAtom, '/other')
+  appStore.set(agentViewAtom, {
+    ...liveView([]),
+    conversation: { ...conversation, id: 'other', workspaceRoot: '/other' },
+  })
+  expect(appStore.get(agentMessagesAtom)[0].filing!.changes[0].undone).toBe(true)
+})
+
+it.each([true, false])(
+  'preserves a hydrated filing on a saved change when its live copy omits it (hasNewer: %s)',
+  (hasNewer) => {
+    const filing = filingSnapshot(2)
+    const change = {
+      ...savedMessage('change:move', 10),
+      role: 'tool' as const,
+      change: filing.changes[0],
+      filing,
+    }
+    appStore.set(agentHistoryAtom, {
+      messages: [change],
+      hasOlder: true,
+      hasNewer,
+    })
+    appStore.set(agentViewAtom, liveView([filingMessage(filing), { ...change, filing: undefined }]))
+    const messages = appStore.get(agentMessagesAtom)
+    expect(messages.find((message) => message.id === change.id)?.filing).toBe(filing)
+    expect(messages.map((message) => message.id)).toEqual(['change:move'])
+    expect(
+      new Set(messages.flatMap((message) => (message.filing ? [message.filing.id] : []))).size,
+    ).toBe(1)
+  },
+)
+
+it('does not roll back filing versions when an older history request completes after undo', async () => {
+  let finish!: (response: { success: true; data: AgentCommandResult }) => void
+  vi.stubGlobal('window', {
+    api: { invoke: vi.fn(() => new Promise((resolve) => (finish = resolve))) },
+  })
+  const pending = agentCommand({ action: 'history' })
+  appStore.set(agentViewAtom, liveView([filingMessage(filingSnapshot(3, true))]))
+  appStore.set(agentViewAtom, null)
+  finish({
+    success: true,
+    data: {
+      history: {
+        messages: [{ ...savedMessage('change:move', 10), filing: filingSnapshot(2) }],
+        hasOlder: true,
+        hasNewer: true,
+      },
+    },
+  })
+  await pending
+  expect(appStore.get(agentMessagesAtom)[0].filing).toMatchObject({
+    version: 3,
+    changes: [{ undone: true }],
+  })
+})
+
+it.each(['command', 'stream'] as const)(
+  'keeps background %s filing updates after switching workspaces',
+  async (source) => {
+    appStore.set(agentHistoryAtom, {
+      messages: [{ ...savedMessage('change:move', 10), filing: filingSnapshot(1) }],
+      hasOlder: true,
+      hasNewer: true,
+    })
+    appStore.set(workspacePathAtom, '/other')
+    const active = {
+      ...liveView([]),
+      conversation: { ...conversation, id: 'other', workspaceRoot: '/other' },
+    }
+    appStore.set(agentViewAtom, active)
+    const update = liveView([filingMessage(filingSnapshot(2, true))])
+    if (source === 'command') {
+      vi.stubGlobal('window', {
+        api: { invoke: vi.fn().mockResolvedValue({ success: true, data: { view: update } }) },
+      })
+      await agentCommand({ action: 'undo-filing', conversationId: 'current', batchId: 'batch' })
+    } else {
+      let publish!: (view: AgentView) => void
+      vi.stubGlobal('window', {
+        api: {
+          on: vi.fn((channel: IpcChannels, listener: (view: AgentView) => void) => {
+            if (channel === IpcChannels.OnAgentView) publish = listener
+            return vi.fn()
+          }),
+        },
+      })
+      const disconnect = connectAgent()
+      publish(update)
+      disconnect()
+    }
+    expect(appStore.get(agentViewAtom)).toBe(active)
+    appStore.set(agentViewAtom, null)
+    expect(appStore.get(agentMessagesAtom)[0].filing).toMatchObject({
+      version: 2,
+      changes: [{ undone: true }],
+    })
+  },
+)
+
+it('resets filing snapshots when history is cleared', async () => {
+  appStore.set(agentViewAtom, liveView([filingMessage(filingSnapshot(3, true))]))
+  appStore.set(agentViewAtom, null)
+  vi.stubGlobal('window', {
+    api: {
+      invoke: vi.fn().mockResolvedValue({
+        success: true,
+        data: { history: { messages: [], hasOlder: false, hasNewer: false } },
+      }),
+    },
+  })
+  await agentCommand({ action: 'clear-history' })
+  appStore.set(agentHistoryAtom, {
+    messages: [{ ...savedMessage('change:move', 10), filing: filingSnapshot(1) }],
+    hasOlder: false,
+    hasNewer: false,
+  })
+  expect(appStore.get(agentMessagesAtom)[0].filing!.version).toBe(1)
 })
 
 it('does not append live output into an older history page', () => {

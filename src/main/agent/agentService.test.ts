@@ -6,6 +6,7 @@ import { AgentService } from './agentService'
 import { ConversationStore } from './storage/conversationStore'
 import { MemoryService } from './storage/memory'
 import type { RuntimeFactory, RuntimeRequest } from './agentTypes'
+import type { AgentOperation } from '../../shared/agentCapabilities'
 
 let root: string
 let store: ConversationStore
@@ -35,6 +36,137 @@ afterEach(async () => {
 })
 
 describe('AgentService lifecycle', () => {
+  it('retains structured tool activity across partial updates and persisted history', async () => {
+    prompt.mockImplementationOnce(async () => {
+      request.onEvent({
+        type: 'tool',
+        id: 'read',
+        title: 'Read report.pdf',
+        status: 'pending',
+        activity: { kind: 'read', target: 'Inbox/report.pdf' },
+      })
+      request.onEvent({
+        type: 'tool',
+        id: 'read',
+        title: 'Read report.pdf',
+        status: 'completed',
+        activity: { kind: 'read' },
+      })
+      request.onEvent({ type: 'text', text: 'The file is ready to organize.' })
+    })
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Read this file', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    const expected = {
+      toolStatus: 'completed',
+      toolActivity: { kind: 'read', target: 'Inbox/report.pdf' },
+    }
+    expect(view.messages.find((message) => message.role === 'tool')).toMatchObject(expected)
+    expect(
+      store.messages(view.conversation.id).find((message) => message.role === 'tool'),
+    ).toMatchObject(expected)
+    expect(store.history().messages.find((message) => message.role === 'tool')).toMatchObject(
+      expected,
+    )
+  })
+  it('finishes Inbox receipt before starting the Harness and never publishes imports as AI changes', async () => {
+    let release!: () => void
+    const receiving = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    service = new AgentService(
+      store,
+      memory,
+      factory,
+      () => {},
+      new Set(),
+      undefined,
+      async (_conversation, id) => {
+        await receiving
+        return { id, name: 'booking.pdf', size: 10, path: 'Inbox/booking.pdf' }
+      },
+    )
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Organize this file', {
+      attachments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'booking.pdf', size: 10 }],
+    })
+    expect(factory).not.toHaveBeenCalled()
+    expect(view.messages.find((message) => message.receipt)?.receipt?.files[0].status).toBe(
+      'pending',
+    )
+    release()
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(factory).toHaveBeenCalledOnce()
+    expect(view.messages.filter((message) => message.change)).toEqual([])
+    expect(
+      store.messages(view.conversation.id).find((message) => message.receipt)?.receipt?.files[0],
+    ).toMatchObject({ status: 'stored', path: 'Inbox/booking.pdf' })
+    expect(prompt.mock.calls[0][0]).toContain('Inbox/booking.pdf')
+  })
+
+  it('preserves failed receipt state without handing an unreceived file to the Harness', async () => {
+    service = new AgentService(
+      store,
+      memory,
+      factory,
+      () => {},
+      new Set(),
+      undefined,
+      async () => {
+        throw new Error('AGENT_ATTACHMENT_CAPTURE_FAILED')
+      },
+    )
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Organize', {
+      attachments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'booking.pdf', size: 10 }],
+    })
+    await vi.waitFor(() => expect(view.status).toBe('error'))
+    expect(factory).not.toHaveBeenCalled()
+    expect(view.messages.find((message) => message.receipt)?.receipt?.files[0].status).toBe(
+      'failed',
+    )
+  })
+  it('only accepts organization edits for the exact pending file set and persists approved destinations', async () => {
+    const fileId = '00000000-0000-4000-8000-000000000001'
+    const operation: Extract<AgentOperation, { kind: 'organize' }> = {
+      kind: 'organize',
+      files: [
+        {
+          id: fileId,
+          name: 'note.txt',
+          size: 4,
+          source: 'Inbox/note.txt',
+          destination: 'Filed/note.txt',
+          detail: 'fixture',
+          readable: true,
+        },
+      ],
+      folders: ['Filed'],
+      locations: ['', 'Inbox'],
+      includeNote: false,
+    }
+    prompt.mockImplementationOnce(async () => {
+      expect(await request.authorize(operation)).toBe(true)
+      expect(operation.files[0].destination).toBe('Travel/Hotel.txt')
+    })
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Organize files', {})
+    await vi.waitFor(() => expect(view.permission).not.toBeNull())
+    expect(() =>
+      service.respond(view.conversation.id, view.permission!.id, true, false, {
+        destinations: [],
+        includeNote: false,
+      }),
+    ).toThrow('Invalid organization approval')
+    service.respond(view.conversation.id, view.permission!.id, true, false, {
+      destinations: [{ id: fileId, path: 'Travel/Hotel.txt' }],
+      includeNote: false,
+    })
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(
+      store.messages(view.conversation.id).find((message) => message.approval)?.approval?.operation,
+    ).toMatchObject({ kind: 'organize', files: [{ destination: 'Travel/Hotel.txt' }] })
+  })
   it('keeps window suspension when a workspace refresh resumes its own scope', async () => {
     const view = service.create(root, 'codex')
     await service.suspend('window')

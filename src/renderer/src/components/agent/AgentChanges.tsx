@@ -31,13 +31,66 @@ export function AgentChanges({
 }) {
   const { t } = useTranslation()
   const changes = messages.flatMap((message) =>
-    message.change ? [{ change: message.change, at: message.createdAt }] : [],
+    message.change && message.change.kind !== 'import'
+      ? [{ change: message.change, at: message.createdAt }]
+      : [],
   )
   const pending = changes.filter(({ change }) => !change.undone)
   const caption = (change: AgentChange) =>
     change.kind === 'move'
       ? t('agent.movedPath', { from: change.source, to: change.path })
       : t(`agent.changeStatus.${change.kind}`)
+  const rows = changes.map(({ change }) => (
+    <div className="agent-change-row" key={change.id} data-undone={change.undone || undefined}>
+      <span
+        className={`agent-change-icon${change.kind === 'create-folder' ? ' agent-folder-icon' : ''}`}
+      >
+        <Icon
+          name={
+            change.kind === 'create-folder'
+              ? 'folder'
+              : change.kind === 'trash'
+                ? 'trash'
+                : change.path.toLowerCase().endsWith('.md')
+                  ? 'fileMd'
+                  : 'file'
+          }
+          size={18}
+        />
+      </span>
+      <div className="agent-change-description">
+        {change.kind === 'trash' || change.kind === 'create-folder' || change.undone ? (
+          <span className="agent-change-name" title={change.path}>
+            {change.path.split('/').pop()}
+          </span>
+        ) : (
+          <button
+            className="agent-change-name"
+            onClick={() => onOpenFile(change.path)}
+            title={change.path}
+          >
+            {change.path.split('/').pop()}
+          </button>
+        )}
+        <span>{change.undone ? t('agent.undone') : caption(change)}</span>
+      </div>
+      {!disabled && (
+        <button
+          className="agent-quiet"
+          disabled={disabled || change.undone}
+          onClick={() => onUndo([change.id])}
+        >
+          {t(
+            change.undone
+              ? 'agent.undone'
+              : change.kind === 'trash'
+                ? 'agent.restore'
+                : 'agent.undo',
+          )}
+        </button>
+      )}
+    </div>
+  ))
   if (!changes.length) return null
   return (
     <section className="agent-changes" aria-label={t('agent.changes')}>
@@ -50,56 +103,8 @@ export function AgentChanges({
           })}
         </time>
       </div>
-      {changes.map(({ change }) => (
-        <div className="agent-change-row" key={change.id} data-undone={change.undone || undefined}>
-          <span
-            className={`agent-change-icon${change.kind === 'create-folder' ? ' agent-folder-icon' : ''}`}
-          >
-            <Icon
-              name={
-                change.kind === 'create-folder'
-                  ? 'folder'
-                  : change.kind === 'trash'
-                    ? 'trash'
-                    : change.path.toLowerCase().endsWith('.md')
-                      ? 'fileMd'
-                      : 'file'
-              }
-              size={18}
-            />
-          </span>
-          <div className="agent-change-description">
-            {change.kind === 'trash' || change.kind === 'create-folder' || change.undone ? (
-              <span className="agent-change-name" title={change.path}>
-                {change.path.split('/').pop()}
-              </span>
-            ) : (
-              <button
-                className="agent-change-name"
-                onClick={() => onOpenFile(change.path)}
-                title={change.path}
-              >
-                {change.path.split('/').pop()}
-              </button>
-            )}
-            <span>{change.undone ? t('agent.undone') : caption(change)}</span>
-          </div>
-          <button
-            className="agent-quiet"
-            disabled={disabled || change.undone}
-            onClick={() => onUndo([change.id])}
-          >
-            {t(
-              change.undone
-                ? 'agent.undone'
-                : change.kind === 'trash'
-                  ? 'agent.restore'
-                  : 'agent.undo',
-            )}
-          </button>
-        </div>
-      ))}
-      {pending.length > 1 && (
+      {rows}
+      {pending.length > 1 && !disabled && (
         <div className="agent-card-actions">
           <Button
             className="agent-secondary"
