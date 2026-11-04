@@ -117,95 +117,68 @@
 }
 .agent-window[data-collapsed] {
   container-type: normal;
-  width: max-content;
-  min-width: 44px;
-  max-width: calc(100vw - 40px);
-  height: 44px;
-  min-height: 44px;
-  max-height: 44px;
-  border-radius: 22px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
   overflow: visible;
+  background: transparent;
   box-shadow: none;
 }
 .agent-dock.ui-button {
+  position: relative;
   cursor: grab;
   touch-action: none;
   user-select: none;
-  font-weight: 400;
-  width: 100%;
-  height: 44px;
-  min-height: 44px;
-  min-width: 44px;
-  gap: 9px;
-  padding: 0 16px 0 10px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  padding: 0;
   border: 0;
-  border-radius: 22px;
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow:
-    0 0 0 0.5px var(--hairline),
-    var(--shadow-md);
-  font-size: 13px;
-  > svg {
-    flex-shrink: 0;
-  }
-  &[data-mode='idle'] {
-    padding: 0;
-  }
-  &[data-mode='waiting'],
-  &[data-mode='waiting']:hover {
-    background: color-mix(in srgb, var(--ai-soft), var(--paper) 45%);
-    box-shadow:
-      0 0 0 1px var(--ai),
-      var(--shadow-md);
-  }
-  &:hover {
-    background: var(--paper-2);
-  }
-}
-.agent-dock-label {
-  min-width: 0;
-  max-width: 260px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.agent-dock-hint {
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-.agent-dock-spinner {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--hairline);
-  border-top-color: var(--ai);
   border-radius: 50%;
-  animation: agent-dock-spin 900ms linear infinite;
-}
-.agent-dock-dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ai);
-  box-shadow: 0 0 0 4px var(--ai-soft);
-  animation: agent-dock-breathe 1800ms ease-in-out infinite;
-}
-@keyframes agent-dock-spin {
-  to {
-    transform: rotate(360deg);
+  background: transparent;
+  box-shadow: none;
+  &::before {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 13px;
+    width: 22px;
+    height: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ink) 16%, transparent);
+    filter: blur(2px);
+    pointer-events: none;
+  }
+  &:hover:not(:disabled) {
+    background: transparent;
   }
 }
-@keyframes agent-dock-breathe {
-  50% {
-    box-shadow: 0 0 0 6px transparent;
+.agent-dock-bubble {
+  --bubble-paper: var(--paper);
+  --bubble-edge: transparent;
+  z-index: 510;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 4px 8px;
+  border: 1px solid var(--bubble-edge);
+  border-radius: var(--r-lg);
+  background: var(--bubble-paper);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-md);
+  font: 12px/18px var(--font-sans);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  .agent-dock-bubble-arrow {
+    fill: var(--bubble-paper);
+    stroke: var(--bubble-edge);
+    stroke-width: 1px;
+    transform: translateY(-1px);
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agent-dock-spinner,
-  .agent-dock-dot {
-    animation: none;
+  &[data-mode='waiting'] {
+    --bubble-paper: color-mix(in srgb, var(--melo-gold) 12%, var(--paper));
+    --bubble-edge: var(--melo-gold);
   }
 }
 .agent-window[data-dragging] {
@@ -317,7 +290,7 @@
   min-width: 0;
   // A referenced passage needs more separation from the preceding exchange.
   &:not(:first-child) {
-    margin-top: 24px;
+    margin-top: 48px;
   }
   &::before,
   &::after {
@@ -1887,24 +1860,6 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
-}
-.ed-ask-melo {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: 12px;
-  svg {
-    color: var(--ai);
-  }
-  &:hover {
-    background: var(--ai-soft);
-  }
 }
 @keyframes agent-message-highlight {
   from {

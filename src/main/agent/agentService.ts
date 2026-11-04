@@ -128,17 +128,10 @@ export class AgentService {
     if (live.turn || !['idle', 'error'].includes(live.view.status))
       throw new Error('A turn is already running in this conversation')
     const history = [...live.view.messages]
-    const previousContext = history.filter((message) => message.role === 'user').at(-1)?.context
-    if (
-      !context.filePath &&
-      !context.attachments?.length &&
-      previousContext?.filePath &&
-      !previousContext.attachments?.length
-    )
-      context = { ...context, filePath: previousContext.filePath }
     const controller = new AbortController()
     live.turn = controller
     live.turnId = randomUUID()
+    live.view.completedTurn = undefined
     live.view.error = null
     live.view.status = live.runtime ? 'running' : 'connecting'
     const submittedContext = structuredClone(context)
@@ -252,6 +245,7 @@ export class AgentService {
       live.view.status = 'running'
       this.emit(live)
       await live.runtime.prompt(assembleContext({ text, context, history, memory }))
+      if (!turn.signal.aborted) live.view.completedTurn = live.turnId
     } catch (error) {
       if (!turn.signal.aborted) {
         live.view.error = error instanceof Error ? error.message : 'Agent request failed'

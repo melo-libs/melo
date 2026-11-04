@@ -100,6 +100,7 @@ const COMMAND = z.discriminatedUnion('action', [
     conversationId: id,
     text: z.string().trim().min(1).max(32000),
     context: z.object({
+      activeFilePath: filePath.nullable().optional(),
       filePath: filePath.optional(),
       selection: z.string().max(24000).optional(),
       attachments: z.array(z.object({ id })).max(20).optional(),
@@ -461,12 +462,13 @@ export function setupAgentIPC(): void {
           result = { view: await service.setProvider(command.conversationId, command.provider) }
           break
         case 'send':
-          if (
-            command.context.filePath &&
-            (path.isAbsolute(command.context.filePath) ||
-              command.context.filePath.split(/[\\/]/).some((p) => p === '..'))
-          )
-            throw new Error('Invalid context path')
+          for (const contextPath of [command.context.filePath, command.context.activeFilePath]) {
+            if (
+              contextPath &&
+              (path.isAbsolute(contextPath) || contextPath.split(/[\\/]/).some((p) => p === '..'))
+            )
+              throw new Error('Invalid context path')
+          }
           result = {
             view: service.send(command.conversationId, command.text, {
               ...command.context,

@@ -38,6 +38,7 @@ const storedChangeSchema = agentChangeSchema.extend({
   state: z.enum(['prepared', 'applied', 'undone']),
 })
 const contextSchema = z.object({
+  activeFilePath: z.string().min(1).max(4096).nullable().optional(),
   filePath: z.string().max(4096).optional(),
   selection: z.string().max(24000).optional(),
   attachments: z

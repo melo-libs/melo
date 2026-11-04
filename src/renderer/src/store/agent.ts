@@ -1,4 +1,5 @@
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 import type {
   AgentAuthentication,
   AgentAttachment,
@@ -39,10 +40,29 @@ export const agentHistoryAtom = atom(
     set(agentHistoryStateAtom, history)
   },
 )
+const agentNoticeAtom = atom<{ conversationId: string; kind: 'ready' | 'error' } | null>(null)
 const agentViewStateAtom = atom<AgentView | null>(null)
 export const agentViewAtom = atom(
   (get) => get(agentViewStateAtom),
-  (_get, set, view: AgentView | null) => {
+  (get, set, view: AgentView | null) => {
+    const previous = get(agentViewStateAtom)
+    const sameConversation = previous?.conversation.id === view?.conversation.id
+    const finished =
+      view?.status === 'idle' &&
+      !!view.completedTurn &&
+      sameConversation &&
+      previous?.completedTurn !== view.completedTurn
+    const failed = view?.status === 'error' && sameConversation && previous?.status !== 'error'
+    if (!sameConversation || (view && !['idle', 'error'].includes(view.status)))
+      set(agentNoticeAtom, null)
+    const window = get(agentWindowAtom)
+    if (view && (finished || failed))
+      set(
+        agentNoticeAtom,
+        !window.open || window.collapsed
+          ? { conversationId: view.conversation.id, kind: failed ? 'error' : 'ready' }
+          : null,
+      )
     if (view) set(cacheFilingsAtom, view.messages)
     set(agentViewStateAtom, view)
   },
@@ -74,13 +94,61 @@ export const agentAccountsAtom = atom<Record<AgentProvider, AgentAccountState>>(
   claude: { status: 'unknown' },
   codex: { status: 'unknown' },
 })
-export const agentWindowAtom = atom<{
+export const agentEntrySeenAtom = atomWithStorage('melo.agent.entry-seen', false, undefined, {
+  getOnInit: true,
+})
+type AgentWindowState = {
   open: boolean
   collapsed: boolean
   context: AgentContext
   anchor: { x: number; y: number } | null
   draft: string
-}>({ open: false, collapsed: false, context: {}, anchor: null, draft: '' })
+}
+const agentWindowStateAtom = atom<AgentWindowState>({
+  open: false,
+  collapsed: false,
+  context: {},
+  anchor: null,
+  draft: '',
+})
+export const agentWindowAtom = atom(
+  (get) => get(agentWindowStateAtom),
+  (get, set, update: AgentWindowState | ((state: AgentWindowState) => AgentWindowState)) => {
+    const next = typeof update === 'function' ? update(get(agentWindowStateAtom)) : update
+    if (next.open && !next.collapsed) set(agentNoticeAtom, null)
+    set(agentWindowStateAtom, next)
+  },
+)
+
+export type AgentMascotState = 'idle' | 'working' | 'waiting' | 'ready' | 'error' | 'offline'
+export const agentPresenceAtom = atom((get): { state: AgentMascotState; label: string } => {
+  const root = get(workspacePathAtom)
+  const current = get(agentViewAtom)
+  const view = current?.conversation.workspaceRoot === root ? current : null
+  const notice = get(agentNoticeAtom)
+  if (view && notice?.conversationId === view.conversation.id)
+    return { state: notice.kind, label: `agent.mascot.${notice.kind}Detail` }
+  if (view?.status === 'awaiting-permission' && view.permission)
+    return { state: 'waiting', label: 'agent.waitingForYou' }
+  if (view && !['idle', 'error'].includes(view.status)) {
+    const question = view.messages.findLast((message) => message.role === 'user')
+    return {
+      state: 'working',
+      label: question?.context?.attachments?.length ? 'agent.processingFiles' : 'agent.working',
+    }
+  }
+  const setup = get(agentSetupAtom)
+  if (setup && (!view || setup.configuration.provider === view.conversation.provider)) {
+    const configuration = setup.configuration
+    const unavailable =
+      !setup.runtimeAvailable ||
+      (configuration.access === 'api'
+        ? !configuration.hasApiKey || !configuration.baseUrl.trim() || !configuration.model.trim()
+        : get(agentAccountsAtom)[configuration.provider].status === 'signed-out')
+    if (unavailable) return { state: 'offline', label: 'agent.mascot.offline' }
+  }
+  return { state: 'idle', label: 'agent.mascot.idle' }
+})
 
 export const agentMessagesAtom = atom((get) => {
   const history = get(agentHistoryAtom),
@@ -228,17 +296,23 @@ export function openAgent(
   const root = appStore.get(workspacePathAtom)
   if (!root) return
   const file = appStore.get(activeTabIdAtom)
+  const current = appStore.get(agentWindowAtom)
   appStore.set(agentWindowAtom, {
     open: true,
     collapsed: false,
     context: {
-      ...(file?.startsWith(root + '/') ? { filePath: file.slice(root.length + 1) } : {}),
+      ...(options.selection && file?.startsWith(root + '/')
+        ? { filePath: file.slice(root.length + 1) }
+        : {}),
       ...(options.selection ? { selection: options.selection.slice(0, 24000) } : {}),
     },
-    anchor: options.anchor
-      ? { x: Math.round(options.anchor.x), y: Math.round(options.anchor.y) }
-      : null,
-    draft: options.draft ?? appStore.get(agentWindowAtom).draft,
+    anchor:
+      current.open && !current.collapsed
+        ? current.anchor
+        : options.anchor
+          ? { x: Math.round(options.anchor.x), y: Math.round(options.anchor.y) }
+          : null,
+    draft: options.draft ?? current.draft,
   })
 }
 

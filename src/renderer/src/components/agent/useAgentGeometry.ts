@@ -6,6 +6,16 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react'
 
+const dockPositionKey = 'melo.agent.dock-position'
+
+function restoreDockPosition(): { x: number; y: number } | null {
+  const saved = localStorage.getItem(dockPositionKey)
+  if (!saved) return null
+  const coordinates = saved.split(',').map(Number)
+  if (coordinates.length !== 2 || !coordinates.every(Number.isFinite)) return null
+  return { x: coordinates[0], y: coordinates[1] }
+}
+
 export function useAgentGeometry(
   open: boolean,
   anchor: { x: number; y: number } | null,
@@ -13,20 +23,22 @@ export function useAgentGeometry(
 ) {
   const panel = useRef<HTMLDivElement>(null)
   const position = useRef<{ x: number; y: number } | null>(null)
-  const dockPosition = useRef<{ x: number; y: number } | null>(null)
+  const dockPosition = useRef<{ x: number; y: number } | null | undefined>(undefined)
+  if (dockPosition.current === undefined) dockPosition.current = restoreDockPosition()
   const dragged = useRef(false)
   const size = useRef<{ width: number; height: number } | null>(null)
   const cleanup = useRef<(() => void) | null>(null)
   const previousAnchor = useRef(anchor)
   const place = useCallback(
-    (x: number, y: number) => {
+    (x: number, y: number, remember = true) => {
       const element = panel.current!
       const next = {
         x: Math.round(Math.max(12, Math.min(x, window.innerWidth - element.offsetWidth - 12))),
         y: Math.round(Math.max(48, Math.min(y, window.innerHeight - element.offsetHeight - 12))),
       }
-      if (collapsed) dockPosition.current = next
-      else position.current = next
+      if (collapsed) {
+        if (remember) dockPosition.current = next
+      } else position.current = next
       element.style.left = `${next.x}px`
       element.style.top = `${next.y}px`
     },
@@ -37,7 +49,8 @@ export function useAgentGeometry(
     const element = panel.current!
     const dock = () => {
       if (dockPosition.current) {
-        place(dockPosition.current.x, dockPosition.current.y)
+        // A smaller viewport must not replace the user's preferred position.
+        place(dockPosition.current.x, dockPosition.current.y, false)
         return
       }
       element.style.left = `${Math.max(12, window.innerWidth - element.offsetWidth - 20)}px`
@@ -146,6 +159,10 @@ export function useAgentGeometry(
         frame = 0
       }
       element.removeAttribute('data-dragging')
+      if (collapsed && dragged.current && event?.type === 'pointerup' && dockPosition.current) {
+        const { x, y } = dockPosition.current
+        localStorage.setItem(dockPositionKey, `${x},${y}`)
+      }
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', stop)
       window.removeEventListener('pointercancel', stop)

@@ -238,10 +238,25 @@ it('does not reopen a superseded confirmation when the user asks to revise the p
   expect(html).not.toContain('data-pending')
 })
 
-it('keeps a source boundary for a new selection in the same note, but not for plain follow-ups', () => {
+it('only marks a source change after sending, keeping repeated selections within the same file', () => {
   const html = renderToStaticMarkup(
     createElement(AgentTranscript, {
-      messages: [message('1'), message('2'), message('3', 'A different passage'), message('4')],
+      messages: [
+        { ...message('1'), context: { activeFilePath: 'Ideas.md' } },
+        {
+          ...message('2'),
+          context: { activeFilePath: 'Ideas.md', filePath: 'Ideas.md', selection: 'First quote' },
+        },
+        {
+          ...message('3'),
+          context: {
+            activeFilePath: 'Inbox/report.pdf',
+            filePath: 'Ideas.md',
+            selection: 'A different passage',
+          },
+        },
+        { ...message('4'), context: { activeFilePath: 'Inbox/report.pdf' } },
+      ],
       running: false,
       activeWorkspace: '/notes',
       busy: false,
@@ -256,7 +271,7 @@ it('keeps a source boundary for a new selection in the same note, but not for pl
   expect(html.match(/class="agent-source-divider"/g)).toHaveLength(2)
   const boundary = html.lastIndexOf('class="agent-source-divider"')
   expect(boundary).toBeLessThan(html.indexOf('A different passage'))
-  expect(html.slice(boundary)).toContain('<strong>Ideas</strong>')
+  expect(html.slice(boundary)).toContain('<strong>report.pdf</strong>')
 })
 
 it('shows Inbox receipt separately from changes and never offers import undo while reviewing a plan', () => {

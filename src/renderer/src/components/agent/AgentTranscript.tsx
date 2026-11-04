@@ -56,11 +56,15 @@ export function AgentTranscript({
       {groups.map((group) => {
         const first = group[0],
           inbox = !!first.context?.attachments?.length && !first.context.selection,
-          source = inbox ? 'Inbox' : first.context?.filePath
+          source =
+            first.context?.activeFilePath !== undefined
+              ? first.context.activeFilePath
+              : inbox
+                ? 'Inbox'
+                : first.context?.filePath
         const sourceKey = source ? `${first.workspaceRoot}/${source}` : ''
-        // A new selection starts a visible reference boundary even within the same note.
-        const showSource = sourceKey && (sourceKey !== lastSource || !!first.context?.selection)
-        if (sourceKey) lastSource = sourceKey
+        const showSource = sourceKey && sourceKey !== lastSource
+        if (first.role === 'user') lastSource = sourceKey
         const imported = group.filter((message) => message.change?.kind === 'import')
         const changes = group.filter(
           (message) =>
@@ -104,7 +108,11 @@ export function AgentTranscript({
               <AgentSource
                 path={source!}
                 at={first.createdAt}
-                onOpen={inbox ? undefined : () => onOpenFile(source!, first.workspaceRoot)}
+                onOpen={
+                  inbox && source === 'Inbox'
+                    ? undefined
+                    : () => onOpenFile(source!, first.workspaceRoot)
+                }
               />
             )}
             {imported.length > 0 && !group.some((message) => message.receipt) && (

@@ -14,6 +14,7 @@ const workspace = path.join(testRoot, 'workspace')
 const profile = path.join(testRoot, 'profile')
 const logs = []
 const toolResults = []
+const contextPrompts = new Map()
 const catalogRequests = []
 const attachmentImages = []
 const scratchDirectories = new Set()
@@ -155,6 +156,8 @@ async function respondToFixture(request, response) {
       )
       .findLast((text) => text.includes('User request:')) ?? ''
   const currentRequest = promptText.split('User request:\n').at(-1) ?? ''
+  if (currentRequest.startsWith('active_file_fixture'))
+    contextPrompts.set(currentRequest, promptText)
   const filing = currentRequest.includes('file_intake_fixture')
   const filingConfirmed = currentRequest.includes('file_intake_confirm_fixture')
   const filingQuestion = currentRequest.includes('file_intake_why_fixture')
@@ -426,6 +429,7 @@ async function respondToFixture(request, response) {
     delta: {
       type: 'text_delta',
       text:
+        (currentRequest.startsWith('active_file_fixture') ? 'Current file received.' : '') ||
         filingReply ||
         (editing
           ? 'Changed Saturday to Sunday.'
@@ -524,7 +528,24 @@ try {
     .click()
   const editor = page.locator('.tiptap[contenteditable="true"]').first()
   await editor.waitFor({ state: 'visible' })
-  await page.locator('.ed-ask-melo').click()
+  assert.equal(await page.locator('.ed-ask-melo').count(), 0)
+  await page.locator('.agent-dock[data-intro]').waitFor()
+  assert.equal(await page.locator('.agent-compose').count(), 0)
+  await page.bringToFront()
+  const initialDock = await page.locator('.agent-window').boundingBox()
+  await page.mouse.move(initialDock.x + 22, initialDock.y + 22)
+  await page.mouse.down()
+  await page.mouse.move(initialDock.x - 38, initialDock.y - 38, { steps: 4 })
+  await page.mouse.up()
+  const savedDock = await page.locator('.agent-window').boundingBox()
+  assert.equal(savedDock.x, initialDock.x - 60)
+  assert.equal(savedDock.y, initialDock.y - 60)
+  await page.reload()
+  await page.locator('.agent-dock[data-intro]').waitFor()
+  assert.deepEqual(await page.locator('.agent-window').boundingBox(), savedDock)
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({ path: process.env.MELO_E2E_DOCK_SCREENSHOT })
+  await page.locator('.agent-dock').click()
   await page.locator('.agent-window').waitFor({ state: 'visible' })
   await waitUntil('Claude setup', () => page.locator('.agent-settings').isVisible())
   await page.locator('.agent-auth-actions .ui-button').waitFor()
@@ -584,7 +605,7 @@ try {
     await page.locator('.agent-compose textarea').evaluate((el) => document.activeElement === el),
     'returning from settings must restore composer focus',
   )
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   await editor.focus()
   await page.keyboard.press('Meta+a')
   await page.locator('.bubble-btn.bubble-ask').click()
@@ -614,15 +635,18 @@ try {
     !(await page.locator('.agent-status').innerText()).includes('Connecting'),
     'startup and generation must share the normal processing state',
   )
-  await waitUntil('Claude API reply', async () => {
-    if (await page.locator('.agent-error').isVisible())
-      throw new Error(await page.locator('.agent-error').innerText())
-    return (
-      (await page.locator('.agent-markdown strong').count()) > 0 &&
-      (await page.getByRole('button', { name: 'Send', exact: true }).isVisible())
-    )
-  })
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock[data-mode="working"]').waitFor()
+  await page.locator('.agent-dock[data-mode="ready"]').waitFor({ timeout: 20000 })
+  await page.mouse.move(30, 30)
+  await page.locator('.agent-dock-bubble').waitFor({ state: 'hidden' })
+  assert.equal(
+    await page.locator('.agent-dock[data-mode="ready"]').count(),
+    1,
+    'the unread expression must survive the short announcement',
+  )
   const firstAdapterPid = claudeAdapterPid()
+  await page.locator('.agent-dock').click()
   assert.equal(await page.locator('.agent-markdown strong').innerText(), 'one place')
   assert(
     toolResults.length > 0 && toolResults.every((result) => !result.is_error),
@@ -635,7 +659,7 @@ try {
   assert.equal(
     await page.locator('.agent-context-strip').count(),
     0,
-    'a sent quote must leave the composer',
+    'reopening must not attach a file chip or restore a sent quote',
   )
   assert.equal(await page.locator('.agent-files').count(), 0)
   assert(
@@ -643,10 +667,15 @@ try {
     'Melo document reads must appear in the activity summary',
   )
   const expandedBounds = await page.locator('.agent-window').boundingBox()
-  await page.getByRole('button', { name: 'Minimize conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   const dockBounds = await page.locator('.agent-window').boundingBox()
-  assert.equal(dockBounds.height, 44)
-  assert.equal(dockBounds.width, 44)
+  assert.equal(dockBounds.height, 48)
+  assert.equal(dockBounds.width, 48)
+  assert.equal(await page.locator('.agent-dock[data-intro]').count(), 0)
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-ball.png'),
+    })
   assert.equal(await page.locator('.agent-resize').count(), 0)
   await page.mouse.move(dockBounds.x + 22, dockBounds.y + 22)
   await page.mouse.down()
@@ -656,11 +685,14 @@ try {
   const movedDock = await page.locator('.agent-window').boundingBox()
   assert.equal(movedDock.x, dockBounds.x - 80)
   assert.equal(movedDock.y, dockBounds.y - 80)
-  await page.getByRole('button', { name: 'Expand conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Ask Melo', exact: true }).click()
   assert.deepEqual(await page.locator('.agent-window').boundingBox(), expandedBounds)
-  await page.getByRole('button', { name: 'Minimize conversation', exact: true }).click()
+  await page.locator('.agent-compose textarea').focus()
+  await page.keyboard.press('Escape')
+  await page.locator('.agent-dock').waitFor()
   assert.deepEqual(await page.locator('.agent-window').boundingBox(), movedDock)
-  await page.getByRole('button', { name: 'Expand conversation', exact: true }).click()
+  assert(await page.locator('.agent-dock').evaluate((el) => document.activeElement === el))
+  await page.getByRole('button', { name: 'Ask Melo', exact: true }).click()
   await page.locator('.agent-model').click()
   assert((await page.locator('.agent-picker-menu').innerText()).includes('melo-fixture'))
   assert(!(await page.locator('.agent-picker-menu').innerText()).includes('Opus'))
@@ -702,8 +734,8 @@ try {
     element.dispatchEvent(new Event('scroll', { bubbles: true }))
   })
   await page.locator('.agent-latest').waitFor()
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert.equal(
     Math.round(await page.locator('.agent-body').evaluate((element) => element.scrollTop)),
     100,
@@ -718,15 +750,58 @@ try {
   )
   await page.locator('.agent-inline-file').filter({ hasText: 'Packing list' }).click()
   await waitUntil('open a cited file', async () => (await editor.innerText()).includes('Raincoat'))
+  const sourceCount = await page.locator('.agent-source-divider').count()
+  assert.equal(await page.locator('.agent-context-strip').count(), 0)
+  await page.locator('.agent-compose textarea').fill('active_file_fixture packing')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await waitUntil('active packing file reaches Harness', async () =>
+    contextPrompts.has('active_file_fixture packing'),
+  )
+  await page.locator('.agent-status').waitFor({ state: 'hidden' })
+  assert(
+    contextPrompts
+      .get('active_file_fixture packing')
+      .includes('editor at send time, relative to workspace: packing.md'),
+  )
+  assert.equal(await page.locator('.agent-source-divider').count(), sourceCount + 1)
+  await page.locator('.agent-compose textarea').fill('A draft about packing')
   await page.locator('.agent-user .agent-quote-source').click()
   await waitUntil('open a quoted source', async () =>
     (await editor.innerText()).includes('riverside'),
   )
+  assert.equal(await page.locator('.agent-context-strip').count(), 0)
+  assert.equal(
+    await page.locator('.agent-source-divider').count(),
+    sourceCount + 1,
+    'switching tabs without sending must not create history boundaries',
+  )
+  assert.equal(await page.locator('.agent-compose textarea').inputValue(), 'A draft about packing')
+  await page.locator('.agent-compose textarea').fill('active_file_fixture note')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await waitUntil('active note reaches Harness without reopening chat', async () =>
+    contextPrompts.has('active_file_fixture note'),
+  )
+  await page.locator('.agent-status').waitFor({ state: 'hidden' })
+  assert(
+    contextPrompts
+      .get('active_file_fixture note')
+      .includes('editor at send time, relative to workspace: note.md'),
+  )
+  assert.equal(await page.locator('.agent-source-divider').count(), sourceCount + 2)
+  if (process.env.MELO_E2E_CONTEXT_SCREENSHOT)
+    await page
+      .locator('.agent-window')
+      .screenshot({ path: process.env.MELO_E2E_CONTEXT_SCREENSHOT })
 
   await page.locator('.toast').waitFor({ state: 'hidden' })
   await page.locator('.agent-compose textarea').fill('edit_fixture')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await page.locator('.agent-permission[data-pending]').waitFor()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock[data-mode="waiting"]').waitFor()
+  await page.locator('.agent-dock').hover()
+  assert.equal(await page.locator('.agent-dock .melo-mascot').getAttribute('data-mood'), 'waiting')
+  await page.locator('.agent-dock').click()
   assert.equal(claudeAdapterPid(), firstAdapterPid, 'consecutive turns must reuse the warm adapter')
   const approvalId = await page
     .locator('.agent-permission[data-pending]')
@@ -739,8 +814,8 @@ try {
   )
   if (process.env.MELO_E2E_DIFF_SCREENSHOT)
     await page.locator('.agent-window').screenshot({ path: process.env.MELO_E2E_DIFF_SCREENSHOT })
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert.equal(
     await page.locator('.agent-permission[data-pending]').getAttribute('data-permission-id'),
     approvalId,
@@ -757,6 +832,9 @@ try {
   }
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
   await page.locator('.agent-permission[data-pending]').waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock[data-mode="idle"]').waitFor()
+  await page.locator('.agent-dock').click()
   const expired = page
     .locator('.agent-approval-record')
     .filter({ hasText: 'No longer active' })
@@ -956,8 +1034,8 @@ try {
   const after = await page.locator('.agent-window').boundingBox()
   assert(Math.abs(after.x - before.x) > 20, 'the floating conversation must be draggable')
   await page.locator('.agent-compose textarea').fill('Keep this unsent draft')
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert.equal(
     Math.round((await page.locator('.agent-window').boundingBox()).x),
     Math.round(after.x),
@@ -974,8 +1052,19 @@ try {
   await page.mouse.move(floating.x + 90, height - floating.height - 16 + 18)
   await page.mouse.up()
   await page.evaluate(() => new Promise(requestAnimationFrame))
+  const existingPanel = await page.locator('.agent-window').elementHandle()
+  const quoteBounds = await page.locator('.agent-window').boundingBox()
   await page.locator('.bubble-btn.bubble-ask').click()
   assert(await page.locator('.agent-context-strip').isVisible())
+  assert.deepEqual(
+    await page.locator('.agent-window').boundingBox(),
+    quoteBounds,
+    'quoting into an expanded chat must preserve its position and size',
+  )
+  assert(
+    await existingPanel.evaluate((element) => element === document.querySelector('.agent-window')),
+    'quoting must reuse the existing panel',
+  )
   assert(
     await page
       .locator('.agent-compose textarea')
@@ -991,6 +1080,12 @@ try {
   await page.locator('.bubble-ask').click()
   await page.locator('.agent-search').waitFor({ state: 'hidden' })
   assert(await page.locator('.agent-context-strip').isVisible())
+  assert.deepEqual(
+    await page.locator('.agent-window').boundingBox(),
+    quoteBounds,
+    'another quote must not reposition the panel',
+  )
+  await existingPanel.dispose()
   assert.equal(await page.locator('.bubble-selection').count(), 0)
 
   if (live) {
@@ -1028,8 +1123,8 @@ try {
   }
   if (process.env.MELO_E2E_SCREENSHOT)
     await page.screenshot({ path: process.env.MELO_E2E_SCREENSHOT })
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert(await page.locator('.agent-window').isVisible())
   const userCount = await page.locator('.agent-user').count()
   await page.getByRole('button', { name: 'Search chat history', exact: true }).click()
@@ -1449,7 +1544,7 @@ try {
         .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'note' }) })
         .first()
         .click()
-      await page.locator('.ed-ask-melo').click()
+      await page.locator('.agent-dock').click()
       const unresolved = page.locator('.agent-filing-result').last()
       await waitUntil('interrupted filing stays unresolved after confirmed inverses', async () =>
         (await unresolved.locator('summary').innerText()).includes('Unconfirmed operations: 1'),

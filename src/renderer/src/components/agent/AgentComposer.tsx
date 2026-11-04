@@ -90,7 +90,7 @@ export function AgentComposer({
           {t('agent.receivingAttachments')}
         </small>
       )}
-      {(context.selection || (context.filePath && !attachments.length)) && (
+      {context.selection && (
         <div className="agent-context-strip">
           <Icon name="arrowRight" size={14} />
           <button
@@ -98,7 +98,7 @@ export function AgentComposer({
             onClick={() => context.filePath && onOpenFile(context.filePath)}
             title={context.selection || context.filePath}
           >
-            {context.selection || context.filePath?.split('/').pop()}
+            {context.selection}
           </button>
           <button
             className="agent-quiet"

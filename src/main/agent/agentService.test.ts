@@ -35,6 +35,18 @@ afterEach(async () => {
 })
 
 describe('AgentService lifecycle', () => {
+  it('publishes a fresh completion identity only for successful turns', async () => {
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Hello', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    const first = view.completedTurn
+    expect(first).toBeTruthy()
+    service.send(view.conversation.id, 'Again', {})
+    expect(view.completedTurn).toBeUndefined()
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(view.completedTurn).toBeTruthy()
+    expect(view.completedTurn).not.toBe(first)
+  })
   it('retains structured tool activity across partial updates and persisted history', async () => {
     prompt.mockImplementationOnce(async () => {
       request.onEvent({
@@ -220,6 +232,7 @@ describe('AgentService lifecycle', () => {
     await vi.waitFor(() => expect(service.open(view.conversation.id).permission).not.toBeNull())
     await service.cancel(view.conversation.id)
     expect(service.open(view.conversation.id).status).toBe('idle')
+    expect(service.open(view.conversation.id).completedTurn).toBeUndefined()
     expect(store.list(root)).toHaveLength(1)
   })
   it('refuses overlapping turns and reports harness failures without losing messages', async () => {
@@ -357,20 +370,36 @@ it('releases pending approvals before draining a failed harness', async () => {
   await expect(service.cancel(view.conversation.id)).resolves.toBeUndefined()
 })
 
-it('keeps the referenced note for follow-ups after the composer quote is consumed', async () => {
+it('keeps quotes in history without overriding the active file on follow-ups', async () => {
   const view = service.create(root, 'claude')
   service.send(view.conversation.id, 'Explain this', {
     filePath: 'Travel.md',
     selection: 'A passage',
   })
   await vi.waitFor(() => expect(view.status).toBe('idle'))
-  service.send(view.conversation.id, 'Make it shorter', {})
+  service.send(view.conversation.id, 'What am I viewing now?', {
+    activeFilePath: 'Inbox/report.pdf',
+  })
   await vi.waitFor(() => expect(view.status).toBe('idle'))
   expect(prompt.mock.calls[1][0]).toContain('Explain this')
   expect(prompt.mock.calls[1][0]).toContain('Answer')
+  expect(prompt.mock.calls[1][0]).toContain('Referenced document: Travel.md')
+  expect(prompt.mock.calls[1][0]).toContain('Quoted text (context only): A passage')
+  expect(prompt.mock.calls[1][0]).toContain(
+    'editor at send time, relative to workspace: Inbox/report.pdf',
+  )
   expect(view.messages.filter((message) => message.role === 'user').at(-1)?.context).toEqual({
-    filePath: 'Travel.md',
+    activeFilePath: 'Inbox/report.pdf',
   })
+  service.send(view.conversation.id, 'And now?', { activeFilePath: null })
+  await vi.waitFor(() => expect(view.status).toBe('idle'))
+  expect(prompt.mock.calls[2][0]).toContain('Editor at send time: no saved workspace file is open.')
+  expect(
+    store
+      .messages(view.conversation.id)
+      .filter((message) => message.role === 'user')
+      .at(-1)?.context,
+  ).toEqual({ activeFilePath: null })
 })
 
 it('persists a burst before trimming the live message buffer', async () => {

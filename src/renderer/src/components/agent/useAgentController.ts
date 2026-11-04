@@ -19,6 +19,7 @@ import {
   type AgentModelLoadState,
 } from '../../store/agent'
 import { workspacePathAtom } from '../../store/workspace'
+import { activeTabIdAtom } from '../../store/editor'
 import { appStore } from '../../store/appStore'
 import { agentErrorText } from './agentError'
 
@@ -217,12 +218,19 @@ export function useAgentController(
   const send = (text: string, context: AgentContext) => {
     if (
       !ready ||
+      !root ||
       receivingFiles ||
       !view ||
       !text ||
       (running && view.status !== 'awaiting-permission')
     )
       return false
+    const activeFile = appStore.get(activeTabIdAtom)
+    const submittedContext: AgentContext = {
+      ...context,
+      ...(attachments.length ? { attachments } : {}),
+      activeFilePath: activeFile?.startsWith(root + '/') ? activeFile.slice(root.length + 1) : null,
+    }
     void perform(async () => {
       if (running) await agentCommand({ action: 'cancel', conversationId: view.conversation.id })
       if (history?.hasNewer) await agentCommand({ action: 'history' })
@@ -230,9 +238,7 @@ export function useAgentController(
         action: 'send',
         conversationId: view.conversation.id,
         text,
-        context: attachments.length
-          ? { ...(context.selection ? context : {}), attachments }
-          : context,
+        context: submittedContext,
       })
       setWindow((current) => ({
         ...current,

@@ -11,7 +11,9 @@ import {
   agentViewAtom,
   agentWindowAtom,
   agentNativeCatalogsAtom,
+  agentIntakeAtom,
 } from '../../store/agent'
+import { activeTabIdAtom } from '../../store/editor'
 import { useAgentController } from './useAgentController'
 
 vi.mock('../../store/workspace', () => ({ workspacePathAtom: atom('/notes') }))
@@ -26,6 +28,8 @@ vi.mock('../../store/agent', () => ({
   agentAccountsAtom: atom({ claude: { status: 'signed-out' }, codex: { status: 'signed-in' } }),
 }))
 afterEach(() => {
+  appStore.set(activeTabIdAtom, null)
+  appStore.set(agentIntakeAtom, null)
   vi.clearAllMocks()
   vi.unstubAllGlobals()
   appStore.set(agentSetupAtom, null)
@@ -475,5 +479,111 @@ it('keeps commands busy until overlapping requests settle and exposes a recovera
   } finally {
     flushSync(() => root.unmount())
     appStore.set(agentViewAtom, null)
+  }
+})
+
+it('snapshots the active tab on every send while chat stays open, independently of quotes and attachments', async () => {
+  const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
+  vi.stubGlobal('window', window)
+  vi.stubGlobal('document', window.document)
+  const { createRoot } = await import('react-dom/client')
+  const { flushSync } = await import('react-dom')
+  const root = createRoot(window.document.getElementById('root')!)
+  const setup: AgentSetup = {
+    configuration: {
+      provider: 'claude',
+      access: 'api',
+      baseUrl: '',
+      model: 'fixture',
+      hasApiKey: true,
+    },
+    runtimeAvailable: true,
+    installing: false,
+  }
+  const view: AgentView = {
+    conversation: {
+      id: 'conversation',
+      workspaceRoot: '/notes',
+      title: '',
+      provider: 'claude',
+      updatedAt: 1,
+    },
+    messages: [],
+    status: 'idle',
+    allowChanges: false,
+    permission: null,
+    error: null,
+  }
+  appStore.set(agentSetupAtom, setup)
+  appStore.set(agentViewAtom, view)
+  appStore.set(agentWindowAtom, {
+    open: true,
+    collapsed: false,
+    context: {},
+    anchor: null,
+    draft: '',
+  })
+  vi.mocked(agentCommand).mockImplementation(async (command) => {
+    if (command.action === 'current') return { view }
+    if (command.action === 'setup') return { setup }
+    return {}
+  })
+  let controller!: ReturnType<typeof useAgentController>
+  const navigate = vi.fn()
+  function Panel() {
+    controller = useAgentController(navigate)
+    return null
+  }
+  try {
+    flushSync(() => root.render(createElement(Provider, { store: appStore }, createElement(Panel))))
+    await vi.waitFor(() => expect(controller.ready).toBe(true))
+    for (const file of [
+      '/notes/Inbox/photo.png',
+      '/notes/Inbox/report.pdf',
+      '/notes/note.md',
+      null,
+      'untitled-1',
+      '/elsewhere/private.md',
+    ]) {
+      appStore.set(activeTabIdAtom, file)
+      flushSync(() => expect(controller.send('What am I viewing?', {})).toBe(true))
+      expect(agentCommand).toHaveBeenLastCalledWith({
+        action: 'send',
+        conversationId: 'conversation',
+        text: 'What am I viewing?',
+        context: {
+          activeFilePath: file?.startsWith('/notes/') ? file.slice('/notes/'.length) : null,
+        },
+      })
+      await vi.waitFor(() => expect(controller.busy).toBe(false))
+    }
+    const attachments = [{ id: 'attachment', name: 'ticket.pdf', size: 10 }]
+    flushSync(() => appStore.set(agentIntakeAtom, { workspaceRoot: '/notes', attachments }))
+    appStore.set(activeTabIdAtom, '/notes/Inbox/report.pdf')
+    flushSync(() =>
+      expect(
+        controller.send('Explain this passage', {
+          filePath: 'note.md',
+          selection: 'Quoted passage',
+        }),
+      ).toBe(true),
+    )
+    // Changing tabs after sending must not change the context of the submitted question.
+    appStore.set(activeTabIdAtom, '/notes/later.md')
+    expect(agentCommand).toHaveBeenLastCalledWith({
+      action: 'send',
+      conversationId: 'conversation',
+      text: 'Explain this passage',
+      context: {
+        activeFilePath: 'Inbox/report.pdf',
+        filePath: 'note.md',
+        selection: 'Quoted passage',
+        attachments,
+      },
+    })
+    await vi.waitFor(() => expect(controller.busy).toBe(false))
+    expect(appStore.get(agentWindowAtom).open).toBe(true)
+  } finally {
+    flushSync(() => root.unmount())
   }
 })

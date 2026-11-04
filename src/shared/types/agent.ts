@@ -16,6 +16,9 @@ export interface AgentAttachment {
 }
 
 export interface AgentContext {
+  /** Workspace-relative file visible when sending; null means no saved workspace file is open. */
+  activeFilePath?: string | null
+  /** Conversation reference or source of the quoted selection; may differ from the active tab. */
   filePath?: string
   selection?: string
   attachments?: AgentAttachment[]
@@ -82,6 +85,8 @@ export interface AgentView {
   allowChanges: boolean
   permission: AgentPermission | null
   error: string | null
+  /** Transient successful turn identity; not restored from conversation history. */
+  completedTurn?: string
 }
 
 export interface AgentNativePreferences {

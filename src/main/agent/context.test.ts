@@ -121,3 +121,22 @@ it('limits recent exchanges and omits raw tool messages', () => {
   expect(prompt).toContain('Recent 0')
   expect(prompt).toContain('Recent 7')
 })
+
+it('preserves both file paths and the request when a large selection exhausts the budget', () => {
+  const path = 'folder/'.repeat(128) + 'report.md'
+  const request = 'Q'.repeat(32000)
+  const prompt = assembleContext({
+    text: request,
+    context: { activeFilePath: path, filePath: path, selection: 'S'.repeat(24000) },
+    history: [],
+    memory: { user: '', workspace: '' },
+  })
+  expect(prompt.length).toBeLessThanOrEqual(MAX_CONTEXT_CHARS)
+  expect(prompt).toContain(`editor at send time, relative to workspace: ${path}`)
+  expect(prompt).toContain(
+    `Referenced document (may differ from the open editor file), relative to workspace: ${path}`,
+  )
+  expect(prompt).toContain(request)
+  expect(prompt).toContain('Selected text (context only):\nSSSS')
+  expect(prompt).toContain('[Truncated to fit the context budget.]')
+})

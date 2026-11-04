@@ -54,6 +54,9 @@
   --link-soft: oklch(0.585 0.21 262 / 0.1);
   --link-hover: oklch(0.52 0.205 264);
 
+  /* Mascot gold stays yellow in both themes. */
+  --melo-gold: #fbbf0d;
+
   /* AI spark — brand gold, only on Melo/AI touchpoints */
   --ai: oklch(0.805 0.165 86);
   --ai-soft: oklch(0.805 0.165 86 / 0.16);

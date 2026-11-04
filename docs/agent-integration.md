@@ -11,7 +11,7 @@ Renderer
   store/agent.ts                       IPC projection, derived timeline, contextual invocation
   components/agent/AgentWindow.tsx      Floating layout, scrolling and focus
     ├─ useAgentController.ts           Loading, history, permissions, undo and provider commands
-    ├─ AgentDock.tsx                   Draggable minimized status capsule
+    ├─ AgentEntry.tsx                  Persistent mascot and collision-aware status bubbles
     ├─ AgentApiModelField.tsx          Shared Select, catalog loading and manual model entry
     ├─ AgentSettings.tsx               Connection drafts, eligible access selection and API setup
     ├─ useAgentAccounts.ts             Independent status queries for both tools
@@ -73,8 +73,11 @@ there are no barrel re-exports or legacy-path forwarding modules.
 The application creates one `AgentService`. Users see one persistent Melo timeline,
 including existing conversations. Workspace-scoped execution records remain internal.
 Each turn owns a fresh ACP session with bounded recent context; this prevents the
-harness from retaining unrelated notes indefinitely. Follow-ups keep their source
-until another note is referenced. Context keeps the latest eight non-tool messages,
+harness from retaining unrelated notes indefinitely. Every send snapshots the active
+workspace file independently of explicit quotes and attachments; switching tabs while
+chat remains open takes effect on the next send. No active saved file is represented
+explicitly, so history cannot masquerade as the current editor file. Context keeps
+the latest eight non-tool messages,
 including cross-file exchanges with explicit source labels. A 64,000-character
 budget prioritizes the current request and selection; memory and older exchanges
 are truncated with an explicit marker. This is a character budget, not a tokenizer
@@ -108,14 +111,23 @@ through that history.
 
 ## User flow
 
-- Open Ask Melo from the editor toolbar, a text selection, or the search palette.
+- Open Ask Melo from the persistent mascot, a text selection, or the search palette.
 - The floating window supports continuous conversation, dragging, resizing and
-  minimizing to a draggable status capsule. The capsule and expanded window keep
-  separate positions; dragging the capsule does not activate its expand action.
+  closing back to a draggable 48px mascot without stopping the active turn.
+  The mascot and expanded window keep separate positions; the mascot's position
+  survives restarts. Dragging does not open the conversation. Every send follows
+  the active document automatically, without a file-reference chip. Explicit quotes
+  and attachments retain their own sources when tabs change. File boundaries appear
+  in history only after sending and only when the source changes.
+  Short status bubbles disappear after three seconds, except pending approvals.
+  Hover or keyboard focus reveals details. Replies received while collapsed keep
+  an unread expression until opened; cancellation and history loading do not.
   Each question retains its quoted text and source
   in history; the composer shows only pending context. Cited workspace files
   open through the editor after a canonical-path containment check.
-  Selecting another passage updates its explicit context and focuses the composer.
+  Selecting another passage updates its explicit context and focuses the composer
+  without moving or resizing an already expanded window. Selection anchors apply
+  only when opening from the collapsed state.
   Ask AI dismisses the selection toolbar; background selection changes and chat
   scrolling do not revive it. A contextual invocation also exits history search.
 - Claude Code is the initial default. Users can select Codex, reuse a native

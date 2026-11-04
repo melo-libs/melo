@@ -9,6 +9,8 @@ it('cancels a queued drag frame when the panel closes before pointer release', a
   let frameId = 0
   vi.stubGlobal('window', window)
   vi.stubGlobal('document', window.document)
+  const savePosition = vi.fn()
+  vi.stubGlobal('localStorage', { getItem: () => null, setItem: savePosition })
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -44,16 +46,22 @@ it('cancels a queued drag frame when the panel closes before pointer release', a
     flushSync(() => root.render(createElement(Panel)))
     const panel = window.document.getElementById('root')!.firstElementChild!
     Object.defineProperties(panel, {
-      offsetWidth: { value: 44 },
-      offsetHeight: { value: 44 },
-      offsetLeft: { value: 936 },
-      offsetTop: { value: 836 },
+      offsetWidth: { value: 48 },
+      offsetHeight: { value: 48 },
+      offsetLeft: { value: 932 },
+      offsetTop: { value: 832 },
     })
+    panel.dispatchEvent(pointer('pointerdown', 950, 850))
+    window.dispatchEvent(pointer('pointermove', 850, 750))
+    window.dispatchEvent(pointer('pointerup', 850, 750))
+    expect(savePosition).toHaveBeenCalledWith('melo.agent.dock-position', '832,732')
+    expect(frames.size).toBe(0)
     panel.dispatchEvent(pointer('pointerdown', 950, 850))
     window.dispatchEvent(pointer('pointermove', 850, 750))
     expect(frames.size).toBe(1)
     expect(() => flushSync(() => setOpen(false))).not.toThrow()
     expect(frames.size).toBe(0)
+    expect(savePosition).toHaveBeenCalledTimes(1)
     window.dispatchEvent(pointer('pointermove', 800, 700))
     expect(frames.size).toBe(0)
   } finally {

@@ -12,6 +12,8 @@ import {
   agentMessagesAtom,
   connectAgent,
   openAgent,
+  agentPresenceAtom,
+  agentAccountsAtom,
 } from './agent'
 import type {
   AgentView,
@@ -31,6 +33,15 @@ afterEach(() => {
   appStore.set(activeTabIdAtom, null)
   appStore.set(agentHistoryAtom, null)
   appStore.set(agentViewAtom, null)
+  appStore.set(agentWindowAtom, {
+    open: false,
+    collapsed: false,
+    context: {},
+    anchor: null,
+    draft: '',
+  })
+  appStore.set(agentAccountsAtom, { claude: { status: 'unknown' }, codex: { status: 'unknown' } })
+  vi.useRealTimers()
 })
 
 it('keeps an unsent draft across contextual invocations unless explicitly replaced', () => {
@@ -40,14 +51,37 @@ it('keeps an unsent draft across contextual invocations unless explicitly replac
   appStore.set(agentWindowAtom, (state) => ({ ...state, open: false }))
   openAgent()
   expect(appStore.get(agentWindowAtom).draft).toBe('Unsent thought')
+  expect(appStore.get(agentWindowAtom).context).toEqual({})
   openAgent({ selection: 'Another passage', anchor: { x: 42.4, y: 80.7 } })
   expect(appStore.get(agentWindowAtom)).toMatchObject({
     draft: 'Unsent thought',
     context: { filePath: 'note.md', selection: 'Another passage' },
-    anchor: { x: 42, y: 81 },
+    anchor: null,
   })
   openAgent({ draft: 'Explicit search question' })
   expect(appStore.get(agentWindowAtom).draft).toBe('Explicit search question')
+})
+
+it('updates quotes without repositioning an expanded window, but anchors a collapsed one', () => {
+  appStore.set(workspacePathAtom, '/notes')
+  appStore.set(activeTabIdAtom, '/notes/first.md')
+  openAgent({ selection: 'First passage', anchor: { x: 42.4, y: 80.7 } })
+  const anchor = appStore.get(agentWindowAtom).anchor
+  expect(anchor).toEqual({ x: 42, y: 81 })
+  appStore.set(activeTabIdAtom, '/notes/second.md')
+  openAgent({ selection: 'Second passage', anchor: { x: 300, y: 400 } })
+  expect(appStore.get(agentWindowAtom).anchor).toBe(anchor)
+  expect(appStore.get(agentWindowAtom).context).toEqual({
+    filePath: 'second.md',
+    selection: 'Second passage',
+  })
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: true }))
+  openAgent({ selection: 'Third passage', anchor: { x: 300, y: 400 } })
+  expect(appStore.get(agentWindowAtom)).toMatchObject({
+    open: true,
+    collapsed: false,
+    anchor: { x: 300, y: 400 },
+  })
 })
 
 it('restores a minimized conversation when invoked from another entry point', () => {
@@ -76,6 +110,122 @@ const liveView = (messages: AgentView['messages']): AgentView => ({
   error: null,
   permission: null,
   allowChanges: false,
+})
+
+it('uses explicit task states, not response text or a missing native process, for the mascot', () => {
+  appStore.set(workspacePathAtom, '/notes')
+  const view = liveView([{ id: 'u', role: 'user', content: 'Help', createdAt: 1 }])
+  appStore.set(agentViewAtom, view)
+  expect(appStore.get(agentPresenceAtom).state).toBe('working')
+  appStore.set(agentViewAtom, {
+    ...view,
+    status: 'awaiting-permission',
+    permission: {
+      id: 'permission',
+      operation: { kind: 'trash', path: 'Inbox/file.pdf' },
+    },
+  })
+  expect(appStore.get(agentPresenceAtom).state).toBe('waiting')
+  appStore.set(agentViewAtom, {
+    ...view,
+    status: 'idle',
+    messages: [
+      ...view.messages,
+      { id: 'a', role: 'assistant', content: 'Shall I move it?', createdAt: 2 },
+    ],
+  })
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  appStore.set(agentViewAtom, { ...view, status: 'error', error: 'Failed' })
+  expect(appStore.get(agentPresenceAtom).state).toBe('error')
+  appStore.set(workspacePathAtom, '/other')
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+})
+
+it('does not mistake API access or an unknown account for a disconnected harness', () => {
+  appStore.set(agentSetupAtom, {
+    runtimeAvailable: true,
+    installing: false,
+    configuration: {
+      provider: 'claude',
+      access: 'api',
+      baseUrl: 'https://example.test',
+      model: 'model',
+      hasApiKey: true,
+    },
+  })
+  appStore.set(agentAccountsAtom, {
+    claude: { status: 'signed-out' },
+    codex: { status: 'unknown' },
+  })
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  const setup = appStore.get(agentSetupAtom)!
+  appStore.set(agentSetupAtom, {
+    ...setup,
+    configuration: { ...setup.configuration, hasApiKey: false },
+  })
+  expect(appStore.get(agentPresenceAtom).state).toBe('offline')
+  appStore.set(agentSetupAtom, {
+    ...setup,
+    configuration: { ...setup.configuration, access: 'native' },
+  })
+  expect(appStore.get(agentPresenceAtom).state).toBe('offline')
+  appStore.set(agentAccountsAtom, { claude: { status: 'checking' }, codex: { status: 'unknown' } })
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+})
+
+it('keeps unread replies until opened, without marking visible replies, cancellation or history unread', () => {
+  appStore.set(workspacePathAtom, '/notes')
+  appStore.set(agentWindowAtom, {
+    open: true,
+    collapsed: true,
+    context: {},
+    anchor: null,
+    draft: '',
+  })
+  const view = liveView([])
+  appStore.set(agentViewAtom, view)
+  appStore.set(agentViewAtom, { ...view, status: 'idle' })
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  appStore.set(agentViewAtom, view)
+  const finished: AgentView = { ...view, status: 'idle', completedTurn: 'turn-1' }
+  appStore.set(agentViewAtom, finished)
+  expect(appStore.get(agentPresenceAtom).state).toBe('ready')
+  appStore.set(agentViewAtom, { ...finished })
+  expect(appStore.get(agentPresenceAtom).state).toBe('ready')
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: false }))
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: true }))
+  appStore.set(agentViewAtom, { ...finished })
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  appStore.set(agentViewAtom, null)
+  appStore.set(agentViewAtom, finished)
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: false }))
+  appStore.set(agentViewAtom, view)
+  appStore.set(agentViewAtom, { ...finished, completedTurn: 'turn-2' })
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: true }))
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+})
+
+it('acknowledges an error when opened without hiding subsequent errors', () => {
+  appStore.set(workspacePathAtom, '/notes')
+  appStore.set(agentWindowAtom, {
+    open: true,
+    collapsed: true,
+    context: {},
+    anchor: null,
+    draft: '',
+  })
+  const view = liveView([])
+  appStore.set(agentViewAtom, view)
+  appStore.set(agentViewAtom, { ...view, status: 'error', error: 'Failed' })
+  expect(appStore.get(agentPresenceAtom).state).toBe('error')
+  openAgent()
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: true }))
+  expect(appStore.get(agentPresenceAtom).state).toBe('idle')
+  appStore.set(agentViewAtom, view)
+  appStore.set(agentViewAtom, { ...view, status: 'error', error: 'Failed again' })
+  expect(appStore.get(agentPresenceAtom).state).toBe('error')
 })
 const savedMessage = (id: string, sequence: number, content = id): AgentHistoryMessage => ({
   id,
