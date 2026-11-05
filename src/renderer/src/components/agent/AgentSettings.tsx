@@ -23,6 +23,7 @@ import { toast } from '../Toaster'
 
 export function AgentSettings({
   disabled = false,
+  initialAccess,
   accounts,
   onCheckAccount,
   onLogin,
@@ -30,6 +31,7 @@ export function AgentSettings({
   onBusyChange,
 }: {
   disabled?: boolean
+  initialAccess?: 'api'
   accounts: Record<AgentProvider, AgentAccountState>
   onCheckAccount(provider: AgentProvider): void
   onLogin(provider: AgentProvider): Promise<void>
@@ -47,7 +49,7 @@ export function AgentSettings({
   )
   const [apiService, setApiService] = useState(savedService)
   const preset = agentApiService(configuration.provider, savedService)
-  const [access, setAccess] = useState(configuration.access)
+  const [access, setAccess] = useState(initialAccess ?? configuration.access)
   const [baseUrl, setBaseUrl] = useState(
     normalizeAgentApiUrl(configuration.provider, configuration.baseUrl),
   )

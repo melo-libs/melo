@@ -61,6 +61,13 @@ export function useAgentController(
   const prepared = useRef('')
   const preparing = useRef('')
   const [preparation, setPreparation] = useState<AgentModelLoadState>({ status: 'idle' })
+  const [providerSwitch, setProviderSwitch] = useState<{
+    provider: AgentProvider
+    target: AgentProvider
+    setup: AgentSetup | null
+    connected: boolean
+    pending: boolean
+  } | null>(null)
   const previousRoot = useRef(root)
   const running = !!view && !['idle', 'error'].includes(view.status)
   const selectedProvider = view?.conversation.provider ?? setup?.configuration.provider ?? 'claude'
@@ -83,15 +90,34 @@ export function useAgentController(
       ? intake.attachments.filter((file) => !submittedFiles.has(file.id))
       : []
   const accountStatus = accounts[selectedProvider].status
-  const ready =
-    !!root &&
-    !!view &&
+  const connected =
     !!setup?.runtimeAvailable &&
     setup.configuration.provider === selectedProvider &&
+    (setup.configuration.access === 'api'
+      ? !!(
+          setup.configuration.hasApiKey &&
+          setup.configuration.baseUrl &&
+          setup.configuration.model
+        )
+      : accountStatus === 'signed-in')
+  const switchingProvider =
+    !!providerSwitch &&
+    (providerSwitch.pending ||
+      (!!setup?.runtimeAvailable &&
+        setup.configuration.provider === providerSwitch.target &&
+        setup.configuration.access === 'native' &&
+        (accountStatus === 'unknown' || accountStatus === 'checking')))
+  useEffect(() => {
+    if (providerSwitch && !switchingProvider) setProviderSwitch(null)
+  }, [providerSwitch, switchingProvider])
+  const ready =
+    !switchingProvider &&
+    connected &&
+    !!root &&
+    !!view &&
     !busy &&
     !loading &&
-    (setup.configuration.access === 'api' ||
-      (accountStatus === 'signed-in' && !!setup.configuration.native))
+    (setup?.configuration.access === 'api' || !!setup?.configuration.native)
   const canSend =
     ready &&
     !receivingFiles &&
@@ -115,6 +141,7 @@ export function useAgentController(
   useEffect(() => {
     if (previousRoot.current === root) return
     previousRoot.current = root
+    setProviderSwitch(null)
     setView(null)
     setWindow((state) => ({ ...state, context: {}, ...(!root ? { open: false } : {}) }))
     onConnectionRequired(false)
@@ -144,22 +171,6 @@ export function useAgentController(
     }
   }, [state.open, root, onConnectionRequired])
   useEffect(() => {
-    if (
-      !state.open ||
-      loading ||
-      busy ||
-      !setup ||
-      setup.configuration.provider !== selectedProvider
-    )
-      return
-    if (
-      !setup.runtimeAvailable ||
-      (setup.configuration.access === 'native' &&
-        (accountStatus === 'signed-out' || accountStatus === 'error'))
-    )
-      onConnectionRequired(true)
-  }, [state.open, loading, busy, setup, selectedProvider, accountStatus, onConnectionRequired])
-  useEffect(() => {
     if (!state.open) {
       prepared.current = ''
       return
@@ -172,7 +183,7 @@ export function useAgentController(
       running ||
       view.conversation.workspaceRoot !== root ||
       setup.configuration.provider !== selectedProvider ||
-      (setup.configuration.access === 'native' && accountStatus !== 'signed-in')
+      !connected
     )
       return
     const key = preparationKey(view.conversation.id, setup)
@@ -196,6 +207,7 @@ export function useAgentController(
     state.open,
     loading,
     connectionBusy,
+    connected,
     setup,
     view,
     root,
@@ -248,21 +260,24 @@ export function useAgentController(
     })
     return true
   }
-  const changeProvider = (provider: AgentProvider, stayInSettings = false) =>
-    void perform(async () => {
+  const changeProvider = async (provider: AgentProvider, stayInSettings = false) => {
+    // The two commands update separate atoms; keep their intermediate mismatch out of the UI.
+    setProviderSwitch({
+      provider: selectedProvider,
+      target: provider,
+      setup,
+      connected,
+      pending: true,
+    })
+    const changed = await perform(async () => {
       if (view)
         await agentCommand({ action: 'provider', conversationId: view.conversation.id, provider })
       const response = await agentCommand({ action: 'select-provider', provider })
-      if (response.setup) {
-        const authentication = appStore.get(agentAccountsAtom)[provider].status
-        onConnectionRequired(
-          stayInSettings ||
-            !response.setup.runtimeAvailable ||
-            (response.setup.configuration.access === 'native' &&
-              (authentication === 'signed-out' || authentication === 'error')),
-        )
-      }
+      if (response.setup) onConnectionRequired(stayInSettings)
     })
+    setProviderSwitch((current) => (changed && current ? { ...current, pending: false } : null))
+    return changed
+  }
 
   const pasteAttachments = async (files?: File[], workspaceFile?: string): Promise<boolean> => {
     if (!root) return false
@@ -367,15 +382,17 @@ export function useAgentController(
     setWindow,
     view,
     history,
-    setup: displayedSetup,
+    setup: switchingProvider ? providerSwitch!.setup : displayedSetup,
+    runtimeAvailable: !!setup?.runtimeAvailable,
     root,
-    busy,
+    busy: busy || switchingProvider,
     loading,
     modelLoad,
     error,
     running,
-    selectedProvider,
+    selectedProvider: switchingProvider ? providerSwitch!.provider : selectedProvider,
     ready,
+    connected: switchingProvider ? providerSwitch!.connected : connected,
     canSend,
     attachments,
     receivingFiles,

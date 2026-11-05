@@ -841,9 +841,31 @@ try {
   }
   await page.locator('.agent-dock').click()
   await page.locator('.agent-window').waitFor({ state: 'visible' })
-  await waitUntil('Claude setup', () => page.locator('.agent-settings').isVisible())
-  await page.locator('.agent-auth-actions .ui-button').waitFor()
-  await page.locator('.agent-access-mode .seg-opt').filter({ hasText: 'API Key' }).click()
+  await page.locator('.agent-welcome').waitFor()
+  await page
+    .locator('.agent-connect-option')
+    .filter({ hasText: 'Claude Code' })
+    .getByRole('button', { name: 'Sign in', exact: true })
+    .waitFor()
+  assert(
+    await page.locator('.agent-compose textarea').isDisabled(),
+    'first use must guide connection before chatting',
+  )
+  assert.equal(await page.locator('.agent-suggestions').count(), 0)
+  assert.equal(await page.locator('.agent-runtime-select .sel-btn').count(), 0)
+  await waitUntil(
+    'both accounts checked',
+    async () =>
+      !(await page.locator('.agent-connect-option .agent-tool-status').allTextContents()).some(
+        (text) => text.includes('Checking'),
+      ),
+  )
+  if (process.env.MELO_E2E_WELCOME_SCREENSHOT)
+    await page
+      .locator('.agent-window')
+      .screenshot({ path: process.env.MELO_E2E_WELCOME_SCREENSHOT })
+  await page.getByRole('button', { name: 'Connect with an API Key instead', exact: true }).click()
+  await page.getByLabel('API base URL', { exact: true }).waitFor()
   await page
     .locator('.agent-settings label')
     .filter({ hasText: 'API service' })
@@ -900,6 +922,44 @@ try {
     await page.locator('.agent-compose textarea').evaluate((el) => document.activeElement === el),
     'returning from settings must restore composer focus',
   )
+  await page.locator('.agent-transcript-empty .agent-suggestions').waitFor()
+  assert(await page.locator('.agent-compose textarea').isEnabled())
+  assert.equal(await page.locator('.agent-compose .agent-runtime-select .sel-btn').count(), 1)
+  if (process.env.MELO_E2E_WELCOME_SCREENSHOT) {
+    await page.mouse.move(0, 0)
+    const screenshot = process.env.MELO_E2E_WELCOME_SCREENSHOT
+    await page
+      .locator('.agent-window')
+      .screenshot({ path: screenshot.replace('.png', '-connected.png') })
+    const style = await page.locator('.agent-window').getAttribute('style')
+    await page.locator('.agent-window').evaluate((el) => {
+      el.style.width = '360px'
+      el.style.height = '520px'
+    })
+    assert.equal(
+      await page
+        .locator('.agent-compose-actions')
+        .evaluate((el) => el.scrollWidth > el.clientWidth),
+      false,
+    )
+    await page
+      .locator('.agent-window')
+      .screenshot({ path: screenshot.replace('.png', '-narrow.png') })
+    const theme = await page.evaluate(() => document.documentElement.dataset.theme)
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'dark'
+    })
+    await page
+      .locator('.agent-window')
+      .screenshot({ path: screenshot.replace('.png', '-dark.png') })
+    await page.evaluate((theme) => {
+      if (theme) document.documentElement.dataset.theme = theme
+      else delete document.documentElement.dataset.theme
+    }, theme)
+    await page
+      .locator('.agent-window')
+      .evaluate((el, style) => el.setAttribute('style', style), style)
+  }
   await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   await editor.focus()
   await page.keyboard.press('Meta+a')
@@ -1267,6 +1327,7 @@ try {
   assert(fs.existsSync(path.join(workspace, 'packing.md')))
   assert(!fs.existsSync(path.join(workspace, 'Reference')))
   assert(!fs.existsSync(path.join(workspace, 'Travel')))
+  await page.locator('.agent-compose textarea').fill('Keep this draft while switching tools')
   await page.locator('.agent-runtime-select .sel-btn').click()
   await page.getByRole('menuitem', { name: 'Codex', exact: true }).click()
   if (live || process.env.MELO_E2E_NATIVE_MODELS === '1') {
@@ -1276,16 +1337,12 @@ try {
       15000,
     )
   } else {
-    await page.locator('.agent-settings').waitFor()
-    await page.locator('.agent-auth-actions .ui-button').waitFor()
+    await page.locator('.agent-welcome').waitFor()
     assert(
       (
-        await page.locator('.agent-tool-card').filter({ hasText: 'Claude Code' }).innerText()
+        await page.locator('.agent-connect-option').filter({ hasText: 'Claude Code' }).innerText()
       ).includes('API configured'),
-      'the inactive harness must retain its saved API status',
     )
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await page.locator('.agent-settings').waitFor({ state: 'hidden' })
     const settingsVisits = await page.evaluateHandle(() => {
       const state = { count: 0 }
       const observer = new MutationObserver((records) => {
@@ -1302,8 +1359,11 @@ try {
       observer.observe(document.querySelector('.agent-body'), { childList: true, subtree: true })
       return { state, stop: () => observer.disconnect() }
     })
-    await page.locator('.agent-runtime-select .sel-btn').click()
-    await page.getByRole('menuitem', { name: 'Claude Code', exact: true }).click()
+    await page
+      .locator('.agent-connect-option')
+      .filter({ hasText: 'Claude Code' })
+      .getByRole('button', { name: 'Use connection', exact: true })
+      .click()
     await waitUntil(
       'Claude API restored through the Harness menu',
       async () =>
@@ -1325,6 +1385,12 @@ try {
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.locator('.agent-settings').waitFor({ state: 'hidden' })
   }
+
+  assert.equal(
+    await page.locator('.agent-compose textarea').inputValue(),
+    'Keep this draft while switching tools',
+  )
+  await page.locator('.agent-compose textarea').fill('')
 
   if (process.env.MELO_E2E_NATIVE_MODELS === '1') {
     // Radix hides sibling controls from the accessibility tree while its menu is open.

@@ -25,6 +25,7 @@ export function AgentComposer({
   loading,
   modelLoad,
   canSend,
+  connected,
   focusKey,
   onDraft,
   onSend,
@@ -56,6 +57,7 @@ export function AgentComposer({
   loading: boolean
   modelLoad: AgentModelLoadState
   canSend: boolean
+  connected: boolean
   focusKey: unknown
   onDraft(value: string): void
   onSend(): void
@@ -71,7 +73,7 @@ export function AgentComposer({
   const input = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     input.current?.focus()
-  }, [focusKey])
+  }, [focusKey, connected])
   useLayoutEffect(() => {
     const el = input.current
     if (!el) return
@@ -79,7 +81,11 @@ export function AgentComposer({
     el.style.height = `${Math.min(132, Math.max(38, el.scrollHeight))}px`
   }, [draft])
   return (
-    <div className="agent-compose" data-dragging-files={draggingFiles || undefined}>
+    <div
+      className="agent-compose"
+      data-disconnected={!connected || undefined}
+      data-dragging-files={draggingFiles || undefined}
+    >
       <AgentAttachments
         files={attachments}
         disabled={busy || running}
@@ -112,13 +118,16 @@ export function AgentComposer({
       <textarea
         ref={input}
         value={draft}
+        disabled={!connected}
         maxLength={32000}
         placeholder={t(
-          context.selection
-            ? 'agent.selectionPlaceholder'
-            : draft || attachments.length
-              ? 'agent.followUpPlaceholder'
-              : 'agent.attachmentPlaceholder',
+          !connected
+            ? 'agent.connectToChat'
+            : context.selection
+              ? 'agent.selectionPlaceholder'
+              : draft || attachments.length
+                ? 'agent.followUpPlaceholder'
+                : 'agent.attachmentPlaceholder',
         )}
         aria-label={t('agent.placeholder')}
         onChange={(event) => onDraft(event.target.value)}
@@ -142,31 +151,35 @@ export function AgentComposer({
         }}
       />
       <div className="agent-compose-actions">
-        <div className="agent-runtime-select">
-          <Select
-            className="agent-picker"
-            contentClassName="agent-picker-menu"
-            side="top"
-            align="start"
-            icon={<Icon name="terminal" size={14} />}
-            label="Harness"
-            value={provider}
-            options={[
-              { value: 'claude', label: 'Claude Code' },
-              { value: 'codex', label: 'Codex' },
-            ]}
-            disabled={running || busy || loading}
-            onChange={onProvider}
-            action={{ label: t('agent.connectionSettings'), onSelect: onSettings }}
-          />
-        </div>
-        <AgentModelMenu
-          setup={setup?.configuration.provider === provider ? setup : null}
-          modelLoad={modelLoad}
-          disabled={running || busy || loading}
-          onLoad={onLoadModels}
-          onChange={onModelChange}
-        />
+        {connected && (
+          <>
+            <div className="agent-runtime-select">
+              <Select
+                className="agent-picker"
+                contentClassName="agent-picker-menu"
+                side="top"
+                align="start"
+                icon={<Icon name="terminal" size={14} />}
+                label="Harness"
+                value={provider}
+                options={[
+                  { value: 'claude', label: 'Claude Code' },
+                  { value: 'codex', label: 'Codex' },
+                ]}
+                disabled={running || busy || loading}
+                onChange={onProvider}
+                action={{ label: t('agent.connectionSettings'), onSelect: onSettings }}
+              />
+            </div>
+            <AgentModelMenu
+              setup={setup?.configuration.provider === provider ? setup : null}
+              modelLoad={modelLoad}
+              disabled={running || busy || loading}
+              onLoad={onLoadModels}
+              onChange={onModelChange}
+            />
+          </>
+        )}
         <span className="agent-spacer" />
         {running && !interrupting ? (
           <Button

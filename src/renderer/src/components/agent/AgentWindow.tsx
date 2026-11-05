@@ -13,6 +13,7 @@ import { toast } from '../Toaster'
 import { Icon } from '../Icon'
 import { MeloLogo } from '../MeloLogo'
 import { useAgentAccounts } from './useAgentAccounts'
+import { AgentWelcome } from './AgentWelcome'
 import { AgentSettings } from './AgentSettings'
 import { AgentEntry } from './AgentEntry'
 import { AgentTranscript } from './AgentTranscript'
@@ -25,6 +26,11 @@ import './agent.scss'
 
 export const AgentWindow = () => {
   const { t } = useTranslation()
+  const [settingsAccess, setSettingsAccess] = useState<'api'>()
+  const openSettings = (access?: 'api') => {
+    setSettingsAccess(access)
+    setSettingsOpen(true)
+  }
   const [settingsOpen, setSettingsOpen] = useState(false),
     [connectionBusy, setConnectionBusy] = useState(false),
     [searching, setSearching] = useState(false),
@@ -38,6 +44,7 @@ export const AgentWindow = () => {
     view,
     history,
     setup,
+    runtimeAvailable,
     root,
     busy,
     loading,
@@ -46,6 +53,7 @@ export const AgentWindow = () => {
     running,
     selectedProvider,
     ready,
+    connected,
     canSend,
     attachments,
     receivingFiles,
@@ -62,11 +70,7 @@ export const AgentWindow = () => {
     deleteMessage,
     cancel,
   } = useAgentController(setSettingsOpen, connectionBusy)
-  const {
-    accounts,
-    check: checkAccount,
-    login,
-  } = useAgentAccounts(state.open && !!setup?.runtimeAvailable)
+  const { accounts, check: checkAccount, login } = useAgentAccounts(state.open && runtimeAvailable)
   const collapsed = !state.open || state.collapsed
   const setEntrySeen = useSetAtom(agentEntrySeenAtom)
   useEffect(() => {
@@ -237,6 +241,7 @@ export const AgentWindow = () => {
         if (
           settingsOpen ||
           collapsed ||
+          !connected ||
           !event.dataTransfer.types.some(
             (type) => type === 'Files' || type === 'application/x-melo-node',
           )
@@ -253,7 +258,7 @@ export const AgentWindow = () => {
       }}
       onDrop={(event) => {
         setDraggingFiles(false)
-        if (settingsOpen || collapsed) return
+        if (settingsOpen || collapsed || !connected) return
         const files = Array.from(event.dataTransfer.files)
         const workspaceFile = event.dataTransfer.getData('application/x-melo-node')
         if (!files.length && !workspaceFile) return
@@ -356,6 +361,7 @@ export const AgentWindow = () => {
             {settingsOpen && setup ? (
               <AgentSettings
                 key={setup.configuration.provider}
+                initialAccess={settingsAccess}
                 accounts={accounts}
                 onCheckAccount={(provider) => void checkAccount(provider)}
                 onLogin={login}
@@ -364,7 +370,9 @@ export const AgentWindow = () => {
                 onBusyChange={setConnectionBusy}
               />
             ) : (
-              <div className="agent-transcript">
+              <div
+                className={`agent-transcript${!messages.length ? ' agent-transcript-empty' : ''}`}
+              >
                 <AgentTranscript
                   messages={messages}
                   running={running}
@@ -381,8 +389,27 @@ export const AgentWindow = () => {
                   onUndo={undo}
                   onUndoFiling={undoFiling}
                 />
-                {(!messages.length || !!state.context.selection) && (
+                {!connected && !running && (
+                  <AgentWelcome
+                    setup={setup}
+                    accounts={accounts}
+                    busy={busy || loading}
+                    onProvider={changeProvider}
+                    onLogin={login}
+                    onCheck={checkAccount}
+                    onSettings={() => openSettings('api')}
+                  />
+                )}
+                {connected && (!messages.length || !!state.context.selection) && (
                   <div className="agent-empty">
+                    {!state.context.selection && (
+                      <>
+                        <span className="agent-welcome-logo">
+                          <MeloLogo size={44} />
+                        </span>
+                        <h2>{t('agent.welcomeTitle')}</h2>
+                      </>
+                    )}
                     <p className="agent-empty-intro">
                       {t(state.context.selection ? 'agent.selectionIntro' : 'agent.emptyIntro')}
                     </p>
@@ -411,6 +438,7 @@ export const AgentWindow = () => {
                             size={16}
                           />
                           <span>{t(`agent.suggestionLabel.${key}`)}</span>
+                          <Icon name="chev" size={14} />
                         </button>
                       ))}
                     </div>
@@ -420,7 +448,7 @@ export const AgentWindow = () => {
                   <div className="agent-error" role="alert">
                     <strong>{t('agent.failed')}</strong>
                     <p>{agentErrorText(error || view?.error || '')}</p>
-                    <button className="agent-quiet" onClick={() => setSettingsOpen(true)}>
+                    <button className="agent-quiet" onClick={() => openSettings()}>
                       {t('agent.connectionSettings')}
                     </button>
                   </div>
@@ -476,6 +504,7 @@ export const AgentWindow = () => {
               loading={loading}
               modelLoad={modelLoad}
               canSend={canSend}
+              connected={connected}
               focusKey={state.context}
               onDraft={(draft) => setWindow((state) => ({ ...state, draft }))}
               onSend={() => submit()}
@@ -483,7 +512,7 @@ export const AgentWindow = () => {
               onProvider={changeProvider}
               onLoadModels={loadModels}
               onModelChange={changeModel}
-              onSettings={() => setSettingsOpen(true)}
+              onSettings={() => openSettings()}
               onRemoveContext={() => setWindow((state) => ({ ...state, context: {} }))}
               onOpenFile={openFile}
             />
