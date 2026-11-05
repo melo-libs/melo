@@ -9,6 +9,11 @@ import { createServer } from 'node:http'
 import { _electron as electron } from 'playwright-core'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const packagedApp = process.argv.find((arg) => arg.startsWith('--app='))?.slice('--app='.length)
+const executablePath = packagedApp
+  ? path.join(path.resolve(packagedApp), 'Contents', 'MacOS', 'Melo')
+  : electronPath
+if (packagedApp) assert(fs.statSync(executablePath).isFile(), 'Packaged app must exist')
 const testRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'melo-agent-e2e-')))
 const workspace = path.join(testRoot, 'workspace')
 const profile = path.join(testRoot, 'profile')
@@ -560,9 +565,9 @@ try {
     path.join(workspace, 'empty-clip.md'),
     '---\nsource: https://example.com/article\n---\n# Clipped article\n\nArticle body.\n',
   )
-  app = await electron.launch({
-    executablePath: electronPath,
-    args: [projectRoot],
+  const launchOptions = {
+    executablePath,
+    args: packagedApp ? [] : [projectRoot],
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -573,7 +578,8 @@ try {
       ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
     },
     timeout: 30000,
-  })
+  }
+  app = await electron.launch(launchOptions)
   app.process().stderr?.on('data', (chunk) => logs.push(String(chunk)))
   const page = await app.firstWindow()
   page.setDefaultTimeout(10000)
@@ -2008,6 +2014,33 @@ try {
       Object.assign(clipboard, globalThis.__meloIntakeClipboard)
       delete globalThis.__meloIntakeClipboard
     })
+  }
+  if (packagedApp && !live) {
+    const child = app.process()
+    const exited = new Promise((resolve) => child.once('exit', resolve))
+    await app.evaluate(({ BrowserWindow }) => {
+      for (const window of BrowserWindow.getAllWindows()) window.close()
+    })
+    await waitUntil('close packaged app before restart', () =>
+      app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 0),
+    )
+    await app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => {})
+    await exited
+    app = await electron.launch(launchOptions)
+    const restoredPage = await app.firstWindow()
+    restoredPage.on('pageerror', (error) => logs.push(error.stack ?? error.message))
+    await restoredPage.locator('.sidebar').waitFor()
+    await restoredPage.locator('.agent-dock').click()
+    const replies = await restoredPage.locator('.agent-markdown').count()
+    await restoredPage.locator('.agent-compose textarea').fill('Verify the saved API connection.')
+    await restoredPage.getByRole('button', { name: 'Send', exact: true }).click()
+    await waitUntil(
+      'packaged restart retains the working API credentials',
+      async () =>
+        (await restoredPage.locator('.agent-markdown').count()) > replies &&
+        (await restoredPage.locator('.agent-markdown').last().innerText()).includes('Weekend plan'),
+    )
+    await restoredPage.locator('.agent-status').waitFor({ state: 'hidden' })
   }
   const errors = logs.filter((log) => log.includes('TypeError') || log.includes('ReferenceError'))
   assert.deepEqual(errors, [])

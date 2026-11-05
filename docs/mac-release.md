@@ -43,7 +43,12 @@ Run the existing startup checks with isolated profiles, without installing into 
 ```sh
 node scripts/e2e-packaged-startup.mjs arm64 dist/macos-<version>/mac-arm64/Melo.app
 node scripts/e2e-packaged-startup.mjs x64 dist/macos-<version>/mac/Melo.app
+node scripts/e2e-agent.mjs --app=dist/macos-<version>/mac-arm64/Melo.app
 ```
+
+The packaged Agent check uses an isolated workspace, profile, and local API fixture.
+It covers the bundled adapter, file and metadata workflows, and an app restart that
+reuses the saved API connection. It does not read or copy a developer's API credentials.
 
 After installation testing, run `pnpm run deploy:mac`. It rechecks the existing candidate without recompiling and creates a **GitHub Draft Release**, not a public release.
 Before uploading, confirm that the PR is merged and CI is green. Review the draft's tag, target, and release notes before publishing manually.
