@@ -158,6 +158,13 @@ const App = () => {
   const setTreeCreating = useSetAtom(treeCreatingAtom)
   const setTreeCreatingFolder = useSetAtom(treeCreatingFolderAtom)
   const loadSmartWorkspace = useSetAtom(loadSmartWorkspaceAtom)
+  useEffect(
+    () =>
+      window.api.on(IpcChannels.OnSmartViewsChanged, ({ workspaceRoot }) => {
+        if (workspaceRoot === appStore.get(workspacePathAtom)) void loadSmartWorkspace()
+      }),
+    [loadSmartWorkspace],
+  )
   const refreshSmartMeta = useSetAtom(refreshSmartMetaAtom)
 
   useLayoutEffect(() => {

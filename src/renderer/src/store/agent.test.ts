@@ -597,3 +597,19 @@ it('retains a catalog that completes after navigating away and back without rewr
     effort: 'high',
   })
 })
+
+it('appends search questions without replacing a draft or moving the expanded window', () => {
+  appStore.set(workspacePathAtom, '/notes')
+  openAgent({ draft: 'Existing draft', selection: 'Quoted passage', anchor: { x: 240, y: 180 } })
+  openAgent({ draft: 'Find travel notes', appendDraft: true })
+  expect(appStore.get(agentWindowAtom)).toMatchObject({
+    draft: 'Existing draft\n\nFind travel notes',
+    anchor: { x: 240, y: 180 },
+    open: true,
+    collapsed: false,
+    context: { selection: 'Quoted passage' },
+  })
+  const beforeEmptySearch = appStore.get(agentWindowAtom)
+  openAgent({ appendDraft: true })
+  expect(appStore.get(agentWindowAtom)).toEqual(beforeEmptySearch)
+})

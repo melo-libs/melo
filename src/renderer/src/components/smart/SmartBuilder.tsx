@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/cn'
+import { appStore } from '../../store/appStore'
 import { IpcChannels } from '@shared/types/ipc'
 import {
   MAX_SMART_RULES,
@@ -15,6 +16,7 @@ import {
   persistSmartViewsAtom,
   smartBuilderAtom,
   smartFoldersAtom,
+  smartSaveErrorAtom,
   smartVocabAtom,
 } from '../../store/smart'
 import { SIcon } from './SmartIcon'
@@ -61,9 +63,15 @@ export const SmartBuilder = () => {
           ? async () => {
               const view = folders.find((f) => f.id === draft.editId)
               const name = view ? smartViewName(view) : 'smart folder'
-              const ok = await deleteView(draft.editId!)
+              const ok = await deleteView({ id: draft.editId!, revision: draft.revision })
               if (!ok) {
-                toast(t('sidebar.couldNotDeleteSmart'))
+                toast(
+                  t(
+                    appStore.get(smartSaveErrorAtom) === 'SMART_VIEWS_CONFLICT'
+                      ? 'smart.changedWhileEditing'
+                      : 'sidebar.couldNotDeleteSmart',
+                  ),
+                )
                 return
               }
               toast(t('sidebar.deletedSmart', { name }))
@@ -78,11 +86,17 @@ export const SmartBuilder = () => {
               f.id === draft.editId ? { ...f, name, glyph, rules, preset: undefined } : f,
             )
           : [...folders, { id, name, glyph: glyph || 'bookmark', rules }]
-        const ok = await persistViews(next)
+        const ok = await persistViews({ views: next, revision: draft.revision })
         if (!ok) {
           // Write failed (read-only disk, workspace switched) — keep the
           // modal open so nothing silently evaporates on restart.
-          toast(t('smart.couldNotSave'))
+          toast(
+            t(
+              appStore.get(smartSaveErrorAtom) === 'SMART_VIEWS_CONFLICT'
+                ? 'smart.changedWhileEditing'
+                : 'smart.couldNotSave',
+            ),
+          )
           return
         }
         setActiveId(id)

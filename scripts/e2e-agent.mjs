@@ -158,6 +158,54 @@ async function respondToFixture(request, response) {
   const currentRequest = promptText.split('User request:\n').at(-1) ?? ''
   if (currentRequest.startsWith('active_file_fixture'))
     contextPrompts.set(currentRequest, promptText)
+  let metadataReply = ''
+  if (currentRequest === 'tags_fixture' || currentRequest === 'smart_fixture') {
+    const tags = currentRequest === 'tags_fixture'
+    const blocks = body.messages.flatMap((message) =>
+      Array.isArray(message.content) ? message.content : [],
+    )
+    const getResult = (id) =>
+      blocks.findLast((block) => block.type === 'tool_result' && block.tool_use_id === id)
+    const readId = tags ? 'metadata_tags_read' : 'metadata_smart_read'
+    const writeId = tags ? 'metadata_tags_write' : 'metadata_smart_write'
+    const read = getResult(readId)
+    if (!read) {
+      sendTool(
+        tags ? 'melo_read_tags' : 'melo_read_smart_folders',
+        tags ? { path: 'note.md' } : {},
+        readId,
+      )
+      return
+    }
+    assert(!read.is_error, JSON.stringify(read.content))
+    const snapshot = JSON.parse(
+      Array.isArray(read.content)
+        ? read.content.find((block) => block.type === 'text').text
+        : read.content,
+    )
+    const view = {
+      id: 'e2e-notes',
+      name: 'Travel notes',
+      glyph: 'tag',
+      rules: [{ key: 'Tag', op: 'is', val: 'travel' }],
+    }
+    if (!tags && !getResult('metadata_preview')) {
+      sendTool('melo_preview_smart_folder', { rules: view.rules }, 'metadata_preview')
+      return
+    }
+    if (!getResult(writeId)) {
+      sendTool(
+        tags ? 'melo_update_tags' : 'melo_save_smart_folder',
+        tags
+          ? { path: 'note.md', expectedRevision: snapshot.revision, add: ['travel'], remove: [] }
+          : { view, expectedRevision: snapshot.revision },
+        writeId,
+      )
+      return
+    }
+    assert(!getResult(writeId).is_error, JSON.stringify(getResult(writeId).content))
+    metadataReply = tags ? 'Tags updated.' : 'Smart Folder saved.'
+  }
   const filing = currentRequest.includes('file_intake_fixture')
   const filingConfirmed = currentRequest.includes('file_intake_confirm_fixture')
   const filingQuestion = currentRequest.includes('file_intake_why_fixture')
@@ -370,7 +418,7 @@ async function respondToFixture(request, response) {
     response.end()
     return
   }
-  if (!organizing && readTool && !usedTool) {
+  if (!metadataReply && !organizing && readTool && !usedTool) {
     event('content_block_start', {
       index: 0,
       content_block: { type: 'tool_use', id: 'read_fixture', name: readTool.name, input: {} },
@@ -430,6 +478,7 @@ async function respondToFixture(request, response) {
       type: 'text_delta',
       text:
         (currentRequest.startsWith('active_file_fixture') ? 'Current file received.' : '') ||
+        metadataReply ||
         filingReply ||
         (editing
           ? 'Changed Saturday to Sunday.'
@@ -503,6 +552,14 @@ try {
     path.join(workspace, 'packing.md'),
     '# Packing list\n\n- Walking shoes\n- Raincoat\n',
   )
+  fs.writeFileSync(
+    path.join(workspace, 'tag-vocabulary.md'),
+    '---\ntags: ["产品 设计", "读书笔记"]\n---\n# Tag examples\n',
+  )
+  fs.writeFileSync(
+    path.join(workspace, 'empty-clip.md'),
+    '---\nsource: https://example.com/article\n---\n# Clipped article\n\nArticle body.\n',
+  )
   app = await electron.launch({
     executablePath: electronPath,
     args: [projectRoot],
@@ -559,6 +616,7 @@ try {
     'mascot returns to its preferred default when the control disappears',
     async () => (await page.locator('.agent-window').boundingBox()).y === initialDock.y,
   )
+  await page.locator('.agent-dock').hover()
   await page.mouse.move(initialDock.x + 22, initialDock.y + 22)
   await page.mouse.down()
   await page.mouse.move(initialDock.x - 38, initialDock.y - 38, { steps: 4 })
@@ -571,6 +629,210 @@ try {
   assert.deepEqual(await page.locator('.agent-window').boundingBox(), savedDock)
   if (process.env.MELO_E2E_DOCK_SCREENSHOT)
     await page.screenshot({ path: process.env.MELO_E2E_DOCK_SCREENSHOT })
+  if (!live) {
+    const originalBody = await editor.innerText()
+    assert.equal(await page.locator('.document-tag').count(), 0)
+    const emptyTags = page.locator('.document-tags-add')
+    await page.mouse.move(20, 20)
+    await page.getByRole('button', { name: 'More actions', exact: true }).focus()
+    assert.equal(await emptyTags.evaluate((el) => getComputedStyle(el).opacity), '0')
+    const titleBeforeHover = await editor.locator('h1').boundingBox()
+    assert.equal((await page.locator('.document-tags').boundingBox()).height, 0)
+    const normalTitleY = await page
+      .locator('.ed-page')
+      .evaluate(
+        (el) => el.getBoundingClientRect().top + parseFloat(getComputedStyle(el).paddingTop),
+      )
+    assert.equal(titleBeforeHover.y, normalTitleY)
+    if (process.env.MELO_E2E_TAGS_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_TAGS_SCREENSHOT.replace('.png', '-empty.png'),
+      })
+    await editor.locator('h1').hover()
+    assert.equal(await emptyTags.evaluate((el) => getComputedStyle(el).opacity), '1')
+    assert.deepEqual(await editor.locator('h1').boundingBox(), titleBeforeHover)
+    if (process.env.MELO_E2E_TAGS_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_TAGS_SCREENSHOT.replace('.png', '-hover.png'),
+      })
+    await emptyTags.focus()
+    await page.mouse.move(20, 20)
+    assert.equal(await emptyTags.evaluate((el) => getComputedStyle(el).opacity), '1')
+    await page.getByRole('button', { name: 'More actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Add tags', exact: true }).click()
+    const tagEditor = page.locator('.document-tags[data-editing] .document-tags-row')
+    await tagEditor.waitFor()
+    assert.deepEqual(await editor.locator('h1').boundingBox(), titleBeforeHover)
+    const tagInput = tagEditor.getByRole('combobox', { name: 'Add a tag', exact: true })
+    await page.getByRole('option').filter({ hasText: '#产品 设计' }).waitFor()
+    await tagInput.fill('输入中')
+    await tagInput.dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+    assert.equal(await tagEditor.locator('.document-tag').count(), 0)
+    await tagInput.fill('旅行计划')
+    assert.deepEqual(await editor.locator('h1').boundingBox(), titleBeforeHover)
+    await tagInput.press('Enter')
+    await waitUntil(
+      'first tag takes a metadata row',
+      async () => (await editor.locator('h1').boundingBox()).y > titleBeforeHover.y,
+    )
+    await tagInput.fill('产品 设计')
+    await tagInput.press('Enter')
+    await waitUntil('inline tags saved', () =>
+      fs.readFileSync(file, 'utf8').includes('tags: ["旅行计划","产品 设计"]'),
+    )
+    await tagInput.press('Escape')
+    await tagEditor.waitFor({ state: 'hidden' })
+    assert(
+      await page
+        .getByRole('button', { name: 'Edit tags…', exact: true })
+        .evaluate((button) => document.activeElement === button),
+    )
+    assert.deepEqual(await page.locator('.document-tag').allTextContents(), [
+      '#旅行计划',
+      '#产品 设计',
+    ])
+    assert.equal(await editor.innerText(), originalBody)
+    assert(fs.readFileSync(file, 'utf8').includes('tags: ["旅行计划","产品 设计"]'))
+    if (process.env.MELO_E2E_TAGS_SCREENSHOT)
+      await page.screenshot({ path: process.env.MELO_E2E_TAGS_SCREENSHOT })
+    await page.getByRole('button', { name: '#产品 设计', exact: true }).click()
+    await page.locator('.pb-panel').waitFor()
+    await waitUntil('exact multi-word tag search', async () =>
+      (await page.locator('.pb-row-title').allTextContents()).some(
+        (title) => title === 'note.md' || title === 'note',
+      ),
+    )
+    assert.equal(
+      await page
+        .locator('.sf-wrap')
+        .innerText()
+        .then((text) => text.includes('产品 设计')),
+      true,
+    )
+    await page.keyboard.press('Escape')
+    await page
+      .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'packing' }) })
+      .first()
+      .click()
+    assert.equal(await page.locator('.document-tag').count(), 0)
+    await page
+      .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'note' }) })
+      .first()
+      .click()
+    await page.getByRole('button', { name: '#旅行计划', exact: true }).waitFor()
+    await page.locator('.document-tags').hover()
+    await page.getByRole('button', { name: 'Edit tags…', exact: true }).click()
+    await tagEditor.waitFor()
+    await tagInput.fill('产品')
+    assert.equal(
+      await page
+        .getByRole('option')
+        .filter({ hasText: '#产品 设计' })
+        .getAttribute('aria-disabled'),
+      'true',
+    )
+    if (process.env.MELO_E2E_TAGS_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_TAGS_SCREENSHOT.replace('.png', '-edit.png'),
+      })
+    await tagInput.fill('')
+    await tagInput.press('Backspace')
+    assert.equal(await tagEditor.locator('[data-selected]').innerText(), '#产品 设计')
+    await tagInput.press('Backspace')
+    await waitUntil('tag removed with Backspace', () =>
+      fs.readFileSync(file, 'utf8').includes('tags: ["旅行计划"]'),
+    )
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+    await tagInput.press(`${modifier}+z`)
+    await waitUntil('tag undo', () =>
+      fs.readFileSync(file, 'utf8').includes('tags: ["旅行计划","产品 设计"]'),
+    )
+    await tagInput.press(`${modifier}+Shift+z`)
+    await waitUntil('tag redo', () => fs.readFileSync(file, 'utf8').includes('tags: ["旅行计划"]'))
+    await tagInput.press(`${modifier}+z`)
+    await tagEditor.getByRole('button', { name: 'Remove #产品 设计', exact: true }).waitFor()
+    await tagInput.press('Escape')
+    await tagEditor.waitFor({ state: 'hidden' })
+    await editor.hover()
+    const removeTrip = page.getByRole('button', { name: 'Remove #旅行计划', exact: true })
+    assert.equal(await removeTrip.evaluate((el) => getComputedStyle(el).opacity), '0')
+    const tripTag = page.locator('.document-tag').filter({ hasText: '#旅行计划' })
+    const tripBounds = await tripTag.boundingBox()
+    await tripTag.hover()
+    assert.equal(await removeTrip.evaluate((el) => getComputedStyle(el).opacity), '1')
+    assert.deepEqual(await tripTag.boundingBox(), tripBounds)
+    if (process.env.MELO_E2E_TAGS_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_TAGS_SCREENSHOT.replace('.png', '-remove.png'),
+      })
+    await removeTrip.click()
+    await waitUntil('hover removal saved without opening editing', () =>
+      fs.readFileSync(file, 'utf8').includes('tags: ["产品 设计"]'),
+    )
+    assert.equal(await page.locator('.document-tags[data-editing]').count(), 0)
+    assert.equal(await page.locator('.pb-panel').count(), 0)
+    await page.keyboard.press(`${modifier}+z`)
+    await waitUntil('undo direct hover removal', () =>
+      fs.readFileSync(file, 'utf8').includes('tags: ["旅行计划","产品 设计"]'),
+    )
+    await page.keyboard.press(`${modifier}+Shift+z`)
+    await waitUntil('redo direct hover removal', () =>
+      fs.readFileSync(file, 'utf8').includes('tags: ["产品 设计"]'),
+    )
+    await page.locator('.document-tag').filter({ hasText: '#产品 设计' }).hover()
+    await page.getByRole('button', { name: 'Remove #产品 设计', exact: true }).click()
+    await waitUntil('all tags removed', () => fs.readFileSync(file, 'utf8').includes('tags: []'))
+    assert.deepEqual(await editor.locator('h1').boundingBox(), titleBeforeHover)
+    const bodyBounds = await editor.boundingBox()
+    await editor.click({ position: { x: bodyBounds.width - 8, y: 8 } })
+    await tagEditor.waitFor({ state: 'hidden' })
+    assert.equal(await page.locator('.document-tag').count(), 0)
+    assert.equal(await editor.innerText(), originalBody)
+    await page.keyboard.press(`${modifier}+k`)
+    const commandInput = page.locator('.sf-input')
+    await commandInput.fill('> Add tags')
+    await page
+      .locator('.pb-row-title')
+      .filter({ hasText: /^Add tags$/ })
+      .waitFor()
+    await commandInput.press('Enter')
+    await page.locator('.pb-panel').waitFor({ state: 'hidden' })
+    await tagInput.waitFor()
+    assert(await tagInput.evaluate((el) => document.activeElement === el))
+    await tagInput.press(`${modifier}+k`)
+    await page.locator('.pb-panel').waitFor()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Edit tags…', exact: true }).click()
+    await tagInput.waitFor()
+    await tagInput.press('Escape')
+    await page
+      .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'empty-clip' }) })
+      .first()
+      .click()
+    await page.locator('.ed-clip').waitFor()
+    await editor.locator('h1').hover()
+    const clipBanner = await page.locator('.ed-clip').boundingBox()
+    const clipEntry = await emptyTags.boundingBox()
+    const clipTitle = await editor.locator('h1').boundingBox()
+    assert(clipEntry.y >= clipBanner.y + clipBanner.height)
+    assert(clipEntry.y + clipEntry.height <= clipTitle.y)
+    if (process.env.MELO_E2E_TAGS_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_TAGS_SCREENSHOT.replace('.png', '-clip.png'),
+      })
+    await emptyTags.click()
+    await tagInput.waitFor()
+    assert.deepEqual(await editor.locator('h1').boundingBox(), clipTitle)
+    await tagInput.press('Escape')
+    await page
+      .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'note' }) })
+      .first()
+      .click()
+    await waitUntil(
+      'back to note after empty clip check',
+      async () => (await editor.innerText()) === originalBody,
+    )
+  }
   await page.locator('.agent-dock').click()
   await page.locator('.agent-window').waitFor({ state: 'visible' })
   await waitUntil('Claude setup', () => page.locator('.agent-settings').isVisible())
@@ -646,6 +908,12 @@ try {
     await page.locator('.agent-context-strip').isVisible(),
     'the selected passage remains attached',
   )
+  // Keep the floating conversation clear of the heading's formatting toolbar.
+  const quotePanel = await page.locator('.agent-window').boundingBox()
+  await page.mouse.move(quotePanel.x + 80, quotePanel.y + 20)
+  await page.mouse.down()
+  await page.mouse.move(quotePanel.x + 240, quotePanel.y + 100, { steps: 8 })
+  await page.mouse.up()
   await editor.evaluate((element) => {
     element.focus()
     element.editor.commands.setTextSelection({ from: 1, to: 6 })
@@ -779,6 +1047,14 @@ try {
   const sourceCount = await page.locator('.agent-source-divider').count()
   assert.equal(await page.locator('.agent-context-strip').count(), 0)
   await page.locator('.agent-compose textarea').fill('active_file_fixture packing')
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await page.locator('.agent-compose textarea').inputValue(),
+    'active_file_fixture packing',
+  )
+  assert.equal(await editor.locator('h1').innerText(), 'Packing list')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await waitUntil('active packing file reaches Harness', async () =>
     contextPrompts.has('active_file_fixture packing'),
@@ -894,6 +1170,57 @@ try {
       fs.readFileSync(file, 'utf8').includes('Saturday') &&
       (await page.locator('.agent-runtime-select .sel-btn').isEnabled()),
   )
+  if (!live) {
+    const original = fs.readFileSync(file, 'utf8')
+    for (const prompt of ['tags_fixture', 'smart_fixture']) {
+      await page.locator('.agent-compose textarea').fill(prompt)
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+      const permission = page.locator('.agent-permission[data-pending]')
+      await permission.waitFor()
+      if (process.env.MELO_E2E_METADATA_SCREENSHOT)
+        await permission.screenshot({
+          path: process.env.MELO_E2E_METADATA_SCREENSHOT.replace('.png', `-${prompt}.png`),
+        })
+      await permission
+        .getByRole('button', {
+          name: prompt === 'tags_fixture' ? 'Apply changes' : 'Save',
+          exact: true,
+        })
+        .click()
+      await waitUntil(
+        'metadata change completion',
+        async () =>
+          (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()) &&
+          (await page.locator('.agent-changes').last().innerText()).includes(
+            prompt === 'tags_fixture' ? 'Tags updated' : 'Smart Folder saved',
+          ),
+      )
+    }
+    assert(fs.readFileSync(file, 'utf8').includes('tags: ["travel"]'))
+    await page.getByRole('button', { name: '#travel', exact: true }).waitFor()
+    await page.locator('.sf-row').filter({ hasText: 'Travel notes' }).waitFor()
+    const matching = await page.evaluate(async () =>
+      window.api.invoke(window.api.channels.InvokeQuerySmartView, {
+        rules: [{ key: 'Tag', op: 'is', val: 'travel' }],
+      }),
+    )
+    assert(matching.success && matching.data.total === 1)
+    if (process.env.MELO_E2E_METADATA_SCREENSHOT)
+      await page.screenshot({ path: process.env.MELO_E2E_METADATA_SCREENSHOT })
+    await page
+      .locator('.agent-changes')
+      .last()
+      .getByRole('button', { name: 'Undo', exact: true })
+      .click()
+    await page.locator('.sf-row').filter({ hasText: 'Travel notes' }).waitFor({ state: 'hidden' })
+    const tagsReceipt = page.locator('.agent-changes').filter({ hasText: 'Tags updated' }).last()
+    await tagsReceipt.getByRole('button', { name: 'Undo', exact: true }).click()
+    await waitUntil(
+      'undo tag-only metadata',
+      async () => fs.readFileSync(file, 'utf8') === original,
+    )
+    assert.equal(await page.locator('.document-tag').count(), 0)
+  }
   await page.locator('.agent-compose textarea').fill('organize_fixture')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await page.locator('.agent-permission[data-pending]').waitFor()
@@ -1050,6 +1377,16 @@ try {
     }, originalStyle)
   }
 
+  // Leave vertical room for the document toolbar while testing repeated quotes.
+  const resizeGrip = await page.locator('.agent-resize').boundingBox()
+  await page.mouse.move(resizeGrip.x + resizeGrip.width / 2, resizeGrip.y + resizeGrip.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(
+    resizeGrip.x + resizeGrip.width / 2,
+    resizeGrip.y + resizeGrip.height / 2 - 120,
+    { steps: 8 },
+  )
+  await page.mouse.up()
   const before = await page.locator('.agent-window').boundingBox()
   await page.mouse.move(before.x + 95, before.y + 20)
   await page.mouse.down()
@@ -1152,7 +1489,33 @@ try {
   await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   await page.locator('.agent-dock').click()
   assert(await page.locator('.agent-window').isVisible())
-  const userCount = await page.locator('.agent-user').count()
+  const recentMessageIds = () =>
+    page.evaluate(async () => {
+      const result = await window.api.invoke(window.api.channels.AgentCommand, {
+        action: 'history',
+      })
+      if (!result.success) throw new Error(result.error)
+      return result.data.history.messages.map((message) => message.id)
+    })
+  const messagesBeforeSearch = await recentMessageIds()
+  const savedChangeIds = () =>
+    page.evaluate(async () => {
+      const ids = []
+      let before
+      while (true) {
+        const result = await window.api.invoke(window.api.channels.AgentCommand, {
+          action: 'history',
+          before,
+        })
+        if (!result.success) throw new Error(result.error)
+        const history = result.data.history
+        ids.push(
+          ...history.messages.flatMap((message) => (message.change ? [message.change.id] : [])),
+        )
+        if (!history.hasOlder) return ids
+        before = history.messages[0].sequence
+      }
+    })
   await page.getByRole('button', { name: 'Search chat history', exact: true }).click()
   await page.getByRole('textbox', { name: 'Search chat history…' }).fill('riverside')
   await page.locator('.agent-search-result').first().waitFor()
@@ -1161,8 +1524,10 @@ try {
     await page.locator('.agent-window').screenshot({ path: process.env.MELO_E2E_SEARCH_SCREENSHOT })
   await page.keyboard.press('Enter')
   await page.locator('[data-highlight]').waitFor()
-  assert.equal(await page.locator('.agent-user').count(), userCount)
+  // Jumping changes the rendered history page, but must not create or remove messages.
+  assert.deepEqual(await recentMessageIds(), messagesBeforeSearch)
   assert.equal(await page.locator('.agent-search').count(), 0)
+  const draftBeforeHandoff = await page.locator('.agent-compose textarea').inputValue()
   await page.locator('.sb-search').click()
   await page.locator('.pb-panel input').first().fill('What should I prepare for the weekend?')
   await page.locator('.pb-ask-notice').waitFor({ state: 'visible' })
@@ -1171,8 +1536,39 @@ try {
   await page.locator('.pb-panel').waitFor({ state: 'hidden' })
   assert.equal(
     await page.locator('.agent-compose textarea').inputValue(),
-    'What should I prepare for the weekend?',
+    [draftBeforeHandoff, 'What should I prepare for the weekend?'].filter(Boolean).join('\n\n'),
   )
+  const existingDraft = await page.locator('.agent-compose textarea').inputValue()
+  const searchWindowBounds = await page.locator('.agent-window').boundingBox()
+  await page.locator('.sb-search').click()
+  const searchInput = page.locator('.pb-panel input').first()
+  await searchInput.fill('tag:tr')
+  await searchInput.dispatchEvent('keydown', {
+    key: 'Enter',
+    code: 'Enter',
+    isComposing: true,
+    metaKey: true,
+  })
+  assert(await page.locator('.pb-panel').isVisible(), 'IME confirmation must not hand off to AI')
+  await searchInput.press('Meta+Enter')
+  await page.locator('.pb-panel').waitFor({ state: 'hidden' })
+  assert.equal(
+    await page.locator('.agent-compose textarea').inputValue(),
+    existingDraft + '\n\ntag:tr',
+  )
+  const afterSearchBounds = await page.locator('.agent-window').boundingBox()
+  assert.equal(afterSearchBounds.x, searchWindowBounds.x)
+  assert.equal(afterSearchBounds.y, searchWindowBounds.y)
+  await page.locator('.sb-search').click()
+  await page.locator('.pb-panel input').first().fill('Find travel notes and create a Smart Folder')
+  await page.locator('.pb-ask-notice').hover()
+  assert.equal(
+    await page.locator('.pb-list').evaluate((element) => element.scrollWidth > element.clientWidth),
+    false,
+  )
+  if (process.env.MELO_E2E_PALETTE_SCREENSHOT)
+    await page.screenshot({ path: process.env.MELO_E2E_PALETTE_SCREENSHOT })
+  await page.keyboard.press('Escape')
   if (!live) {
     const sources = path.join(testRoot, 'intake-sources')
     fs.mkdirSync(sources)
@@ -1358,7 +1754,7 @@ try {
         else document.documentElement.setAttribute('data-theme', original.theme)
       }, original)
     }
-    const changesBeforeFiling = await page.locator('.agent-changes').count()
+    const changesBeforeFiling = await savedChangeIds()
     await page.getByRole('button', { name: 'Send', exact: true }).click()
     await waitUntil(
       'filing suggestion completes without an approval card',
@@ -1409,8 +1805,8 @@ try {
     await failedAttempt.locator(':scope > summary').click()
     assert((await failedAttempt.locator('pre').first().innerText()).length > 0)
     await activity.locator(':scope > summary').click()
-    assert.equal(
-      await page.locator('.agent-changes').count(),
+    assert.deepEqual(
+      await savedChangeIds(),
       changesBeforeFiling,
       'Inbox receipt is not a file-change card',
     )

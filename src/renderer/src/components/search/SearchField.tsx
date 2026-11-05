@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'rea
 import { Trans, useTranslation } from 'react-i18next'
 import { cn } from '../../lib/cn'
 import { QIcon } from './SearchIcon'
+import { searchFilterValue, searchTokens, tagSearchQuery } from './searchTokens'
 
 /* ============================================================
    Shared search field — filter pills (commit-on-space) + inline
@@ -29,7 +30,9 @@ const FILTER_ICON: Record<string, string> = { tag: 'hash', path: 'folder', kind:
 const filterLabel = (f: Filter) => (f.kind === 'tag' ? f.value : f.kind + ': ' + f.value)
 
 function serializeFilters(filters: Filter[]): string {
-  return filters.map((f) => (f.kind === 'tag' ? '#' + f.value : f.kind + ':' + f.value)).join(' ')
+  return filters
+    .map((f) => (f.kind === 'tag' ? tagSearchQuery(f.value) : f.kind + ':' + f.value))
+    .join(' ')
 }
 function buildQuery(mode: string | null, filters: Filter[], text: string): string {
   if (mode === 'command') return '>' + (text ? ' ' + text : '')
@@ -47,17 +50,17 @@ function splitQuery(q: string): { mode: string | null; filters: Filter[]; text: 
   body = body.replace(/^\s+/, '')
   if (mode) return { mode, filters: [], text: body }
   const endsSpace = /\s$/.test(body)
-  const toks = body.split(/\s+/).filter(Boolean)
+  const toks = searchTokens(body)
   const filters: Filter[] = []
   const textToks: string[] = []
   toks.forEach((tok, i) => {
     const active = i === toks.length - 1 && !endsSpace // still being typed
     const op = tok.match(/^(tag|path|kind|in):(.+)$/i)
-    const hash = tok.match(/^#([\w-]+)$/)
+    const hash = tok.match(/^#([^\s]+)$/)
     if (!active && op)
       filters.push({
         kind: op[1].toLowerCase() === 'in' ? 'path' : op[1].toLowerCase(),
-        value: op[2].toLowerCase(),
+        value: searchFilterValue(op[1], op[2]).toLowerCase(),
       })
     else if (!active && hash) filters.push({ kind: 'tag', value: hash[1].toLowerCase() })
     else textToks.push(tok)
@@ -124,18 +127,18 @@ export function SearchField({
       return
     }
     const endsSpace = /\s$/.test(t)
-    const toks = t.split(/\s+/)
+    const toks = searchTokens(t)
     const keep: string[] = []
     const add: Filter[] = []
     toks.forEach((tok, i) => {
       if (!tok) return
       const active = i === toks.length - 1 && !endsSpace
       const op = tok.match(/^(tag|path|kind|in):(.+)$/i)
-      const hash = tok.match(/^#([\w-]+)$/)
+      const hash = tok.match(/^#([^\s]+)$/)
       if (!active && op)
         add.push({
           kind: op[1].toLowerCase() === 'in' ? 'path' : op[1].toLowerCase(),
-          value: op[2].toLowerCase(),
+          value: searchFilterValue(op[1], op[2]).toLowerCase(),
         })
       else if (!active && hash) add.push({ kind: 'tag', value: hash[1].toLowerCase() })
       else keep.push(tok)
@@ -171,7 +174,10 @@ export function SearchField({
     let kind: string | null = null
     let frag = ''
     let m: RegExpMatchArray | null
-    if ((m = last.match(/^#([\w-]*)$/))) {
+    if ((m = last.match(/^#([^\s]*)$/))) {
+      kind = 'tag'
+      frag = m[1]
+    } else if ((m = last.match(/^tag:([^\s"]*)$/i))) {
       kind = 'tag'
       frag = m[1]
     } else if ((m = last.match(/^(tag|kind|path):([\w-]*)$/i))) {
@@ -210,7 +216,7 @@ export function SearchField({
     const parts = text.split(/(\s+)/)
     for (let i = parts.length - 1; i >= 0; i--) {
       if (parts[i] && !/^\s+$/.test(parts[i])) {
-        parts[i] = item.op === 'tag' ? '#' + item.value : item.op + ':' + item.value
+        parts[i] = item.op === 'tag' ? tagSearchQuery(item.value) : item.op + ':' + item.value
         break
       }
     }
@@ -219,6 +225,11 @@ export function SearchField({
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      e.stopPropagation()
+      return
+    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return
     if (ac && ac.items.length) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()

@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { scoreTitle, BODY_SCORE_MAX, BODY_SCORE_MIN } from './searchEngine'
+import { parseQuery } from './searchEngine'
+import { tagSearchQuery } from './searchTokens'
+
+it.each(['travel', '产品 设计', 'a "quoted" tag', 'a\\b', '设计#idea'])(
+  'searches an exact clicked tag: %s',
+  (tag) => {
+    const parsed = parseQuery(tagSearchQuery(tag) + ' ')
+    expect(parsed.ops.tag).toEqual([tag])
+    expect(parsed.terms).toEqual([])
+  },
+)
 
 const score = (q: string, name: string) => scoreTitle(q, name)?.score ?? -1
 

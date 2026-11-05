@@ -1,4 +1,5 @@
 import { IpcChannels } from '@shared/types/ipc'
+import { searchFilterValue, searchTokens } from './searchTokens'
 import i18n from '../../i18n'
 import type { FileNode } from '../sidebar/types'
 import type { FileKind } from '../FileTypeIcon'
@@ -78,6 +79,13 @@ export interface Command {
 }
 
 export const COMMANDS: Command[] = [
+  {
+    id: 'add-tags',
+    title: 'Add tags',
+    icon: 'plus',
+    hint: 'Edit tags on the current document',
+    kw: 'tag label metadata 标签 添加标签',
+  },
   {
     id: 'new-note',
     title: 'New note',
@@ -324,13 +332,13 @@ export function parseQuery(raw: string): ParsedQuery {
 
   const ops: ParsedQuery['ops'] = { tag: [], path: null, kind: null, starred: false }
   const terms: string[] = []
-  rest.split(/\s+/).forEach((tok) => {
+  searchTokens(rest).forEach((tok) => {
     if (!tok) return
     const m = tok.match(/^(tag|path|kind|in|is):(.+)$/i)
-    const hash = tok.match(/^#([\w-]+)$/)
+    const hash = tok.match(/^#([^\s]+)$/)
     if (m) {
       const k = m[1].toLowerCase()
-      const v = m[2].toLowerCase()
+      const v = searchFilterValue(k, m[2]).toLowerCase()
       if (k === 'tag') ops.tag.push(v)
       else if (k === 'path' || k === 'in') ops.path = v
       else if (k === 'kind') ops.kind = v

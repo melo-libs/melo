@@ -69,8 +69,13 @@ export class DocumentAccess implements WorkspaceDocumentAccess {
     return { content, revision: createHash('sha256').update(content).digest('hex') }
   }
 
-  async edit(filePath: string, expectedRevision: string, content: string) {
-    const reply = await this.request({ action: 'edit', path: filePath, expectedRevision, content })
+  async edit(filePath: string, expectedRevision: string, content: string, tagsOnly = false) {
+    const reply = await this.request({
+      action: tagsOnly ? 'edit-tags' : 'edit',
+      path: filePath,
+      expectedRevision,
+      content,
+    })
     if (!reply.handled || !reply.snapshot) throw new Error('Editor did not apply the change')
     return reply.snapshot
   }

@@ -141,7 +141,11 @@ export const en = {
     trashedCount_one: 'Moved to Trash · 1 file',
     trashedCount_other: 'Moved to Trash · {{count}} files',
     undone: 'Undone',
+    tagsBefore: 'Current tags',
+    tagsAfter: 'New tags',
     changeStatus: {
+      tags: 'Tags updated',
+      'smart-folder': 'Smart Folder saved',
       import: 'Imported to Inbox',
       'create-folder': 'Folder created',
       'create-note': 'Note created',
@@ -156,9 +160,13 @@ export const en = {
       editDocument: 'Edit document',
       moveFile: 'Move file',
       trashFile: 'Move to Trash',
+      updateTags: 'Update tags',
+      saveSmartFolder: 'Save Smart Folder',
       updateMemory: 'Update memory',
     },
     errors: {
+      SMART_VIEWS_CONFLICT:
+        'Smart Folders have changed. Read the latest definitions before trying again.',
       AGENT_ATTACHMENT_UNAVAILABLE:
         'This attachment was removed or cannot be read. Check the file or paste it again.',
       AGENT_ATTACHMENT_LIMIT:
@@ -419,6 +427,24 @@ export const en = {
     editSmartFolder: 'Edit smart folder…',
     cancel: 'Cancel',
   },
+  documentTags: {
+    label: 'Add tags',
+    edit: 'Edit tags…',
+    find: 'Find notes tagged #{{tag}}',
+    remove: 'Remove #{{tag}}',
+    add: 'Add a tag',
+    placeholder: 'Add a tag…',
+    suggestions: 'Workspace tags',
+    suggestionsFailed: 'Could not load suggestions. You can still type a tag and press Enter.',
+    create: 'Create #{{tag}}',
+    added: 'Added',
+    deleteHint: 'Press Backspace again to remove #{{tag}}',
+    done: 'Done',
+    invalidTag: 'Use up to 100 tags, each no longer than 100 characters, without line breaks.',
+    invalidMetadata: 'Cannot read tags. Check the metadata at the beginning of this file.',
+    changed: 'Tags changed elsewhere. The latest tags are shown; please try your change again.',
+    saveFailed: 'Could not save the tag change. It was reverted; check the file and try again.',
+  },
   topBar: {
     toggleFiles: 'Toggle files',
     toggleOutline: 'Toggle outline',
@@ -541,6 +567,8 @@ export const en = {
     del: 'Delete',
     saveChanges: 'Save changes',
     create: 'Create smart folder',
+    changedWhileEditing:
+      'Smart Folders changed while you were editing. Your draft is preserved. Reopen the builder to review the latest settings.',
     couldNotSave: 'Could not save the smart folder',
     couldNotLoad: 'Could not load this smart folder.',
     previewCouldNotLoad: 'Could not load the preview.',
@@ -938,6 +966,7 @@ export const en = {
   },
   search: {
     commands: {
+      'add-tags': { title: 'Add tags', hint: 'Edit tags on the current document' },
       'new-note': { title: 'New note', hint: 'Create a markdown note' },
       'new-folder': { title: 'New folder', hint: 'Add a folder to the workspace' },
       theme: { title: 'Toggle dark mode', hint: 'Switch between paper and ink' },
@@ -965,7 +994,8 @@ export const en = {
       filtered: 'Filtered',
     },
     askMelo: 'Ask Melo',
-    askMeloDescription: 'Find, synthesize, and answer questions across your workspace.',
+    askMeloContinue: 'Opens in your conversation as a draft.',
+    askMeloExamples: 'Find information, update note tags, or create a Smart Folder.',
     comingSoon: 'Coming soon',
     runCommandPh: 'Run a command…',
     addFilterPh: 'Add a filter or keyword…',

@@ -12,10 +12,17 @@ const DELIMITER = /^---\s*$/
  *  embedded in body text or inside frontmatter values don't end the block
  *  early (the old indexOf('\n---') scan did). */
 export function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
-  if (!raw.startsWith('---')) return { frontmatter: '', body: raw }
+  if (!raw.startsWith('---') && !raw.startsWith('\uFEFF---')) return { frontmatter: '', body: raw }
   const firstLineEnd = raw.indexOf('\n')
   if (firstLineEnd === -1) return { frontmatter: '', body: raw }
-  if (!DELIMITER.test(raw.slice(0, firstLineEnd).replace(/\r$/, ''))) {
+  if (
+    !DELIMITER.test(
+      raw
+        .slice(0, firstLineEnd)
+        .replace(/^\uFEFF/, '')
+        .replace(/\r$/, ''),
+    )
+  ) {
     return { frontmatter: '', body: raw }
   }
 

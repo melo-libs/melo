@@ -59,7 +59,10 @@ export function AgentChanges({
         />
       </span>
       <div className="agent-change-description">
-        {change.kind === 'trash' || change.kind === 'create-folder' || change.undone ? (
+        {change.kind === 'trash' ||
+        change.kind === 'create-folder' ||
+        change.kind === 'smart-folder' ||
+        change.undone ? (
           <span className="agent-change-name" title={change.path}>
             {change.path.split('/').pop()}
           </span>

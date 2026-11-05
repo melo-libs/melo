@@ -93,6 +93,7 @@ export function AgentPermission({
   onRespond(allow: boolean, conversation?: boolean): void
 }) {
   const { t } = useTranslation()
+  const smartLabel = (value: string) => t(`smartVals.${value}`, { defaultValue: value })
   const { operation } = permission
   const metadata = AGENT_OPERATIONS[operation.kind]
   const location = operationLocation(operation)
@@ -106,7 +107,15 @@ export function AgentPermission({
   const title = operation.kind === 'native' ? operation.title : t(`agent.actions.${metadata.label}`)
   const diff = operation.kind === 'edit' ? operation.diff : undefined
   const preview =
-    operation.kind === 'create-note' || operation.kind === 'memory' ? operation.content : ''
+    operation.kind === 'tags'
+      ? `${t('agent.tagsBefore')}: ${operation.before.map((tag) => '#' + tag).join(', ') || '—'}\n${t('agent.tagsAfter')}: ${operation.after.map((tag) => '#' + tag).join(', ') || '—'}`
+      : operation.kind === 'smart-folder'
+        ? operation.view.rules
+            .map((rule) => `${smartLabel(rule.key)} ${smartLabel(rule.op)} ${smartLabel(rule.val)}`)
+            .join('\n') || t('smart.allContent')
+        : operation.kind === 'create-note' || operation.kind === 'memory'
+          ? operation.content
+          : ''
   const target =
     operation.kind === 'move'
       ? t('agent.movedPath', { from: operation.source, to: operation.destination })

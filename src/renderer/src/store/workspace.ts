@@ -29,6 +29,7 @@ export const workspaceSwitchingAtom = atom<string | null>(null)
 
 /** Search palette visibility (⌘K). */
 export const searchOpenAtom = atom(false)
+export const searchPrefillAtom = atom('')
 
 /** Signal from App.tsx / search palette: "create a new note". */
 export const treeCreatingAtom = atom(false)

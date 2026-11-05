@@ -1,3 +1,5 @@
+import { assertTagOnlyChange, updateDocumentTags } from '@shared/documentTags'
+import { atom } from 'jotai'
 import type { Editor } from '@tiptap/core'
 import i18n from '../i18n'
 import { appStore } from './appStore'
@@ -5,6 +7,7 @@ import { setTabSaveStateAtom, promoteTabAtom, closeTabAtom, type SaveStatus } fr
 import { toast } from '../components/Toaster'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { createSaveScheduler, type SaveScheduler } from '../lib/saveScheduler'
+import { createDocumentTagEditor } from '../lib/documentTagEditor'
 import { stripMarkdownExtension } from '@shared/fileKinds'
 import { agentRevision } from '@shared/agentRevision'
 import type { AgentDocumentRequest, AgentDocumentReply } from '@shared/types/agent'
@@ -39,6 +42,7 @@ interface Session {
   canonicalPath: string | null
   kind: 'file' | 'untitled'
   frontmatter: string
+  savedFrontmatter: string
   /** Last content known to be on disk. null = no successful load/save yet,
    *  in which case the session never writes (a failed read must not lead
    *  to overwriting the file with an empty document). */
@@ -55,9 +59,19 @@ interface Session {
   errorToasted: boolean
   warnedExternalMtime: number | null
   loadToken: number
+  tagEditor: ReturnType<typeof createDocumentTagEditor> | null
 }
 
 const sessions = new Map<string, Session>()
+export const displayedMetadataAtom = atom<{ id: string; frontmatter: string } | null>(null)
+
+function publishMetadata(): void {
+  const session = displayedId ? sessions.get(displayedId) : undefined
+  appStore.set(
+    displayedMetadataAtom,
+    session ? { id: session.id, frontmatter: session.frontmatter } : null,
+  )
+}
 /** The document the editor currently displays (set post-apply). */
 let displayedId: string | null = null
 let activeEditor: Editor | null = null
@@ -87,6 +101,7 @@ function ensure(id: string): Session {
       canonicalPath: null,
       kind: isUntitled(id) ? 'untitled' : 'file',
       frontmatter: '',
+      savedFrontmatter: '',
       baseline: null,
       content: null,
       mtime: null,
@@ -98,6 +113,7 @@ function ensure(id: string): Session {
       errorToasted: false,
       warnedExternalMtime: null,
       loadToken: 0,
+      tagEditor: null,
     }
     sessions.set(id, s)
   }
@@ -119,6 +135,7 @@ export function registerReloadApplier(
  *  editor — from that moment edits and snapshots belong to `id`. */
 export function setDisplayedSession(id: string | null): void {
   displayedId = id
+  publishMetadata()
 }
 
 /** Snapshot the displayed document into its session — call before the
@@ -169,6 +186,7 @@ async function loadFile(id: string): Promise<{ body: string; frontmatter: string
     if (!res.success || !res.data) throw new Error(res.success ? 'empty response' : res.error)
     const { frontmatter, body } = splitFrontmatter(res.data.content)
     s.frontmatter = frontmatter
+    s.savedFrontmatter = frontmatter
     s.canonicalPath = res.data.canonicalPath
     s.baseline = body
     s.content = body
@@ -199,7 +217,8 @@ function save(id: string): Promise<boolean> {
     const body = id === displayedId && activeEditor ? getMarkdown(activeEditor) : s.content
     if (body === null) return true
     const rev = s.dirtyRev
-    if (body === s.baseline) {
+    const frontmatter = s.frontmatter
+    if (body === s.baseline && frontmatter === s.savedFrontmatter) {
       if (!s.closed && s.dirtyRev === rev) {
         s.dirty = false
         setTabState({ id, dirty: false, saveStatus: 'saved' })
@@ -209,11 +228,12 @@ function save(id: string): Promise<boolean> {
     if (!s.closed) setTabState({ id, saveStatus: 'saving' })
     try {
       const res = await window.api.invoke(window.api.channels.InvokeSaveFile, {
-        content: s.frontmatter ? s.frontmatter + body : body,
+        content: frontmatter + body,
         filePath: id,
       })
       if (!res.success || !res.data) throw new Error(res.success ? 'empty response' : res.error)
       s.baseline = body
+      s.savedFrontmatter = frontmatter
       s.mtime = res.data.mtime
       s.errorToasted = false
       // Only sync `content` and clear dirty if no newer edit arrived while
@@ -250,7 +270,13 @@ function save(id: string): Promise<boolean> {
 }
 
 /** Cancel pending timers and save now. */
-export function flush(id: string): Promise<boolean> {
+export async function flush(id: string): Promise<boolean> {
+  const tagEditor = sessions.get(id)?.tagEditor
+  if (tagEditor && !(await tagEditor.settled())) return false
+  return flushDocument(id)
+}
+
+function flushDocument(id: string): Promise<boolean> {
   const s = sessions.get(id)
   if (!s || s.kind !== 'file') return Promise.resolve(true)
   s.scheduler.cancel()
@@ -274,6 +300,7 @@ export async function flushAll(): Promise<string[]> {
 export async function closeSession(id: string, opts?: { discard?: boolean }): Promise<boolean> {
   const s = sessions.get(id)
   if (!s) return true
+  if (s.tagEditor && !(await s.tagEditor.settled()) && !opts?.discard) return false
   s.scheduler.cancel()
   if (!opts?.discard && s.kind === 'file' && s.dirty) {
     const ok = await save(id)
@@ -283,6 +310,7 @@ export async function closeSession(id: string, opts?: { discard?: boolean }): Pr
   if (s.saving) await s.saving.catch(() => undefined)
   sessions.delete(id)
   if (id === displayedId) displayedId = null
+  publishMetadata()
   if (opts?.discard) setTabState({ id, dirty: false, saveStatus: 'saved' })
   return true
 }
@@ -311,6 +339,7 @@ export async function promoteUntitled(oldId: string, filePath: string): Promise<
   s.dirty = false
   appStore.set(promoteTabAtom, { oldId, filePath })
   if (displayedId === oldId) displayedId = filePath
+  publishMetadata()
   try {
     const res = await window.api.invoke(window.api.channels.InvokeGetFileStats, { filePath })
     if (res.success && res.data) {
@@ -369,6 +398,8 @@ export async function reconcileActiveWithDisk(): Promise<void> {
 
   const { frontmatter, body } = splitFrontmatter(content)
   s.frontmatter = frontmatter
+  s.savedFrontmatter = frontmatter
+  publishMetadata()
   s.baseline = body
   s.content = body
   s.mtime = mtime
@@ -405,6 +436,14 @@ export async function handleAgentDocument(
   request: AgentDocumentRequest,
   signal?: AbortSignal,
 ): Promise<AgentDocumentReply> {
+  return handleSessionDocument(request, 1024 * 1024, signal)
+}
+
+async function handleSessionDocument(
+  request: AgentDocumentRequest,
+  maxContentLength: number,
+  signal?: AbortSignal,
+): Promise<AgentDocumentReply> {
   signal?.throwIfAborted()
   if (request.action === 'cancel') return { id: request.id, handled: false }
   for (const session of sessions.values()) {
@@ -435,6 +474,8 @@ export async function handleAgentDocument(
     return { id: request.id, handled: true }
   }
   if (request.action === 'prepare-file-operation') {
+    if (s?.tagEditor && !(await s.tagEditor.settled()))
+      throw new Error('Could not save the open document')
     if (preparedFiles.has(id)) throw new Error('A file operation is already pending')
     preparedFiles.set(id, id === displayedId ? (activeEditor?.isEditable ?? false) : true)
     if (id === displayedId) activeEditor?.setEditable(false, false)
@@ -461,9 +502,11 @@ export async function handleAgentDocument(
     if (!disk.success || !disk.data) throw new Error('Could not read the document')
     if (s.closed || revisionBefore !== s.dirtyRev || s.saving)
       throw new Error('Document changed; read it again')
-    if (disk.data.content !== s.frontmatter + s.baseline) {
+    if (disk.data.content !== s.savedFrontmatter + s.baseline) {
       const next = splitFrontmatter(disk.data.content)
       s.frontmatter = next.frontmatter
+      s.savedFrontmatter = next.frontmatter
+      publishMetadata()
       s.baseline = next.body
       s.content = next.body
       s.mtime = disk.data.mtime
@@ -471,14 +514,15 @@ export async function handleAgentDocument(
     }
   }
   const content = raw()
-  if (content.length > 1024 * 1024) throw new Error('Document exceeds the 1 MB limit')
+  if (content.length > maxContentLength) throw new Error('Document exceeds the 1 MB limit')
   const revision = await agentRevision(content)
   signal?.throwIfAborted()
   if (s.closed || raw() !== content || preparedFiles.has(id))
     throw new Error('Document changed; read it again')
   if (request.action === 'read')
     return { id: request.id, handled: true, snapshot: { content, revision } }
-  if (request.action !== 'edit') throw new Error('Unsupported document operation')
+  if (request.action !== 'edit' && request.action !== 'edit-tags')
+    throw new Error('Unsupported document operation')
   const disk = await window.api.invoke(window.api.channels.InvokeReadFile, { filePath: id })
   signal?.throwIfAborted()
   if (!disk.success || !disk.data) throw new Error('Could not read the document')
@@ -487,24 +531,84 @@ export async function handleAgentDocument(
     raw() !== content ||
     preparedFiles.has(id) ||
     request.expectedRevision !== revision ||
-    disk.data.content !== s.frontmatter + s.baseline
+    disk.data.content !== s.savedFrontmatter + s.baseline
   )
     throw new Error('Document changed; read it again before editing')
   const next = splitFrontmatter(request.content)
-  if (s.frontmatter !== next.frontmatter) throw new Error('Preserve document metadata when editing')
-  if (id === displayedId) {
+  if (request.action === 'edit-tags') {
+    assertTagOnlyChange(content, request.content)
+    // Keep the editor's existing body boundary: adding metadata must not absorb leading blank lines.
+    const body = getContent(id)
+    if (!request.content.endsWith(body))
+      throw new Error('Tag changes must preserve the editor body')
+    next.body = body
+    next.frontmatter = request.content.slice(0, request.content.length - body.length)
+  } else if (s.frontmatter !== next.frontmatter)
+    throw new Error('Preserve document metadata when editing')
+  const previousFrontmatter = s.frontmatter
+  if (id === displayedId && request.action !== 'edit-tags') {
     if (!activeEditor || !reloadApplier) throw new Error('Editor is not ready')
     reloadApplier(next.body, true)
   }
+  s.frontmatter = next.frontmatter
+  publishMetadata()
   s.content = next.body
   s.dirty = true
   s.dirtyRev++
   setTabState({ id, dirty: true })
-  if (!(await flush(id))) throw new Error('Could not save the edited document')
+  if (!(await flushDocument(id))) {
+    // Failed metadata must not become an unjournaled change on a later autosave.
+    if (request.action === 'edit-tags' && s.frontmatter === next.frontmatter) {
+      s.frontmatter = previousFrontmatter
+      publishMetadata()
+      s.content = getContent(id)
+      s.dirty = s.frontmatter !== s.savedFrontmatter || s.content !== s.baseline
+      s.dirtyRev++
+      setTabState({ id, dirty: s.dirty })
+    }
+    throw new Error('Could not save the edited document')
+  }
   const saved = raw()
   return {
     id: request.id,
     handled: true,
     snapshot: { content: saved, revision: await agentRevision(saved) },
   }
+}
+
+/** Manual metadata editing shares the same revision checks and save owner as Agent edits. */
+export async function updateSessionTags(
+  id: string,
+  expectedFrontmatter: string,
+  tags: string[],
+): Promise<string> {
+  const reply = await handleSessionDocument(
+    { id: crypto.randomUUID(), action: 'read', path: id },
+    Infinity,
+  )
+  if (!reply.snapshot || getFrontmatter(id) !== expectedFrontmatter)
+    throw new Error('DOCUMENT_TAGS_CONFLICT')
+  const content = updateDocumentTags(reply.snapshot.content, tags)
+  const bodyLength = reply.snapshot.content.length - expectedFrontmatter.length
+  const nextFrontmatter = content.slice(0, content.length - bodyLength)
+  await handleSessionDocument(
+    {
+      id: crypto.randomUUID(),
+      action: 'edit-tags',
+      path: id,
+      expectedRevision: reply.snapshot.revision,
+      content,
+    },
+    Infinity,
+  )
+  return nextFrontmatter
+}
+
+/** Accepted inline edits must outlive the UI and finish before tab close or app exit. */
+export function getSessionTagEditor(id: string, initial: { frontmatter: string; tags: string[] }) {
+  const session = sessions.get(id)!
+  session.tagEditor ??= createDocumentTagEditor(initial, (expected, tags) =>
+    updateSessionTags(id, expected, tags),
+  )
+  return session.tagEditor
 }
