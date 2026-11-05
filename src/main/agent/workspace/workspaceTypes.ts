@@ -1,4 +1,11 @@
 import type {
+  SmartRule,
+  SmartViewDef,
+  SmartVocab,
+  SmartSort,
+  SmartHit,
+} from '../../../shared/types/smart'
+import type {
   AgentAttachment,
   AgentDocumentSnapshot,
   AgentHistorySearch,
@@ -8,7 +15,12 @@ import type { OrganizationRequest } from '../../../shared/agentCapabilities'
 // Protocol-independent capabilities supplied by the workspace service.
 export interface AgentDocumentAccess {
   read(filePath: string): Promise<AgentDocumentSnapshot>
-  edit(filePath: string, expectedRevision: string, content: string): Promise<AgentDocumentSnapshot>
+  edit(
+    filePath: string,
+    expectedRevision: string,
+    content: string,
+    tagsOnly?: boolean,
+  ): Promise<AgentDocumentSnapshot>
 }
 
 export interface WorkspaceDocumentAccess extends AgentDocumentAccess {
@@ -29,6 +41,28 @@ export interface WorkspaceOperations {
     create(filePath: string, content: string, directory: boolean): Promise<{ path: string }>
     move(source: string, destination: string): Promise<{ path: string }>
     trash(filePath: string): Promise<{ trashed: string }>
+    readTags?(
+      filePath?: string,
+    ): Promise<{ vocabulary: { tag: string; count: number }[]; tags?: string[]; revision?: string }>
+    updateTags?(
+      filePath: string,
+      revision: string,
+      add: string[],
+      remove: string[],
+    ): Promise<{ tags: string[]; revision: string }>
+    readSmartFolders?(): Promise<{
+      views: SmartViewDef[]
+      revision: string
+      vocabulary: SmartVocab
+    }>
+    previewSmartFolder?(
+      rules: SmartRule[],
+      sort?: SmartSort,
+    ): Promise<{ items: SmartHit[]; total: number }>
+    saveSmartFolder?(
+      view: SmartViewDef,
+      revision: string,
+    ): Promise<{ view: SmartViewDef; revision: string }>
     readMemory(): Promise<{ user: AgentDocumentSnapshot; workspace: AgentDocumentSnapshot }>
     writeMemory(
       scope: 'user' | 'workspace',

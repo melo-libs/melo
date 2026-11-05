@@ -125,6 +125,7 @@ export enum IpcChannels {
   InvokeGetNoteLinks = 'invoke-get-note-links',
   InvokeLinkMention = 'invoke-link-mention',
   // Smart folders: definitions (.melo/views.json), query, counts, vocab
+  OnSmartViewsChanged = 'on-smart-views-changed',
   InvokeGetSmartViews = 'invoke-get-smart-views',
   InvokeSaveSmartViews = 'invoke-save-smart-views',
   InvokeQuerySmartView = 'invoke-query-smart-view',
@@ -511,13 +512,14 @@ export interface IpcChannelDefinitions {
     args: { sourcePath: string; targetTitle: string }
     response: IpcResponse<{ linked: boolean }>
   }
+  [IpcChannels.OnSmartViewsChanged]: { args: { workspaceRoot: string }; response: void }
   [IpcChannels.InvokeGetSmartViews]: {
     args: { workspaceRoot: string }
-    response: IpcResponse<{ views: SmartViewDef[] }>
+    response: IpcResponse<{ views: SmartViewDef[]; revision: string }>
   }
   [IpcChannels.InvokeSaveSmartViews]: {
-    args: { workspaceRoot: string; views: SmartViewDef[] }
-    response: IpcResponse<void>
+    args: { workspaceRoot: string; views: SmartViewDef[]; expectedRevision: string }
+    response: IpcResponse<{ views: SmartViewDef[]; revision: string }>
   }
   [IpcChannels.InvokeQuerySmartView]: {
     args: { rules: SmartRule[]; sort?: SmartSort; offset?: number; limit?: number }

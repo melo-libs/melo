@@ -1,3 +1,5 @@
+import { readSmartViewsSnapshot, updateSmartViews } from '../../api/smartViews'
+import { storedSmartViewsSchema } from '../../../shared/smartRules'
 import { agentChangeSchema } from '../../../shared/agentChanges'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, createReadStream } from 'node:fs'
@@ -216,7 +218,7 @@ export class ChangeJournal {
         record.batchId,
       )
     const backup = path.join(this.backups, record.id)
-    if (record.kind === 'edit' || record.kind === 'trash') {
+    if (['edit', 'tags', 'smart-folder', 'trash'].includes(record.kind)) {
       await mkdir(this.backups, { recursive: true, mode: 0o700 })
       if (before) await writeFile(backup, before.content, { flag: 'wx', mode: 0o600 })
       else {
@@ -289,7 +291,10 @@ export class ChangeJournal {
         throw new Error('AGENT_UNDO_CONFLICT')
     }
     try {
-      const file = await this.resolve(root, record.path, record.kind !== 'trash')
+      const file =
+        record.kind === 'smart-folder'
+          ? ''
+          : await this.resolve(root, record.path, record.kind !== 'trash')
       switch (record.kind) {
         case 'create-folder': {
           // rmdir refuses nonempty folders; never remove files the user added later.
@@ -321,10 +326,19 @@ export class ChangeJournal {
           })
           break
         }
+        case 'smart-folder': {
+          if (!record.revision) throw new Error('AGENT_UNDO_UNAVAILABLE')
+          if (readSmartViewsSnapshot(root).revision !== record.revision)
+            throw new Error('AGENT_UNDO_CONFLICT')
+          const views = storedSmartViewsSchema.parse(JSON.parse(await readFile(backup, 'utf8')))
+          updateSmartViews(root, views, record.revision, true)
+          break
+        }
+        case 'tags':
         case 'edit': {
           if (!record.revision) throw new Error('AGENT_UNDO_UNAVAILABLE')
           const content = await readFile(backup, 'utf8')
-          await this.documents.edit(file, record.revision, content)
+          await this.documents.edit(file, record.revision, content, record.kind === 'tags')
           break
         }
         case 'trash':

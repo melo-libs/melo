@@ -2,7 +2,16 @@ import { z } from 'zod'
 
 export const agentChangeSchema = z.object({
   id: z.string(),
-  kind: z.enum(['create-folder', 'create-note', 'import', 'edit', 'move', 'trash']),
+  kind: z.enum([
+    'create-folder',
+    'create-note',
+    'import',
+    'edit',
+    'move',
+    'trash',
+    'tags',
+    'smart-folder',
+  ]),
   path: z.string(),
   source: z.string().optional(),
   undone: z.boolean(),

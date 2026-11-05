@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import i18n from '../../i18n'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useTranslation } from 'react-i18next'
@@ -7,6 +7,7 @@ import { Icon } from '../Icon'
 import type { IconName } from '../Icon'
 import { workspacePathAtom } from '../../store/workspace'
 import { activeTabAtom } from '../../store/editor'
+import { displayedMetadataAtom } from '../../store/documentSession'
 import { stripMarkdownExtension } from '@shared/fileKinds'
 
 export interface EditorTopBarProps {
@@ -91,6 +92,8 @@ export const EditorTopBar = ({
   const { t } = useTranslation()
   const wsPath = useAtomValue(workspacePathAtom)
   const activeTab = useAtomValue(activeTabAtom)
+  const metadata = useAtomValue(displayedMetadataAtom)
+  const editTagsAfterClose = useRef(false)
   const saveStatus = activeTab?.saveStatus ?? 'saved'
   const lastSavedAt = activeTab?.lastSavedAt ?? null
   const dirty = activeTab?.dirty ?? false
@@ -213,9 +216,31 @@ export const EditorTopBar = ({
             </button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content className="top-menu" align="end" sideOffset={4}>
+            <DropdownMenu.Content
+              className="top-menu"
+              align="end"
+              sideOffset={4}
+              onCloseAutoFocus={(event) => {
+                if (!editTagsAfterClose.current) return
+                event.preventDefault()
+                editTagsAfterClose.current = false
+                window.dispatchEvent(new CustomEvent('melo:edit-tags'))
+              }}
+            >
               {/* Workspace-only actions delegate to the sidebar's context-menu
                   flows. Reveal is direct so it also works for a standalone file. */}
+              {!viewerActive &&
+                !empty &&
+                metadata?.id === filePath &&
+                filePath.toLowerCase().endsWith('.md') && (
+                  <MenuItem
+                    icon="tag"
+                    label={t('documentTags.label')}
+                    onSelect={() => {
+                      editTagsAfterClose.current = true
+                    }}
+                  />
+                )}
               {wsPath && (
                 <MenuItem
                   icon="link"

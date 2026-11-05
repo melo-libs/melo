@@ -1,3 +1,4 @@
+import { MeloLogo } from '../MeloLogo'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import i18n from '../../i18n'
@@ -13,6 +14,7 @@ import {
   indexingAtom,
   recentNotesAtom,
   searchOpenAtom,
+  searchPrefillAtom,
   treeSelectionAtom,
   workspacePathAtom,
   workspaceTreeAtom,
@@ -34,6 +36,8 @@ import {
 } from './searchEngine'
 import './search.scss'
 import { openAgent } from '../../store/agent'
+import { activeTabIdAtom } from '../../store/editor'
+import { displayedMetadataAtom } from '../../store/documentSession'
 
 /* ============================================================
    SearchPalette — the ⌘K spotlight (design direction B): results
@@ -53,6 +57,7 @@ type Row =
 type NavRow = Extract<Row, { nav: true }>
 
 type Preview =
+  | { type: 'agent'; query: string }
   | { type: 'file'; file: SearchFile; terms: string[] }
   | { type: 'command'; cmd: (typeof COMMANDS)[number] }
   | null
@@ -200,12 +205,32 @@ export const SearchPalette = () => {
   const setActiveNote = useSetAtom(activeNoteAtom)
   const setTreeSelection = useSetAtom(treeSelectionAtom)
   const setActiveSmartId = useSetAtom(activeSmartIdAtom)
+  const activeSmartId = useAtomValue(activeSmartIdAtom)
+  const activeTabId = useAtomValue(activeTabIdAtom)
+  const metadata = useAtomValue(displayedMetadataAtom)
+  const canEditTags =
+    !activeSmartId && metadata?.id === activeTabId && !!activeTabId?.toLowerCase().endsWith('.md')
+  const editTagsAfterClose = useRef(false)
   const indexing = useAtomValue(indexingAtom)
   const [recents, pushRecent] = useAtom(recentNotesAtom)
 
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [result, setResult] = useState<SearchResult | null>(null)
+  const [searchResult, setResult] = useState<SearchResult | null>(null)
+  const result = useMemo(() => {
+    if (!searchResult || canEditTags) return searchResult
+    let removed = 0
+    const groups = searchResult.groups
+      .map((group) => {
+        const items = group.items.filter(
+          (item) => item.type !== 'command' || item.id !== 'add-tags',
+        )
+        removed += group.items.length - items.length
+        return { ...group, items }
+      })
+      .filter((group) => group.items.length || group.hidden)
+    return { ...searchResult, groups, total: searchResult.total - removed }
+  }, [searchResult, canEditTags])
   const [allTags, setAllTags] = useState<{ tag: string; count: number }[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -213,10 +238,17 @@ export const SearchPalette = () => {
 
   const empty = query.trim() === ''
 
+  useEffect(() => {
+    if (open || !editTagsAfterClose.current) return
+    editTagsAfterClose.current = false
+    if (canEditTags) window.dispatchEvent(new CustomEvent('melo:edit-tags'))
+  }, [open, canEditTags])
+
   // Reset + fetch tag vocabulary each open.
   useEffect(() => {
     if (!open) return
-    setQuery('')
+    setQuery(appStore.get(searchPrefillAtom))
+    appStore.set(searchPrefillAtom, '')
     setResult(null)
     setActive(0)
     window.api.invoke(IpcChannels.InvokeGetAllTags, undefined).then((res) => {
@@ -281,10 +313,12 @@ export const SearchPalette = () => {
       }
       if (workspacePath) rows.push({ kind: 'asknotice', nav: true })
       rows.push({ kind: 'head', label: t('search.groups.commands') })
-      ;['new-note', 'new-folder', 'settings'].forEach((cid) => {
-        const c = COMMANDS.find((x) => x.id === cid)
-        if (c) rows.push({ kind: 'command', cmd: c, nav: true })
-      })
+      ;['new-note', 'new-folder', ...(canEditTags ? ['add-tags'] : []), 'settings'].forEach(
+        (cid) => {
+          const c = COMMANDS.find((x) => x.id === cid)
+          if (c) rows.push({ kind: 'command', cmd: c, nav: true })
+        },
+      )
     } else if (result) {
       result.groups.forEach((g) => {
         if (g.label) rows.push({ kind: 'head', label: g.label })
@@ -295,7 +329,7 @@ export const SearchPalette = () => {
     }
     if (!empty && !urlMatch && workspacePath) rows.push({ kind: 'asknotice', nav: true })
     return rows
-  }, [empty, result, recentFiles, urlMatch, workspacePath, t])
+  }, [empty, result, recentFiles, urlMatch, workspacePath, canEditTags, t])
 
   const navIdx = useMemo(
     () => flat.map((r, i) => ('nav' in r && r.nav ? i : -1)).filter((i) => i >= 0),
@@ -322,6 +356,10 @@ export const SearchPalette = () => {
   )
   const runCommand = useCallback(
     (id: string) => {
+      if (id === 'add-tags') {
+        if (!canEditTags) return
+        editTagsAfterClose.current = true
+      }
       close()
       if (id === 'new-note') window.dispatchEvent(new CustomEvent('melo:new-note'))
       else if (id === 'new-folder') window.dispatchEvent(new CustomEvent('melo:new-folder'))
@@ -330,21 +368,22 @@ export const SearchPalette = () => {
       else if (id === 'settings')
         void window.api.invoke(IpcChannels.InvokeOpenSettingsWindow, undefined)
     },
-    [close],
+    [close, canEditTags],
   )
 
   const move = (d: number) => {
     if (navIdx.length) setActive((a) => (a + d + navIdx.length) % navIdx.length)
   }
+  const askMelo = useCallback(() => {
+    close()
+    openAgent({ draft: query.trim() || undefined, appendDraft: true })
+  }, [close, query])
   const choose = useCallback(
     (rowIndex: number | undefined) => {
       if (rowIndex == null) return
       const r = flat[rowIndex]
       if (!r) return
-      if (r.kind === 'asknotice') {
-        close()
-        openAgent(query.trim() ? { draft: query } : {})
-      }
+      if (r.kind === 'asknotice') askMelo()
       if (r.kind === 'file') openFile(r.file.id)
       else if (r.kind === 'command') runCommand(r.cmd.id)
       else if (r.kind === 'item') {
@@ -353,10 +392,16 @@ export const SearchPalette = () => {
         else if (it.type === 'command') runCommand(it.id)
       }
     },
-    [flat, openFile, runCommand, close, query],
+    [flat, openFile, runCommand, askMelo],
   )
   const hoverRow = useCallback((i: number) => setActive(navIdx.indexOf(i)), [navIdx])
   const onKey = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && workspacePath) {
+      e.preventDefault()
+      askMelo()
+      return
+    }
     if (isClip) {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -402,7 +447,8 @@ export const SearchPalette = () => {
   const activeRow = activeRowIndex != null ? flat[activeRowIndex] : undefined
   let preview: Preview = null
   if (activeRow) {
-    if (activeRow.kind === 'file') preview = { type: 'file', file: activeRow.file, terms: [] }
+    if (activeRow.kind === 'asknotice') preview = { type: 'agent', query }
+    else if (activeRow.kind === 'file') preview = { type: 'file', file: activeRow.file, terms: [] }
     else if (activeRow.kind === 'command') preview = { type: 'command', cmd: activeRow.cmd }
     else if (activeRow.kind === 'item') {
       const it = activeRow.it
@@ -488,7 +534,7 @@ export const SearchPalette = () => {
                     return (
                       <button
                         key="ask-melo"
-                        className="pb-row pb-ai pb-ask-notice"
+                        className={cn('pb-row pb-ask-notice', i === activeRowIndex && 'active')}
                         data-active={i === activeRowIndex}
                         onMouseMove={() => hoverRow(i)}
                         onFocus={() => hoverRow(i)}
@@ -498,14 +544,14 @@ export const SearchPalette = () => {
                         }}
                       >
                         <span className="pb-row-ic ai">
-                          <QIcon name="sparkle" size={16} />
+                          <MeloLogo size={24} />
                         </span>
                         <div className="pb-row-main">
-                          <div className="pb-ask-title-line">
-                            <div className="pb-row-title">{i18n.t('search.askMelo')}</div>
-                          </div>
-                          <div className="pb-row-sub">{i18n.t('search.askMeloDescription')}</div>
+                          <div className="pb-row-title">{t('search.askMelo')}</div>
                         </div>
+                        <span className="pb-row-keys" aria-hidden="true">
+                          <kbd>↵</kbd>
+                        </span>
                       </button>
                     )
                   return (
@@ -531,6 +577,17 @@ export const SearchPalette = () => {
         <div className="pb-foot">
           <SearchTips />
           <div className="pb-foot-hints">
+            {workspacePath && (
+              <button
+                className="pb-ask-shortcut"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.stopPropagation()
+                }}
+                onClick={askMelo}
+              >
+                <MeloLogo size={16} /> {t('search.askMelo')} <kbd>⌘↵</kbd>
+              </button>
+            )}
             <span>
               <kbd>
                 <QIcon name="arrowUpDown" size={12} />
@@ -1147,6 +1204,20 @@ function PreviewPane({ preview }: { preview: Preview }) {
       <div className="pb-prev-empty">
         <QIcon name="search" size={26} />
         <div>{i18n.t('search.selectResult')}</div>
+      </div>
+    )
+
+  if (preview.type === 'agent')
+    return (
+      <div className="pb-prev-agent">
+        <div className="pb-prev-agent-heading">
+          <MeloLogo size={32} />
+          <span>{i18n.t('search.askMelo')}</span>
+        </div>
+        <div className="pb-prev-agent-query">
+          {preview.query.trim() || i18n.t('search.askMeloExamples')}
+        </div>
+        <div className="pb-prev-agent-hint">{i18n.t('search.askMeloContinue')}</div>
       </div>
     )
 

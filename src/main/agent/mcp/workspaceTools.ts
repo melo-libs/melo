@@ -1,3 +1,12 @@
+import {
+  RULE_META,
+  KIND_VALUES,
+  DATE_VALUES,
+  SMART_GLYPHS,
+  smartRulesSchema,
+  smartViewSchema,
+} from '../../../shared/smartRules'
+import { SMART_SORTS } from '../../../shared/types/smart'
 import { AGENT_TOOLS, organizationRequestSchema } from '../../../shared/agentCapabilities'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -163,6 +172,89 @@ export async function startWorkspaceTools(
         },
         ({ path }) => result(() => actions.trash(path)),
       )
+      const revisionSchema = z.string().min(1).max(256)
+      const tagsSchema = z
+        .array(
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(100)
+            .refine((tag) => !/[\r\n]/.test(tag) && tag.replace(/^#/, '').trim().length > 0),
+        )
+        .max(100)
+      if (actions.readTags)
+        mcp.registerTool(
+          AGENT_TOOLS.readTags.name,
+          {
+            description:
+              'Read workspace tag vocabulary and, optionally, tags and edit revision of a Markdown note including unsaved edits. Tags are frontmatter metadata on .md notes only; other file types do not support tags.',
+            inputSchema: { path: DOCUMENT_PATH.optional() },
+            annotations: { readOnlyHint: true },
+          },
+          ({ path }) => result(() => actions.readTags!(path)),
+        )
+      if (actions.updateTags)
+        mcp.registerTool(
+          AGENT_TOOLS.updateTags.name,
+          {
+            description:
+              'Add/remove tags on a Markdown note using the revision from melo_read_tags. Preserves other metadata and note content, including unsaved edits. Requires user approval, supports undo, and rejects stale revisions. Use this instead of rewriting frontmatter with shell or document editing.',
+            inputSchema: {
+              path: DOCUMENT_PATH,
+              expectedRevision: revisionSchema,
+              add: tagsSchema.default([]),
+              remove: tagsSchema.default([]),
+            },
+            annotations: { readOnlyHint: false, destructiveHint: true },
+          },
+          ({ path, expectedRevision, add, remove }) =>
+            result(() => actions.updateTags!(path, expectedRevision, add, remove)),
+        )
+      if (actions.readSmartFolders)
+        mcp.registerTool(
+          AGENT_TOOLS.readSmartFolders.name,
+          {
+            description:
+              'Read Smart Folder definitions, configuration revision, live vocabulary and supported rules. Rules are ANDed. Folder matches a TOP-LEVEL workspace folder only, not nested paths. A Smart Folder is a saved filter; it never moves files.',
+            inputSchema: {},
+            annotations: { readOnlyHint: true },
+          },
+          () =>
+            result(async () => ({
+              ...(await actions.readSmartFolders!()),
+              supported: {
+                rules: RULE_META,
+                kinds: KIND_VALUES,
+                dates: DATE_VALUES,
+                sorts: SMART_SORTS,
+                icons: SMART_GLYPHS,
+              },
+            })),
+        )
+      if (actions.previewSmartFolder)
+        mcp.registerTool(
+          AGENT_TOOLS.previewSmartFolder.name,
+          {
+            description:
+              'Preview a Smart Folder filter using the same rules and index as the manual builder. Returns total matches and up to ten files. Before/after dates use YYYY-MM-DD. Preview before saving and describe the intended filter to the user.',
+            inputSchema: { rules: smartRulesSchema, sort: z.enum(SMART_SORTS).optional() },
+            annotations: { readOnlyHint: true },
+          },
+          ({ rules, sort }) => result(() => actions.previewSmartFolder!(rules, sort)),
+        )
+      if (actions.saveSmartFolder)
+        mcp.registerTool(
+          AGENT_TOOLS.saveSmartFolder.name,
+          {
+            description:
+              'Create or update a Smart Folder after user approval. Read definitions/revision first, preview the rules, and explain the filter. For edits preserve the existing ID; for a new folder choose a new unique ID and name. Revision conflicts require rereading and reconciling, never silently retry an old definition. Use this tool instead of writing .melo configuration. Supports undo and does not move any files.',
+            inputSchema: { view: smartViewSchema, expectedRevision: revisionSchema },
+            annotations: { readOnlyHint: false, destructiveHint: true },
+          },
+          ({ view, expectedRevision }) =>
+            result(() => actions.saveSmartFolder!(view, expectedRevision)),
+        )
       mcp.registerTool(
         AGENT_TOOLS.readMemory.name,
         {

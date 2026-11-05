@@ -39,6 +39,15 @@ beforeEach(async () => {
       create: async (path) => ({ path }),
       move: async (_source, path) => ({ path }),
       trash: async (trashed) => ({ trashed }),
+      readTags: async () => ({ vocabulary: [], tags: ['work'], revision: 'r1' }),
+      updateTags: async () => ({ tags: ['travel'], revision: 'r2' }),
+      readSmartFolders: async () => ({
+        views: [],
+        revision: 'r1',
+        vocabulary: { tags: [], folders: [], sources: [] },
+      }),
+      previewSmartFolder: async () => ({ items: [], total: 0 }),
+      saveSmartFolder: async (view) => ({ view, revision: 'r2' }),
       readMemory: async () => ({
         user: { content: '', revision: 'r1' },
         workspace: { content: '', revision: 'r1' },
@@ -190,4 +199,30 @@ describe('workspace MCP boundary', () => {
       }),
     ).toBe(403)
   })
+})
+
+it('validates metadata operations at the MCP boundary', async () => {
+  const invalid = await client.callTool({
+    name: 'melo_preview_smart_folder',
+    arguments: { rules: [{ key: 'Kind', op: 'anything', val: 'PDF' }] },
+  })
+  expect(invalid.isError).toBe(true)
+  const invalidTags = await client.callTool({
+    name: 'melo_update_tags',
+    arguments: { path: 'note.md', expectedRevision: 'r1', add: ['#'] },
+  })
+  expect(invalidTags.isError).toBe(true)
+  const valid = await client.callTool({
+    name: 'melo_save_smart_folder',
+    arguments: {
+      view: {
+        id: 'travel',
+        name: 'Travel',
+        glyph: 'folder',
+        rules: [{ key: 'Folder', op: 'is', val: 'Travel' }],
+      },
+      expectedRevision: 'r1',
+    },
+  })
+  expect(valid.isError).not.toBe(true)
 })

@@ -1,0 +1,250 @@
+.document-tags {
+  position: relative;
+  margin-bottom: 20px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.document-tags-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+  border-radius: var(--r-md);
+
+  [data-editing] > & {
+    // An inset outline preserves the tags' resting position when editing starts.
+    outline: 1px solid var(--hairline);
+    outline-offset: 4px;
+    cursor: text;
+  }
+
+  > input {
+    flex: 1;
+    width: 100px;
+    min-width: 100px;
+    height: 26px;
+    padding: 0 2px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    &::placeholder {
+      color: var(--ink-3);
+    }
+  }
+}
+
+.document-tags[data-empty] {
+  margin-bottom: 0;
+
+  > .document-tags-row {
+    // Use the existing page inset until the first tag creates a real metadata row.
+    position: absolute;
+    top: -36px;
+    left: 0;
+    width: 100%;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      height: 8px;
+    }
+  }
+
+  > .document-tags-hint {
+    margin-top: 0;
+    padding-bottom: 12px;
+  }
+}
+
+// Clipped articles have a smaller inset below their source banner.
+.ed-page[data-has-clip] .document-tags[data-empty] > .document-tags-row {
+  top: -26px;
+  min-height: 24px;
+  outline-offset: 0;
+
+  > input,
+  > .document-tags-add {
+    height: 24px;
+  }
+
+  &::after {
+    height: 2px;
+  }
+}
+.document-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 4px 3px 8px;
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  text-align: left;
+  cursor: default;
+  > span {
+    min-width: 0;
+  }
+  &[data-selected] {
+    background: var(--ink-2);
+    color: var(--paper);
+  }
+  > .document-tag-label {
+    min-width: 0;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    overflow-wrap: inherit;
+    cursor: pointer;
+    &:hover:not(:disabled) {
+      color: var(--accent);
+    }
+  }
+  > .document-tag-remove {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--r-sm);
+    color: inherit;
+    cursor: pointer;
+    // Reserve the hit target so revealing it never moves adjacent tags.
+    opacity: 0;
+    pointer-events: none;
+    &:hover:not(:disabled) {
+      background: var(--hairline);
+    }
+  }
+  &:hover > .document-tag-remove,
+  &:focus-within > .document-tag-remove,
+  [data-editing] & > .document-tag-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.document-tags-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  .document-tags:hover &,
+  .document-tags:focus-within & {
+    opacity: 1;
+  }
+  &[hidden] {
+    display: none;
+  }
+  &:hover {
+    background: var(--paper-2);
+  }
+}
+
+.document-tags[data-empty] .document-tags-add {
+  padding-left: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+  &:hover,
+  &:focus-visible {
+    color: var(--ink-2);
+  }
+}
+
+// Reveal the empty entry near the first content block without changing its height.
+.ed-page:has(> .ed-prose .tiptap > :first-child:hover)
+  > .document-tags[data-empty]
+  .document-tags-add {
+  opacity: 1;
+}
+.document-tags-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+  line-height: 18px;
+  &[role='alert'] {
+    color: var(--danger);
+  }
+}
+.document-tags-suggestions {
+  z-index: 1200;
+  width: 280px;
+  max-width: calc(100vw - 24px);
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  background: var(--paper);
+  font: 12px var(--font-sans);
+  color: var(--ink-2);
+}
+.document-tags-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  &[data-active] {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+  &[aria-disabled='true'] {
+    color: var(--ink-3);
+    cursor: default;
+  }
+  &[data-create]:not(:first-child) {
+    margin-top: 4px;
+    border-top: 1px solid var(--hairline);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+.document-tags-option-detail {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.document-tags-hint kbd,
+.document-tags-suggestions kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  font: 10px var(--font-mono);
+}
+.document-tag button:focus-visible,
+.document-tags-add:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+}

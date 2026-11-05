@@ -1,3 +1,4 @@
+import { normalizeTags } from '../../shared/documentTags'
 import path from 'path'
 import fs from 'fs-extra'
 import Database from 'better-sqlite3'
@@ -166,15 +167,6 @@ function countWords(plain: string): number {
   const latin =
     plain.replace(/[぀-ヿ㐀-䶿一-鿿豈-﫿]/g, ' ').match(/[A-Za-z0-9][A-Za-z0-9'’_-]*/g)?.length ?? 0
   return cjk + latin
-}
-
-function normalizeTags(raw: unknown): string[] {
-  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : []
-  // Tags are case-insensitive in Melo — normalize to lowercase at the door
-  // so lookups (palette filters, autocomplete) compare apples to apples.
-  return [
-    ...new Set(list.map((t) => String(t).trim().replace(/^#/, '').toLowerCase()).filter(Boolean)),
-  ]
 }
 
 function titleOf(fm: Record<string, unknown>, body: string, filePath: string): string {

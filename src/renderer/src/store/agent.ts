@@ -291,7 +291,12 @@ export async function agentCommand(command: AgentCommand): Promise<AgentCommandR
 }
 
 export function openAgent(
-  options: { selection?: string; anchor?: { x: number; y: number }; draft?: string } = {},
+  options: {
+    selection?: string
+    anchor?: { x: number; y: number }
+    draft?: string
+    appendDraft?: boolean
+  } = {},
 ): void {
   const root = appStore.get(workspacePathAtom)
   if (!root) return
@@ -300,19 +305,28 @@ export function openAgent(
   appStore.set(agentWindowAtom, {
     open: true,
     collapsed: false,
-    context: {
-      ...(options.selection && file?.startsWith(root + '/')
-        ? { filePath: file.slice(root.length + 1) }
-        : {}),
-      ...(options.selection ? { selection: options.selection.slice(0, 24000) } : {}),
-    },
+    context:
+      options.appendDraft && !options.selection
+        ? current.context
+        : {
+            ...(options.selection && file?.startsWith(root + '/')
+              ? { filePath: file.slice(root.length + 1) }
+              : {}),
+            ...(options.selection ? { selection: options.selection.slice(0, 24000) } : {}),
+          },
     anchor:
       current.open && !current.collapsed
         ? current.anchor
         : options.anchor
           ? { x: Math.round(options.anchor.x), y: Math.round(options.anchor.y) }
           : null,
-    draft: options.draft ?? current.draft,
+    draft:
+      options.appendDraft &&
+      options.draft &&
+      current.draft.trim() &&
+      current.draft.trim() !== options.draft.trim()
+        ? `${current.draft}\n\n${options.draft}`
+        : (options.draft ?? current.draft),
   })
 }
 

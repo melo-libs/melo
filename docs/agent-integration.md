@@ -112,6 +112,9 @@ through that history.
 ## User flow
 
 - Open Ask Melo from the persistent mascot, a text selection, or the search palette.
+- In the search palette, Ask Melo or `⌘Enter` carries the query into the existing
+  conversation as an unsent draft. Existing text and explicit quotes are retained;
+  highlighting a search result does not replace the active document context.
 - The floating window supports continuous conversation, dragging, resizing and
   closing back to a draggable 48px mascot without stopping the active turn.
   The mascot and expanded window keep separate positions; the mascot's position
@@ -279,6 +282,46 @@ system Trash. Mutations are serialized across conversations. Moves prepare and
 flush the owning session, keep it intact on failure, and close affected text or
 viewer tabs only after success. Directory moves and permanent deletion are not
 exposed. Existing filesystem watchers update the tree and index.
+
+### Tags and Smart Folders
+
+`melo_read_tags` reads the workspace tag vocabulary and, optionally, one Markdown
+document's current tags and revision. `melo_update_tags` adds/removes tags through
+the document session, preserving the body, other YAML fields, and unsaved editor
+content. Metadata-only writes use the same save owner, approval, and change journal
+as document edits. Failed saves restore the previous metadata; stale edits and
+undo attempts cannot overwrite newer content. Tags are stored in Markdown
+frontmatter, not in a separate attachment database.
+
+The editor shows saved Markdown tags above the body. Tag links open the existing
+search palette with an exact tag filter, including multi-word and Unicode labels.
+With no tags, the entry appears only near the first content block on hover or
+keyboard focus. The empty entry floats in the existing page inset without reserving
+a row, including while typing the first tag. Once a tag is added it becomes a
+normal metadata row. With tags, the trailing
+add control is a quiet plus. The document menu, search command, and tag row activate
+the same inline editor. Suggestions
+reuse workspace tags and usage counts. Each addition or removal saves immediately;
+Escape or outside focus ends editing. Tag undo/redo stays local to the tag editor.
+Manual tag edits share
+document-session revision checks and saving with Agent changes, while retaining
+normal editor file-size support. Displayed metadata follows the owning session,
+so Agent edits, undo, tab changes, and external reloads update the tag row without
+replacing the Tiptap document. Writes are serialized and revision checked; a failed
+write rolls back queued edits with a visible error. External metadata changes reset
+tag undo history so an old undo cannot overwrite another writer.
+
+`melo_read_smart_folders` exposes current definitions, their revision, and the
+supported rule vocabulary. The Agent previews matching files with
+`melo_preview_smart_folder` before proposing `melo_save_smart_folder`. Saving creates
+or updates a view; it does not move files. Manual and Agent changes share the same
+rule definitions and revision-checked storage. The journal supports undo until a
+newer configuration replaces that revision.
+
+App-owned changes notify the renderer to refresh Smart Folders and counts. A
+builder draft keeps its opening revision, so an intervening Agent edit produces a
+conflict instead of silently overwriting it. Existing incomplete filters remain
+editable. This notification path does not implement external-file or device sync.
 
 Paths must remain inside the active workspace and outside hidden directories.
 The MCP endpoint has a random server name, an ephemeral loopback port and a
@@ -552,8 +595,8 @@ including keys split across streaming chunks.
 
 Current limits: Markdown-only full-text search and document editing; other
 files can be listed and organized, with native read support depending on the
-provider. Smart Folder editing and automatic link rewriting after rename are
-not Agent tools in this version. Undo is a Melo control, not a harness tool.
+provider. Tags apply to Markdown documents only. Automatic link rewriting after
+rename is not an Agent tool in this version. Undo is a Melo control, not a harness tool.
 New harness sessions receive the bounded context described above; the durable
 database retains the complete history.
 

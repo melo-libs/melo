@@ -3,7 +3,7 @@ import { version } from '../../../../package.json'
 import { MarkdownManager } from '@tiptap/markdown'
 import type { JSONContent } from '@tiptap/core'
 import { editorExtensions } from '../components/editor/tiptapExtensions'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter } from '@shared/frontmatter'
 import { parseQuery } from '../components/search/searchEngine'
 import {
   CODE_GUIDE_MARKER,

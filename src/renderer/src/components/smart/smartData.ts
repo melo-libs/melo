@@ -1,3 +1,4 @@
+import { KIND_VALUES, DATE_VALUES, RULE_META } from '@shared/smartRules'
 import type { SmartKind } from '@shared/fileKinds'
 import type { SmartRule, SmartViewDef, SmartVocab } from '@shared/types/smart'
 import i18n from '../../i18n'
@@ -38,19 +39,6 @@ export const KIND: Record<SmartKind, { ico: string; label: string }> = {
   other: { ico: 'doc', label: 'File' },
 }
 
-const KIND_VALUES = ['Web clipping', 'PDF', 'Note', 'Image', 'Audio', 'Video', 'Code']
-const DATE_VALUES = ['Today', '3 days', 'This week', 'This month', '3 months', 'This year']
-
-/* ---------------- rule vocabulary ---------------- */
-export const RULE_META: Record<SmartRule['key'], { ops: string[]; ico: string }> = {
-  Kind: { ops: ['is', 'is not'], ico: 'doc' },
-  Created: { ops: ['in', 'before', 'after'], ico: 'calendar' },
-  Modified: { ops: ['in', 'before', 'after'], ico: 'clock' },
-  Folder: { ops: ['is'], ico: 'folder' },
-  Tag: { ops: ['is', 'is not', 'is empty'], ico: 'tag' },
-  Title: { ops: ['contains'], ico: 'doc' },
-  Source: { ops: ['is'], ico: 'globe' },
-}
 export const RULE_KEY_LIST = Object.keys(RULE_META) as SmartRule['key'][]
 
 /** Whether a rule value is free text (text input) vs. a fixed list (dropdown). */
@@ -104,44 +92,4 @@ export function bucketOf(days: number): string {
 
 /* ---------------- curated glyph palette (icon picker) ----------------
    Loosely grouped: time, marks, tags, content kinds, places, themes. */
-export const SMART_GLYPHS = [
-  'clock',
-  'calendar',
-  'moon',
-  'bookmark',
-  'star',
-  'heart',
-  'flag',
-  'pin',
-  'flame',
-  'bolt',
-  'spark',
-  'hash',
-  'tag',
-  'tagOff',
-  'doc',
-  'book',
-  'pdf',
-  'image',
-  'audio',
-  'video',
-  'code',
-  'globe',
-  'wave',
-  'highlight',
-  'pencil',
-  'folder',
-  'inbox',
-  'archive',
-  'layers',
-  'briefcase',
-  'home',
-  'bulb',
-  'target',
-  'leaf',
-  'coffee',
-  'plane',
-  'search',
-  'funnel',
-  'sliders',
-]
+export { RULE_META, SMART_GLYPHS } from '@shared/smartRules'

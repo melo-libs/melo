@@ -1,9 +1,18 @@
+import { normalizeTags, readDocumentTags, updateDocumentTags } from '../../../shared/documentTags'
+import { readSmartViewsSnapshot, updateSmartViews } from '../../api/smartViews'
+import { smartRulesSchema, smartViewSchema } from '../../../shared/smartRules'
 import type { AgentOperation } from '../../../shared/agentCapabilities'
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { renameFile, trashFile } from '../../api/fileOperations/fileOperations'
-import { activeWorkspaceRoot, searchIndex } from '../../api/indexer'
+import {
+  activeWorkspaceRoot,
+  searchIndex,
+  getAllTags,
+  getSmartVocab,
+  querySmartRulesPage,
+} from '../../api/indexer'
 import type { RuntimeRequest } from '../agentTypes'
 import { MemoryService } from '../storage/memory'
 import { ChangeJournal } from './changeJournal'
@@ -282,6 +291,77 @@ export class WorkspaceAccess {
             })
             return { trashed: relative }
           }),
+        readTags: async (relative) => {
+          assertActive()
+          const vocabulary = getAllTags()
+          if (!relative) return { vocabulary }
+          const snapshot = await this.documents.read(await resolveDocument(relative))
+          return {
+            vocabulary,
+            tags: readDocumentTags(snapshot.content),
+            revision: snapshot.revision,
+          }
+        },
+        updateTags: async (relative, revision, add, remove) => {
+          const file = await resolveDocument(relative)
+          const before = await this.documents.read(file)
+          if (before.revision !== revision) throw new Error('Document changed; read tags again')
+          const previous = readDocumentTags(before.content)
+          const removed = new Set(normalizeTags(remove))
+          const tags = normalizeTags([...previous.filter((tag) => !removed.has(tag)), ...add])
+          const content = updateDocumentTags(before.content, tags)
+          if (content === before.content) return { tags, revision }
+          const canonical = path.relative(root, file)
+          return mutate(
+            { kind: 'tags', path: canonical, before: previous, after: tags },
+            async () => {
+              await resolveDocument(relative)
+              const current = await this.documents.read(file)
+              if (current.revision !== revision)
+                throw new Error('Document changed; read tags again')
+              const result = await change(
+                { kind: 'tags', path: canonical },
+                () => this.documents.edit(file, revision, content, true),
+                before,
+                (snapshot) => snapshot.revision,
+              )
+              return { tags: readDocumentTags(result.content), revision: result.revision }
+            },
+          )
+        },
+        readSmartFolders: async () => {
+          assertActive()
+          return { ...readSmartViewsSnapshot(root), vocabulary: getSmartVocab() }
+        },
+        previewSmartFolder: async (rules, sort) => {
+          assertActive()
+          const result = querySmartRulesPage(smartRulesSchema.parse(rules), 10, sort)
+          return {
+            ...result,
+            items: result.items.map((item) => ({ ...item, path: path.relative(root, item.path) })),
+          }
+        },
+        saveSmartFolder: async (definition, revision) => {
+          const view = smartViewSchema.parse(definition)
+          assertActive()
+          return mutate({ kind: 'smart-folder', path: view.name, view }, async () => {
+            const before = readSmartViewsSnapshot(root)
+            if (before.revision !== revision) throw new Error('SMART_VIEWS_CONFLICT')
+            const existing = before.views.find((item) => item.id === view.id)
+            // Editing a preset creates a user-named definition, like the existing builder.
+            const saved = { ...view, preset: undefined }
+            const views = existing
+              ? before.views.map((item) => (item.id === view.id ? saved : item))
+              : [...before.views, saved]
+            const result = await change(
+              { kind: 'smart-folder', path: saved.name },
+              async () => updateSmartViews(root, views, revision),
+              { content: JSON.stringify(before.views), revision },
+              (snapshot) => snapshot.revision,
+            )
+            return { view: saved, revision: result.revision }
+          })
+        },
         readMemory: async () => {
           assertActive()
           const memory = await this.memory.read(root)

@@ -217,7 +217,13 @@ export interface AgentDocumentSnapshot {
 export type AgentDocumentRequest =
   | { id: string; action: 'cancel'; path: string }
   | { id: string; action: 'read'; path: string }
-  | { id: string; action: 'edit'; path: string; expectedRevision: string; content: string }
+  | {
+      id: string
+      action: 'edit' | 'edit-tags'
+      path: string
+      expectedRevision: string
+      content: string
+    }
   | {
       id: string
       action: 'prepare-file-operation' | 'finish-file-operation' | 'abort-file-operation'

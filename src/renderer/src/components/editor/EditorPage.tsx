@@ -20,6 +20,7 @@ import { Icon } from '../Icon'
 import { tocAtom } from '../../store/toc'
 import { wordCountAtom } from '../../store/editor'
 import { ClipBanner, parseClipSource, type ClipSource } from './ClipBanner'
+import { DocumentTags } from './DocumentTags'
 import { WikilinkLayer } from './links/WikilinkLayer'
 import { LinkPicker, type LinkPick } from './links/LinkPicker'
 import { sanitizeWikilinkTarget } from './links/Wikilink'
@@ -32,6 +33,7 @@ import { TableExtendButtons } from './table/TableExtendButtons'
 import { TableSelectionOverlay } from './table/TableSelectionOverlay'
 import {
   attachEditor,
+  displayedMetadataAtom,
   activateSession,
   flush,
   getFrontmatter,
@@ -58,6 +60,7 @@ type BlockMenuState = { node: PMNode; pos: number; x: number; y: number }
  * slash command, and the drag handle + block menu are layered on top.
  */
 export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPageProps) => {
+  const metadata = useAtomValue(displayedMetadataAtom)
   const setToc = useSetAtom(tocAtom)
   const setWordCount = useSetAtom(wordCountAtom)
   const prevTocKey = useRef('')
@@ -288,6 +291,8 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
   useEffect(() => {
     if (!editor) return
     let cancelled = false
+    let focusFrame: number | undefined
+    const focusBeforeLoad = document.activeElement
     const prev = prevTabRef.current
     prevTabRef.current = activeTabId
     if (prev && prev !== activeTabId) {
@@ -318,12 +323,26 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
       setDocInfo(doc ? { frontmatter: getFrontmatter(activeTabId), body: doc.body } : null)
       editor.setEditable(!loadFailed && !isDocumentPrepared(activeTabId), false)
       scrollEl?.classList.remove('ed-switching')
-      // Caret at the start — documents open at the top (focus('end')
-      // also scrolled long documents to the bottom).
-      if (!loadFailed) editor.commands.focus('start')
+      if (!loadFailed) {
+        editor.view.dispatch(editor.state.tr.setSelection(Selection.atStart(editor.state.doc)))
+        // Tiptap's focus() queues an unconditional RAF that can steal input
+        // from chat or tags after loading. Check focus at execution time instead.
+        focusFrame = requestAnimationFrame(() => {
+          if (cancelled || editor.isDestroyed) return
+          const focused = document.activeElement
+          if (focused !== focusBeforeLoad && focused !== document.body) return
+          if (
+            focused?.matches('input, textarea, [contenteditable="true"]') &&
+            focused !== editor.view.dom
+          )
+            return
+          editor.view.focus()
+        })
+      }
     })()
     return () => {
       cancelled = true
+      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
       scrollEl?.classList.remove('ed-switching')
     }
   }, [editor, activeTabId, applyBody])
@@ -403,6 +422,9 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
   return (
     <div className="ed-page" data-width={width} data-has-clip={clipSource ? true : undefined}>
       {clipSource && docInfo && <ClipBanner source={clipSource} markdown={docInfo.body} />}
+      {metadata?.id === activeTabId && activeTabId?.toLowerCase().endsWith('.md') && (
+        <DocumentTags key={activeTabId} id={activeTabId} frontmatter={metadata.frontmatter} />
+      )}
       <EditorContent editor={editor} className="ed-prose">
         {editor && <SlashMenu editor={editor} />}
       </EditorContent>

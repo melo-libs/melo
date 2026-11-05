@@ -60,6 +60,7 @@
     "linkedom": "^0.18.12",
     "mime-types": "^2.1.35",
     "uuid": "^11.1.0",
+    "yaml": "2.7.0",
     "zod": "4.6.7"
   },
   "devDependencies": {

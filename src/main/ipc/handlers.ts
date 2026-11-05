@@ -46,7 +46,7 @@ import {
   getSmartVocab,
   activeWorkspaceRoot,
 } from '../api/indexer'
-import { getSmartViews, saveSmartViews } from '../api/smartViews'
+import { readSmartViewsSnapshot, updateSmartViews, onSmartViewsChanged } from '../api/smartViews'
 import { resumeAgent, suspendAgent } from './agent'
 import { downloadImageToAssets } from '../api/capture/pipeline'
 import { sniffImageExt } from '../api/capture/pipeline'
@@ -103,6 +103,11 @@ async function workspacePath(p: string): Promise<string | null> {
   const resolved = await fs.realpath(path.resolve(p))
   return resolved === root || resolved.startsWith(root + path.sep) ? resolved : null
 }
+
+onSmartViewsChanged((workspaceRoot) => {
+  for (const window of BrowserWindow.getAllWindows())
+    window.webContents.send(IpcChannels.OnSmartViewsChanged, { workspaceRoot })
+})
 
 export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
   [IpcChannels.InvokeSaveFile]: async (_event, args) => {
@@ -318,7 +323,7 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
   [IpcChannels.InvokeGetSmartViews]: async (_, args) => {
     try {
       assertActiveWorkspace(args.workspaceRoot)
-      return { success: true, data: { views: getSmartViews(args.workspaceRoot) } }
+      return { success: true, data: readSmartViewsSnapshot(args.workspaceRoot) }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }
@@ -330,8 +335,8 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
       if (args.views.length > MAX_SMART_VIEWS) {
         return { success: false, error: 'Too many views' }
       }
-      saveSmartViews(args.workspaceRoot, args.views)
-      return { success: true }
+      const snapshot = updateSmartViews(args.workspaceRoot, args.views, args.expectedRevision)
+      return { success: true, data: snapshot }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }

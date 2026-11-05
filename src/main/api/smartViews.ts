@@ -1,3 +1,6 @@
+import { createHash, randomUUID } from 'node:crypto'
+import { z } from 'zod'
+import { smartViewSchema, storedSmartViewsSchema, MAX_SMART_VIEWS } from '../../shared/smartRules'
 import path from 'path'
 import fs from 'fs-extra'
 import {
@@ -51,6 +54,24 @@ function viewsPath(workspaceRoot: string): string {
 const RULE_KEYS = new Set(['Kind', 'Created', 'Modified', 'Folder', 'Tag', 'Title', 'Source'])
 const PRESETS = new Set<SmartPreset>(SMART_PRESETS)
 const SORTS = new Set<SmartSort>(SMART_SORTS)
+
+const storedRuleSchema = storedSmartViewsSchema.element.shape.rules.element
+const compatibleStoredViewsSchema = z.array(
+  storedSmartViewsSchema.element.extend({
+    rules: z
+      .array(
+        storedRuleSchema.extend({
+          key: z.preprocess(
+            (key) => (key === 'Captured' ? 'Created' : key),
+            storedRuleSchema.shape.key,
+          ),
+        }),
+      )
+      .transform((rules) =>
+        rules.filter((rule) => !(rule.key === 'Created' && rule.val === 'Anytime')),
+      ),
+  }),
+)
 
 /** views.json is a file-read boundary — keep only structurally sound
  *  definitions and known rule keys; drop the rest instead of letting
@@ -115,9 +136,83 @@ export function saveSmartViews(workspaceRoot: string, views: SmartViewDef[]): vo
   if (views.some((view) => view.rules.length > MAX_SMART_RULES)) {
     throw new Error(`Smart Folders support at most ${MAX_SMART_RULES} rules`)
   }
+  assertConfigPath(workspaceRoot)
   const file = viewsPath(workspaceRoot)
   fs.ensureDirSync(path.dirname(file))
-  const tmp = file + '.tmp'
-  fs.writeFileSync(tmp, JSON.stringify(views, null, 2))
-  fs.renameSync(tmp, file)
+  const tmp = path.join(path.dirname(file), `.views-${randomUUID()}.tmp`)
+  const descriptor = fs.openSync(tmp, 'wx', 0o600)
+  try {
+    fs.writeFileSync(descriptor, JSON.stringify(views, null, 2))
+    fs.fsyncSync(descriptor)
+    fs.renameSync(tmp, file)
+  } finally {
+    fs.closeSync(descriptor)
+    fs.rmSync(tmp, { force: true })
+  }
+}
+
+const listeners = new Set<(workspaceRoot: string) => void>()
+export function onSmartViewsChanged(listener: (workspaceRoot: string) => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+function assertConfigPath(root: string): void {
+  const directory = path.join(root, '.melo')
+  for (const file of [directory, viewsPath(root)]) {
+    try {
+      if (fs.lstatSync(file).isSymbolicLink())
+        throw new Error('Smart Folder configuration must not be a symbolic link')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+}
+
+export function readSmartViewsSnapshot(root: string): { views: SmartViewDef[]; revision: string } {
+  assertConfigPath(root)
+  if (!fs.existsSync(viewsPath(root))) getSmartViews(root)
+  if (fs.statSync(viewsPath(root)).size > 1024 * 1024)
+    throw new Error('Smart Folder configuration is too large')
+  const raw = fs.readFileSync(viewsPath(root), 'utf8')
+  return {
+    views: compatibleStoredViewsSchema.parse(JSON.parse(raw)),
+    revision: createHash('sha256').update(raw).digest('hex'),
+  }
+}
+
+export function updateSmartViews(
+  root: string,
+  views: SmartViewDef[],
+  expectedRevision: string,
+  restore = false,
+) {
+  const next = storedSmartViewsSchema.parse(views)
+  const current = readSmartViewsSnapshot(root)
+  if (current.revision !== expectedRevision) throw new Error('SMART_VIEWS_CONFLICT')
+  if (next.length > MAX_SMART_VIEWS || new Set(next.map((view) => view.id)).size !== next.length)
+    throw new Error('Too many or duplicate Smart Folders')
+  for (const view of next) {
+    const previous = current.views.find((item) => item.id === view.id)
+    if (JSON.stringify(previous) === JSON.stringify(view)) continue
+    if (!restore)
+      smartViewSchema.parse({
+        ...view,
+        rules: view.rules.filter((rule) => rule.val.trim() || rule.op === 'is empty'),
+      })
+    if (
+      !restore &&
+      (!previous || previous.name.toLowerCase() !== view.name.toLowerCase()) &&
+      next.some(
+        (other) => other.id !== view.id && other.name.toLowerCase() === view.name.toLowerCase(),
+      )
+    )
+      throw new Error('A Smart Folder with this name already exists')
+  }
+  saveSmartViews(root, next)
+  const snapshot = readSmartViewsSnapshot(root)
+  for (const listener of listeners) listener(root)
+  return snapshot
 }

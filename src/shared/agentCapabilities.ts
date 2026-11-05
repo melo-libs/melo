@@ -1,3 +1,4 @@
+import { smartViewSchema } from './smartRules'
 import { z } from 'zod'
 
 // Retained to render resource grants already stored in conversation history.
@@ -20,6 +21,11 @@ export const AGENT_TOOLS = {
   create: { name: 'melo_create', readOnly: false },
   move: { name: 'melo_move', readOnly: false },
   trash: { name: 'melo_trash', readOnly: false },
+  readTags: { name: 'melo_read_tags', readOnly: true },
+  updateTags: { name: 'melo_update_tags', readOnly: false },
+  readSmartFolders: { name: 'melo_read_smart_folders', readOnly: true },
+  previewSmartFolder: { name: 'melo_preview_smart_folder', readOnly: true },
+  saveSmartFolder: { name: 'melo_save_smart_folder', readOnly: false },
   readMemory: { name: 'melo_read_memory', readOnly: true },
   writeMemory: { name: 'melo_write_memory', readOnly: false },
 } as const
@@ -67,6 +73,13 @@ export const agentOperationSchema = z.discriminatedUnion('kind', [
       .min(1)
       .max(20),
   }),
+  z.object({
+    kind: z.literal('tags'),
+    path: z.string(),
+    before: z.array(z.string()),
+    after: z.array(z.string()),
+  }),
+  z.object({ kind: z.literal('smart-folder'), path: z.string(), view: smartViewSchema }),
   z.object({ kind: z.literal('create-folder'), path: z.string() }),
   z.object({ kind: z.literal('create-note'), path: z.string(), content: z.string() }),
   z.object({ kind: z.literal('edit'), path: z.string(), diff: z.string() }),
@@ -88,6 +101,8 @@ export type AgentOperation = z.infer<typeof agentOperationSchema>
 
 export const AGENT_OPERATIONS = {
   organize: { label: 'organizeFiles', approve: null, allowRun: false },
+  tags: { label: 'updateTags', approve: 'apply', allowRun: true },
+  'smart-folder': { label: 'saveSmartFolder', approve: 'save', allowRun: true },
   'create-folder': { label: 'createFolder', approve: 'create', allowRun: true },
   'create-note': { label: 'createNote', approve: 'create', allowRun: true },
   edit: { label: 'editDocument', approve: 'apply', allowRun: true },
