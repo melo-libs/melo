@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter } from '@shared/frontmatter'
 
 describe('splitFrontmatter', () => {
   it('splits a normal frontmatter block and keeps it verbatim', () => {
