@@ -579,7 +579,7 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
         ))}
       </div>
 
-      <div className="sb-bottom">
+      <div className="sb-bottom" data-floating-obstacle>
         <div className="sb-storage">
           {t('sidebar.local')}
           {wsBytes != null && <span className="sb-storage-size"> · {formatSize(wsBytes)}</span>}

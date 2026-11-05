@@ -533,6 +533,32 @@ try {
   assert.equal(await page.locator('.agent-compose').count(), 0)
   await page.bringToFront()
   const initialDock = await page.locator('.agent-window').boundingBox()
+  const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+  assert.equal(viewport.width - initialDock.x - initialDock.width, 32)
+  assert.equal(viewport.height - initialDock.y - initialDock.height, 96)
+  await page.evaluate((bounds) => {
+    const control = document.createElement('div')
+    control.id = 'fixed-control-fixture'
+    control.setAttribute('data-floating-obstacle', '')
+    Object.assign(control.style, {
+      position: 'fixed',
+      left: `${bounds.x - 80}px`,
+      top: `${bounds.y + 20}px`,
+      width: '160px',
+      height: '28px',
+    })
+    document.body.append(control)
+  }, initialDock)
+  await waitUntil(
+    'mascot avoids a newly mounted fixed control',
+    async () => (await page.locator('.agent-window').boundingBox()).y === initialDock.y - 40,
+  )
+  assert.equal(await page.evaluate(() => localStorage.getItem('melo.agent.dock-position')), null)
+  await page.locator('#fixed-control-fixture').evaluate((element) => element.remove())
+  await waitUntil(
+    'mascot returns to its preferred default when the control disappears',
+    async () => (await page.locator('.agent-window').boundingBox()).y === initialDock.y,
+  )
   await page.mouse.move(initialDock.x + 22, initialDock.y + 22)
   await page.mouse.down()
   await page.mouse.move(initialDock.x - 38, initialDock.y - 38, { steps: 4 })

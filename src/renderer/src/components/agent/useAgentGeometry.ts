@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react'
+import { placeDock } from './dockPlacement'
 
 const dockPositionKey = 'melo.agent.dock-position'
 
@@ -25,6 +26,7 @@ export function useAgentGeometry(
   const position = useRef<{ x: number; y: number } | null>(null)
   const dockPosition = useRef<{ x: number; y: number } | null | undefined>(undefined)
   if (dockPosition.current === undefined) dockPosition.current = restoreDockPosition()
+  const repositionDock = useRef<(() => void) | null>(null)
   const dragged = useRef(false)
   const size = useRef<{ width: number; height: number } | null>(null)
   const cleanup = useRef<(() => void) | null>(null)
@@ -32,10 +34,19 @@ export function useAgentGeometry(
   const place = useCallback(
     (x: number, y: number, remember = true) => {
       const element = panel.current!
-      const next = {
-        x: Math.round(Math.max(12, Math.min(x, window.innerWidth - element.offsetWidth - 12))),
-        y: Math.round(Math.max(48, Math.min(y, window.innerHeight - element.offsetHeight - 12))),
-      }
+      const next = collapsed
+        ? placeDock(
+            { x, y },
+            { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+            { width: element.offsetWidth, height: element.offsetHeight },
+            [],
+          )
+        : {
+            x: Math.round(Math.max(12, Math.min(x, window.innerWidth - element.offsetWidth - 12))),
+            y: Math.round(
+              Math.max(48, Math.min(y, window.innerHeight - element.offsetHeight - 12)),
+            ),
+          }
       if (collapsed) {
         if (remember) dockPosition.current = next
       } else position.current = next
@@ -47,15 +58,27 @@ export function useAgentGeometry(
   useLayoutEffect(() => {
     if (!open) return
     const element = panel.current!
+    const obstacleSelector = '[data-floating-obstacle]'
+    let obstacles: Element[] = []
     const dock = () => {
-      if (dockPosition.current) {
-        // A smaller viewport must not replace the user's preferred position.
-        place(dockPosition.current.x, dockPosition.current.y, false)
-        return
+      const preferred = dockPosition.current ?? {
+        x: window.innerWidth - element.offsetWidth - 32,
+        y: window.innerHeight - element.offsetHeight - 96,
       }
-      element.style.left = `${Math.max(12, window.innerWidth - element.offsetWidth - 20)}px`
-      element.style.top = `${Math.max(48, window.innerHeight - element.offsetHeight - 20)}px`
+      const next = placeDock(
+        preferred,
+        { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+        { width: element.offsetWidth, height: element.offsetHeight },
+        obstacles
+          .filter((node) => getComputedStyle(node).visibility !== 'hidden')
+          .map((node) => node.getBoundingClientRect())
+          .filter((rect) => rect.width > 0 && rect.height > 0),
+      )
+      // Avoidance and viewport changes must not overwrite the user's preferred position.
+      place(next.x, next.y, false)
     }
+    if (collapsed) obstacles = [...document.querySelectorAll(obstacleSelector)]
+    repositionDock.current = collapsed ? dock : null
     if (collapsed) {
       element.style.removeProperty('width')
       element.style.removeProperty('height')
@@ -76,15 +99,39 @@ export function useAgentGeometry(
       previousAnchor.current = anchor
     }
     const clamp = () => {
+      if (cleanup.current) return
       if (collapsed) dock()
       else if (position.current) place(position.current.x, position.current.y)
     }
     const observer = new ResizeObserver(clamp)
     observer.observe(element)
+    let mutations: MutationObserver | undefined
+    if (collapsed) {
+      const layout = document.querySelector('.center-pane')
+      if (layout) observer.observe(layout)
+      for (const obstacle of obstacles) observer.observe(obstacle)
+      mutations = new MutationObserver((records) => {
+        const changed = records.some((record) =>
+          [...record.addedNodes, ...record.removedNodes].some(
+            (node) =>
+              node instanceof Element &&
+              (node.matches(obstacleSelector) || node.querySelector(obstacleSelector)),
+          ),
+        )
+        if (!changed) return
+        for (const obstacle of obstacles) observer.unobserve(obstacle)
+        obstacles = [...document.querySelectorAll(obstacleSelector)]
+        for (const obstacle of obstacles) observer.observe(obstacle)
+        clamp()
+      })
+      mutations.observe(document.body, { childList: true, subtree: true })
+    }
     window.addEventListener('resize', clamp)
     return () => {
       cleanup.current?.()
       observer.disconnect()
+      mutations?.disconnect()
+      repositionDock.current = null
       window.removeEventListener('resize', clamp)
     }
   }, [open, anchor, collapsed, place])
@@ -98,6 +145,7 @@ export function useAgentGeometry(
     event.preventDefault()
     cleanup.current?.()
     dragged.current = false
+    const preferredDock = dockPosition.current
     const element = panel.current!
     const origin = {
       x: event.clientX,
@@ -163,11 +211,13 @@ export function useAgentGeometry(
         const { x, y } = dockPosition.current
         localStorage.setItem(dockPositionKey, `${x},${y}`)
       }
+      if (collapsed && event && event.type !== 'pointerup') dockPosition.current = preferredDock
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', stop)
       window.removeEventListener('pointercancel', stop)
       window.removeEventListener('blur', stop)
       cleanup.current = null
+      if (event) repositionDock.current?.()
     }
     if (!collapsed) element.setAttribute('data-dragging', '')
     cleanup.current = stop

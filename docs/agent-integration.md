@@ -115,7 +115,11 @@ through that history.
 - The floating window supports continuous conversation, dragging, resizing and
   closing back to a draggable 48px mascot without stopping the active turn.
   The mascot and expanded window keep separate positions; the mascot's position
-  survives restarts. Dragging does not open the conversation. Every send follows
+  survives restarts. A lightweight placement rule keeps it inside safe margins and
+  moves it to the nearest free position around fixed controls marked with
+  `data-floating-obstacle`. Temporary avoidance and viewport clamping do not replace
+  the saved preference. Layout changes and drag release recalculate placement;
+  scrolling and streamed messages do not. Dragging does not open the conversation. Every send follows
   the active document automatically, without a file-reference chip. Explicit quotes
   and attachments retain their own sources when tabs change. File boundaries appear
   in history only after sending and only when the source changes.
