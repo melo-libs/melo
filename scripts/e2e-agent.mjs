@@ -582,7 +582,7 @@ try {
   app = await electron.launch(launchOptions)
   app.process().stderr?.on('data', (chunk) => logs.push(String(chunk)))
   const page = await app.firstWindow()
-  page.setDefaultTimeout(10000)
+  page.setDefaultTimeout(packagedApp ? 30000 : 10000)
   page.on('pageerror', (error) => logs.push(error.stack ?? error.message))
   await page.locator('.sidebar').waitFor({ state: 'visible', timeout: 30000 })
   await page
@@ -891,6 +891,7 @@ try {
   )
   await page.getByRole('button', { name: 'Enter model ID', exact: true }).click()
   assert.equal(await page.getByLabel('Model', { exact: true }).inputValue(), 'melo-fixture')
+  if (packagedApp) console.log('Packaged Agent: saving the isolated API connection')
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await page.locator('.agent-test-success').waitFor()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
