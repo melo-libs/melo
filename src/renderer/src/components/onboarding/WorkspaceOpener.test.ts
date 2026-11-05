@@ -597,7 +597,8 @@ describe('the user-paced CODE introduction', () => {
     expect(logo).not.toBeNull()
     expect(logo.querySelectorAll('path')).toHaveLength(4)
     expect(logo.querySelector('rect, image')).toBeNull()
-    expect(logo.querySelector('path[fill="#EEF1F4"]')).not.toBeNull()
+    expect(logo.getAttribute('data-mood')).toBe('brand')
+    expect(logo.querySelector('path[fill="var(--melo-belly)"]')).not.toBeNull()
     expect(doc.querySelector('.ob-welcome img')).toBeNull()
   })
 

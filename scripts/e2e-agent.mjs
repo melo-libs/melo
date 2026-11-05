@@ -14,7 +14,12 @@ const workspace = path.join(testRoot, 'workspace')
 const profile = path.join(testRoot, 'profile')
 const logs = []
 const toolResults = []
+const contextPrompts = new Map()
 const catalogRequests = []
+const attachmentImages = []
+const scratchDirectories = new Set()
+const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'"
+let intakeFiles
 const live = process.env.MELO_AGENT_LIVE === '1'
 let app
 let passed = false
@@ -33,6 +38,11 @@ const fixture = createServer((request, response) => {
 })
 async function respondToFixture(request, response) {
   const url = new URL(request.url, 'http://localhost')
+  if (url.pathname === '/execution-probe') {
+    response.writeHead(200, { 'Content-Type': 'text/plain' })
+    response.end('Native network fixture')
+    return
+  }
   if (url.pathname.endsWith('/models')) {
     assert.equal(request.headers['x-api-key'], 'fixture-key')
     catalogRequests.push(url.pathname)
@@ -54,6 +64,19 @@ async function respondToFixture(request, response) {
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
   const body = JSON.parse(Buffer.concat(chunks).toString())
+  attachmentImages.push(
+    ...body.messages.flatMap((message) =>
+      Array.isArray(message.content)
+        ? message.content.flatMap((block) =>
+            block.type === 'image'
+              ? [block]
+              : block.type === 'tool_result' && Array.isArray(block.content)
+                ? block.content.filter((item) => item.type === 'image')
+                : [],
+          )
+        : [],
+    ),
+  )
   if (request.headers['x-api-key'] !== 'fixture-key') {
     response.writeHead(401)
     response.end(JSON.stringify({ error: { message: 'Invalid credentials' } }))
@@ -83,6 +106,27 @@ async function respondToFixture(request, response) {
   const event = (type, data) =>
     response.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`)
   event('message_start', { message })
+  const sendTool = (name, input, id) => {
+    const tool =
+      body.tools.find((tool) => tool.name === name) ??
+      body.tools.find((tool) => tool.name.includes(name))
+    assert(tool, `Missing fixture tool: ${name}`)
+    event('content_block_start', {
+      index: 0,
+      content_block: { type: 'tool_use', id, name: tool.name, input: {} },
+    })
+    event('content_block_delta', {
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) },
+    })
+    event('content_block_stop', { index: 0 })
+    event('message_delta', {
+      delta: { stop_reason: 'tool_use', stop_sequence: null },
+      usage: { output_tokens: 10 },
+    })
+    event('message_stop', {})
+    response.end()
+  }
   const readTool = body.tools?.find((tool) => tool.name.includes('melo_read_document'))
   toolResults.push(
     ...body.messages.flatMap((message) =>
@@ -94,8 +138,14 @@ async function respondToFixture(request, response) {
   const usedTool = body.messages.some(
     (message) =>
       Array.isArray(message.content) &&
-      message.content.some((block) => block.type === 'tool_result'),
+      message.content.some(
+        (block) => block.type === 'tool_result' && block.tool_use_id === 'read_fixture',
+      ),
   )
+  if (!readTool && body.tools?.some((tool) => tool.name === 'ToolSearch')) {
+    sendTool('ToolSearch', { query: 'melo', max_results: 20 }, 'discover_melo')
+    return
+  }
   const promptText =
     body.messages
       .filter((message) => message.role === 'user')
@@ -106,8 +156,14 @@ async function respondToFixture(request, response) {
       )
       .findLast((text) => text.includes('User request:')) ?? ''
   const currentRequest = promptText.split('User request:\n').at(-1) ?? ''
+  if (currentRequest.startsWith('active_file_fixture'))
+    contextPrompts.set(currentRequest, promptText)
+  const filing = currentRequest.includes('file_intake_fixture')
+  const filingConfirmed = currentRequest.includes('file_intake_confirm_fixture')
+  const filingQuestion = currentRequest.includes('file_intake_why_fixture')
+  let filingReply = ''
   const organizing =
-    currentRequest.includes('organize_fixture') &&
+    (currentRequest.includes('organize_fixture') || filing) &&
     body.tools?.some((tool) => tool.name.includes('melo_create'))
   const editing =
     currentRequest.includes('edit_fixture') &&
@@ -122,7 +178,179 @@ async function respondToFixture(request, response) {
     .filter(
       (block) => block.type === 'tool_result' && block.tool_use_id?.startsWith('organize_'),
     ).length
-  const nextOrganize = organizing ? organizeActions[organized] : undefined
+  if (filingQuestion || filingConfirmed) {
+    assert(
+      promptText.includes('I suggest Travel/Hangzhou/Hotel.txt'),
+      'follow-up retains the actual proposal',
+    )
+    if (filingQuestion)
+      filingReply =
+        'I suggested Hangzhou because the reservation is for a hotel there. Nothing has moved; shall I use that destination?'
+    else {
+      const completed = body.messages
+        .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+        .find((block) => block.type === 'tool_result' && block.tool_use_id === 'filing_plan')
+      if (!completed) {
+        sendTool(
+          'melo_organize_files',
+          {
+            files: intakeFiles.map((file) => ({
+              id: file.id,
+              reading: file.name === 'archive.bin' ? 'unread' : 'read',
+              destination:
+                file.name === 'archive.bin'
+                  ? null
+                  : file.name === 'reservation.txt'
+                    ? 'Travel/Hangzhou/Hotel.txt'
+                    : `Reference/${file.name}`,
+            })),
+          },
+          'filing_plan',
+        )
+        return
+      }
+      assert(!completed.is_error, JSON.stringify(completed.content))
+      filingReply =
+        'Organized the three readable files in the agreed folders. The unread archive remains in Inbox.'
+    }
+  }
+  if (
+    filing &&
+    body.tools?.some((tool) => tool.name.includes('melo_organize_files')) &&
+    !body.messages
+      .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+      .some((block) => block.type === 'tool_result' && block.tool_use_id === 'filing_plan')
+  ) {
+    const results = body.messages
+      .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+      .filter((block) => block.type === 'tool_result')
+    if (!results.some((block) => block.tool_use_id === 'filing_inspect')) {
+      const intermediateScript =
+        'import os,pathlib; p=pathlib.Path(os.environ["TMPDIR"])/"melo-pdf.txt"; p.write_text("".join(f"line-{n}: parsed PDF fixture\\n" for n in range(1,601))); print("melo-scratch-file="+str(p)); print("melo-scratch-root="+os.environ["CLAUDE_CODE_TMPDIR"])'
+      sendTool(
+        'Bash',
+        {
+          command:
+            `(cd ${shellQuote(workspace)}; ` +
+            "which pdftotext python3; ls -la Inbox; cat Inbox/reservation.txt; python3 -c 'import os,tempfile; f=tempfile.TemporaryFile(); f.write(b\"temporary-conversion\"); f.seek(0); print(f.read().decode())'; python3 -c '" +
+            intermediateScript +
+            "')",
+          description: 'Read the attachment and inspect available parsing tools',
+        },
+        'filing_inspect',
+      )
+      return
+    }
+    const inspection = results.find((block) => block.tool_use_id === 'filing_inspect')
+    assert(!inspection.is_error, 'routine inspection must execute without permission prompts')
+    assert(JSON.stringify(inspection.content).includes('Reservation fixture: Hangzhou'))
+    assert(JSON.stringify(inspection.content).includes('temporary-conversion'))
+    const inspectionText =
+      typeof inspection.content === 'string'
+        ? inspection.content
+        : inspection.content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('\n')
+    const intermediate = /melo-scratch-file=(.+)/.exec(inspectionText)?.[1].trim()
+    const scratch = /melo-scratch-root=(.+)/.exec(inspectionText)?.[1].trim()
+    assert(intermediate && scratch, 'the shell must expose its owned temporary paths')
+    const scratchParts = scratch.split(path.sep)
+    const ownedPart = scratchParts.findIndex((part) => /^melo-[A-Za-z0-9]{6}$/.test(part))
+    assert(ownedPart >= 0, `Native temp path escaped the owned directory: ${scratch}`)
+    const scratchRoot = scratchParts.slice(0, ownedPart + 1).join(path.sep)
+    assert(
+      intermediate.startsWith(scratch + path.sep),
+      'parser TMPDIR must stay inside the owned scratch directory',
+    )
+    scratchDirectories.add(scratchRoot)
+    if (!results.some((block) => block.tool_use_id === 'filing_scratch_write')) {
+      sendTool(
+        'Write',
+        {
+          file_path: path.join(scratch, 'analysis-note.txt'),
+          content: 'Owned parser intermediate',
+        },
+        'filing_scratch_write',
+      )
+      return
+    }
+    assert(!results.find((block) => block.tool_use_id === 'filing_scratch_write').is_error)
+    for (const offset of [1, 200, 500]) {
+      const id = `filing_scratch_read_${offset}`
+      const result = results.find((block) => block.tool_use_id === id)
+      if (!result) {
+        sendTool('Read', { file_path: intermediate, offset, limit: 60 }, id)
+        return
+      }
+      assert(
+        !result.is_error,
+        'repeated native reads of parser intermediates must not require confirmation',
+      )
+      assert(JSON.stringify(result.content).includes(`line-${offset}: parsed PDF fixture`))
+    }
+    if (!results.some((block) => block.tool_use_id === 'filing_native_execution')) {
+      const target = path.join(workspace, 'native-analysis.txt')
+      sendTool(
+        'Bash',
+        {
+          command: `printf 'Analysis fixture' > ${shellQuote(target)}; cat ${shellQuote(target)}; curl --fail --silent http://127.0.0.1:${fixture.address().port}/execution-probe`,
+          description: 'Verify native execution without additional permissions',
+        },
+        'filing_native_execution',
+      )
+      return
+    }
+    const execution = results.find((block) => block.tool_use_id === 'filing_native_execution')
+    assert(!execution.is_error, 'native execution must not require extra approval')
+    assert(JSON.stringify(execution.content).includes('Analysis fixture'))
+    assert(JSON.stringify(execution.content).includes('Native network fixture'))
+    const next = intakeFiles.findIndex(
+      (file, index) => !results.some((block) => block.tool_use_id === `filing_read_${index}`),
+    )
+    if (next >= 0) {
+      sendTool(
+        'Read',
+        { file_path: path.join(workspace, 'Inbox', intakeFiles[next].name) },
+        `filing_read_${next}`,
+      )
+      return
+    }
+    if (!results.some((block) => block.tool_use_id === 'filing_list')) {
+      sendTool('melo_list_files', { directory: '' }, 'filing_list')
+      return
+    }
+    intakeFiles.forEach((file, index) => {
+      const result = results.find((block) => block.tool_use_id === `filing_read_${index}`)
+      const content = Array.isArray(result.content)
+        ? result.content
+        : [{ type: 'text', text: result.content }]
+      const text = content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n')
+      const unread = file.name === 'archive.bin'
+      if (!unread)
+        assert(
+          !result.is_error,
+          `Native attachment read failed: ${file.name}: ${text.slice(0, 400)}`,
+        )
+      if (file.name === 'reservation.txt')
+        assert(
+          text.includes('Reservation fixture: Hangzhou hotel on Friday.'),
+          'native Read must return actual attachment content',
+        )
+      if (file.name.endsWith('.pdf'))
+        assert(
+          content.some((block) => block.type === 'document' || block.type === 'image') ||
+            text.includes('Melo PDF preview'),
+          'native Read must forward PDF content to the model',
+        )
+    })
+    filingReply =
+      '==I suggest Travel/Hangzhou/Hotel.txt for the hotel reservation.==\n\nUse Reference for the PDF and image, and keep archive.bin in Inbox because it could not be read. Shall I organize them this way?'
+  }
+  const nextOrganize = organizing && !filing ? organizeActions[organized] : undefined
   if (nextOrganize) {
     const tool = body.tools.find((tool) => tool.name.includes(nextOrganize[0]))
     event('content_block_start', {
@@ -200,11 +428,14 @@ async function respondToFixture(request, response) {
     index: 0,
     delta: {
       type: 'text_delta',
-      text: editing
-        ? 'Changed Saturday to Sunday.'
-        : organizing
-          ? 'The files are organized. Future articles can stay in Inbox until you decide where to keep them.'
-          : fixtureReply,
+      text:
+        (currentRequest.startsWith('active_file_fixture') ? 'Current file received.' : '') ||
+        filingReply ||
+        (editing
+          ? 'Changed Saturday to Sunday.'
+          : organizing
+            ? 'The files are organized. Future articles can stay in Inbox until you decide where to keep them.'
+            : fixtureReply),
     },
   })
   event('content_block_stop', { index: 0 })
@@ -250,6 +481,8 @@ try {
   await new Promise((resolve) => fixture.listen(0, '127.0.0.1', resolve))
   const fixtureUrl = `http://127.0.0.1:${fixture.address().port}/anthropic`
   fs.mkdirSync(workspace)
+  const existingFilingFolder = 'Family/Baby/Medical reports/2026/Checkups'
+  fs.mkdirSync(path.join(workspace, existingFilingFolder), { recursive: true })
   fs.mkdirSync(profile)
   const codexHome = path.join(testRoot, 'codex-home')
   const claudeHome = path.join(testRoot, 'claude-home')
@@ -295,7 +528,50 @@ try {
     .click()
   const editor = page.locator('.tiptap[contenteditable="true"]').first()
   await editor.waitFor({ state: 'visible' })
-  await page.locator('.ed-ask-melo').click()
+  assert.equal(await page.locator('.ed-ask-melo').count(), 0)
+  await page.locator('.agent-dock[data-intro]').waitFor()
+  assert.equal(await page.locator('.agent-compose').count(), 0)
+  await page.bringToFront()
+  const initialDock = await page.locator('.agent-window').boundingBox()
+  const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+  assert.equal(viewport.width - initialDock.x - initialDock.width, 32)
+  assert.equal(viewport.height - initialDock.y - initialDock.height, 96)
+  await page.evaluate((bounds) => {
+    const control = document.createElement('div')
+    control.id = 'fixed-control-fixture'
+    control.setAttribute('data-floating-obstacle', '')
+    Object.assign(control.style, {
+      position: 'fixed',
+      left: `${bounds.x - 80}px`,
+      top: `${bounds.y + 20}px`,
+      width: '160px',
+      height: '28px',
+    })
+    document.body.append(control)
+  }, initialDock)
+  await waitUntil(
+    'mascot avoids a newly mounted fixed control',
+    async () => (await page.locator('.agent-window').boundingBox()).y === initialDock.y - 40,
+  )
+  assert.equal(await page.evaluate(() => localStorage.getItem('melo.agent.dock-position')), null)
+  await page.locator('#fixed-control-fixture').evaluate((element) => element.remove())
+  await waitUntil(
+    'mascot returns to its preferred default when the control disappears',
+    async () => (await page.locator('.agent-window').boundingBox()).y === initialDock.y,
+  )
+  await page.mouse.move(initialDock.x + 22, initialDock.y + 22)
+  await page.mouse.down()
+  await page.mouse.move(initialDock.x - 38, initialDock.y - 38, { steps: 4 })
+  await page.mouse.up()
+  const savedDock = await page.locator('.agent-window').boundingBox()
+  assert.equal(savedDock.x, initialDock.x - 60)
+  assert.equal(savedDock.y, initialDock.y - 60)
+  await page.reload()
+  await page.locator('.agent-dock[data-intro]').waitFor()
+  assert.deepEqual(await page.locator('.agent-window').boundingBox(), savedDock)
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({ path: process.env.MELO_E2E_DOCK_SCREENSHOT })
+  await page.locator('.agent-dock').click()
   await page.locator('.agent-window').waitFor({ state: 'visible' })
   await waitUntil('Claude setup', () => page.locator('.agent-settings').isVisible())
   await page.locator('.agent-auth-actions .ui-button').waitFor()
@@ -355,7 +631,7 @@ try {
     await page.locator('.agent-compose textarea').evaluate((el) => document.activeElement === el),
     'returning from settings must restore composer focus',
   )
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   await editor.focus()
   await page.keyboard.press('Meta+a')
   await page.locator('.bubble-btn.bubble-ask').click()
@@ -385,15 +661,18 @@ try {
     !(await page.locator('.agent-status').innerText()).includes('Connecting'),
     'startup and generation must share the normal processing state',
   )
-  await waitUntil('Claude API reply', async () => {
-    if (await page.locator('.agent-error').isVisible())
-      throw new Error(await page.locator('.agent-error').innerText())
-    return (
-      (await page.locator('.agent-markdown strong').count()) > 0 &&
-      (await page.getByRole('button', { name: 'Send', exact: true }).isVisible())
-    )
-  })
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock[data-mode="working"]').waitFor()
+  await page.locator('.agent-dock[data-mode="ready"]').waitFor({ timeout: 20000 })
+  await page.mouse.move(30, 30)
+  await page.locator('.agent-dock-bubble').waitFor({ state: 'hidden' })
+  assert.equal(
+    await page.locator('.agent-dock[data-mode="ready"]').count(),
+    1,
+    'the unread expression must survive the short announcement',
+  )
   const firstAdapterPid = claudeAdapterPid()
+  await page.locator('.agent-dock').click()
   assert.equal(await page.locator('.agent-markdown strong').innerText(), 'one place')
   assert(
     toolResults.length > 0 && toolResults.every((result) => !result.is_error),
@@ -406,7 +685,7 @@ try {
   assert.equal(
     await page.locator('.agent-context-strip').count(),
     0,
-    'a sent quote must leave the composer',
+    'reopening must not attach a file chip or restore a sent quote',
   )
   assert.equal(await page.locator('.agent-files').count(), 0)
   assert(
@@ -414,10 +693,15 @@ try {
     'Melo document reads must appear in the activity summary',
   )
   const expandedBounds = await page.locator('.agent-window').boundingBox()
-  await page.getByRole('button', { name: 'Minimize conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   const dockBounds = await page.locator('.agent-window').boundingBox()
-  assert.equal(dockBounds.height, 44)
-  assert.equal(dockBounds.width, 44)
+  assert.equal(dockBounds.height, 48)
+  assert.equal(dockBounds.width, 48)
+  assert.equal(await page.locator('.agent-dock[data-intro]').count(), 0)
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-ball.png'),
+    })
   assert.equal(await page.locator('.agent-resize').count(), 0)
   await page.mouse.move(dockBounds.x + 22, dockBounds.y + 22)
   await page.mouse.down()
@@ -427,11 +711,14 @@ try {
   const movedDock = await page.locator('.agent-window').boundingBox()
   assert.equal(movedDock.x, dockBounds.x - 80)
   assert.equal(movedDock.y, dockBounds.y - 80)
-  await page.getByRole('button', { name: 'Expand conversation', exact: true }).click()
+  await page.getByRole('button', { name: 'Ask Melo', exact: true }).click()
   assert.deepEqual(await page.locator('.agent-window').boundingBox(), expandedBounds)
-  await page.getByRole('button', { name: 'Minimize conversation', exact: true }).click()
+  await page.locator('.agent-compose textarea').focus()
+  await page.keyboard.press('Escape')
+  await page.locator('.agent-dock').waitFor()
   assert.deepEqual(await page.locator('.agent-window').boundingBox(), movedDock)
-  await page.getByRole('button', { name: 'Expand conversation', exact: true }).click()
+  assert(await page.locator('.agent-dock').evaluate((el) => document.activeElement === el))
+  await page.getByRole('button', { name: 'Ask Melo', exact: true }).click()
   await page.locator('.agent-model').click()
   assert((await page.locator('.agent-picker-menu').innerText()).includes('melo-fixture'))
   assert(!(await page.locator('.agent-picker-menu').innerText()).includes('Opus'))
@@ -473,8 +760,8 @@ try {
     element.dispatchEvent(new Event('scroll', { bubbles: true }))
   })
   await page.locator('.agent-latest').waitFor()
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert.equal(
     Math.round(await page.locator('.agent-body').evaluate((element) => element.scrollTop)),
     100,
@@ -489,15 +776,58 @@ try {
   )
   await page.locator('.agent-inline-file').filter({ hasText: 'Packing list' }).click()
   await waitUntil('open a cited file', async () => (await editor.innerText()).includes('Raincoat'))
+  const sourceCount = await page.locator('.agent-source-divider').count()
+  assert.equal(await page.locator('.agent-context-strip').count(), 0)
+  await page.locator('.agent-compose textarea').fill('active_file_fixture packing')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await waitUntil('active packing file reaches Harness', async () =>
+    contextPrompts.has('active_file_fixture packing'),
+  )
+  await page.locator('.agent-status').waitFor({ state: 'hidden' })
+  assert(
+    contextPrompts
+      .get('active_file_fixture packing')
+      .includes('editor at send time, relative to workspace: packing.md'),
+  )
+  assert.equal(await page.locator('.agent-source-divider').count(), sourceCount + 1)
+  await page.locator('.agent-compose textarea').fill('A draft about packing')
   await page.locator('.agent-user .agent-quote-source').click()
   await waitUntil('open a quoted source', async () =>
     (await editor.innerText()).includes('riverside'),
   )
+  assert.equal(await page.locator('.agent-context-strip').count(), 0)
+  assert.equal(
+    await page.locator('.agent-source-divider').count(),
+    sourceCount + 1,
+    'switching tabs without sending must not create history boundaries',
+  )
+  assert.equal(await page.locator('.agent-compose textarea').inputValue(), 'A draft about packing')
+  await page.locator('.agent-compose textarea').fill('active_file_fixture note')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await waitUntil('active note reaches Harness without reopening chat', async () =>
+    contextPrompts.has('active_file_fixture note'),
+  )
+  await page.locator('.agent-status').waitFor({ state: 'hidden' })
+  assert(
+    contextPrompts
+      .get('active_file_fixture note')
+      .includes('editor at send time, relative to workspace: note.md'),
+  )
+  assert.equal(await page.locator('.agent-source-divider').count(), sourceCount + 2)
+  if (process.env.MELO_E2E_CONTEXT_SCREENSHOT)
+    await page
+      .locator('.agent-window')
+      .screenshot({ path: process.env.MELO_E2E_CONTEXT_SCREENSHOT })
 
   await page.locator('.toast').waitFor({ state: 'hidden' })
   await page.locator('.agent-compose textarea').fill('edit_fixture')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await page.locator('.agent-permission[data-pending]').waitFor()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock[data-mode="waiting"]').waitFor()
+  await page.locator('.agent-dock').hover()
+  assert.equal(await page.locator('.agent-dock .melo-mascot').getAttribute('data-mood'), 'waiting')
+  await page.locator('.agent-dock').click()
   assert.equal(claudeAdapterPid(), firstAdapterPid, 'consecutive turns must reuse the warm adapter')
   const approvalId = await page
     .locator('.agent-permission[data-pending]')
@@ -510,8 +840,8 @@ try {
   )
   if (process.env.MELO_E2E_DIFF_SCREENSHOT)
     await page.locator('.agent-window').screenshot({ path: process.env.MELO_E2E_DIFF_SCREENSHOT })
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert.equal(
     await page.locator('.agent-permission[data-pending]').getAttribute('data-permission-id'),
     approvalId,
@@ -528,7 +858,19 @@ try {
   }
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
   await page.locator('.agent-permission[data-pending]').waitFor({ state: 'hidden' })
-  await page.locator('.agent-approval-status').filter({ hasText: 'no longer active' }).waitFor()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock[data-mode="idle"]').waitFor()
+  await page.locator('.agent-dock').click()
+  const expired = page
+    .locator('.agent-approval-record')
+    .filter({ hasText: 'No longer active' })
+    .last()
+  await expired.locator(':scope > summary').waitFor()
+  assert.equal(await expired.getAttribute('open'), null, 'superseded confirmations stay collapsed')
+  await expired.locator(':scope > summary').focus()
+  await page.keyboard.press('Enter')
+  await expired.locator('.agent-approval-status').waitFor()
+  await expired.locator(':scope > summary').click()
   assert(fs.readFileSync(file, 'utf8').includes('Saturday'))
   await page.locator('.agent-compose textarea').fill('edit_fixture')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
@@ -718,8 +1060,8 @@ try {
   const after = await page.locator('.agent-window').boundingBox()
   assert(Math.abs(after.x - before.x) > 20, 'the floating conversation must be draggable')
   await page.locator('.agent-compose textarea').fill('Keep this unsent draft')
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert.equal(
     Math.round((await page.locator('.agent-window').boundingBox()).x),
     Math.round(after.x),
@@ -736,8 +1078,19 @@ try {
   await page.mouse.move(floating.x + 90, height - floating.height - 16 + 18)
   await page.mouse.up()
   await page.evaluate(() => new Promise(requestAnimationFrame))
+  const existingPanel = await page.locator('.agent-window').elementHandle()
+  const quoteBounds = await page.locator('.agent-window').boundingBox()
   await page.locator('.bubble-btn.bubble-ask').click()
   assert(await page.locator('.agent-context-strip').isVisible())
+  assert.deepEqual(
+    await page.locator('.agent-window').boundingBox(),
+    quoteBounds,
+    'quoting into an expanded chat must preserve its position and size',
+  )
+  assert(
+    await existingPanel.evaluate((element) => element === document.querySelector('.agent-window')),
+    'quoting must reuse the existing panel',
+  )
   assert(
     await page
       .locator('.agent-compose textarea')
@@ -753,6 +1106,12 @@ try {
   await page.locator('.bubble-ask').click()
   await page.locator('.agent-search').waitFor({ state: 'hidden' })
   assert(await page.locator('.agent-context-strip').isVisible())
+  assert.deepEqual(
+    await page.locator('.agent-window').boundingBox(),
+    quoteBounds,
+    'another quote must not reposition the panel',
+  )
+  await existingPanel.dispose()
   assert.equal(await page.locator('.bubble-selection').count(), 0)
 
   if (live) {
@@ -790,8 +1149,8 @@ try {
   }
   if (process.env.MELO_E2E_SCREENSHOT)
     await page.screenshot({ path: process.env.MELO_E2E_SCREENSHOT })
-  await page.getByRole('button', { name: 'Hide conversation', exact: true }).click()
-  await page.locator('.ed-ask-melo').click()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  await page.locator('.agent-dock').click()
   assert(await page.locator('.agent-window').isVisible())
   const userCount = await page.locator('.agent-user').count()
   await page.getByRole('button', { name: 'Search chat history', exact: true }).click()
@@ -814,6 +1173,446 @@ try {
     await page.locator('.agent-compose textarea').inputValue(),
     'What should I prepare for the weekend?',
   )
+  if (!live) {
+    const sources = path.join(testRoot, 'intake-sources')
+    fs.mkdirSync(sources)
+    fs.writeFileSync(
+      path.join(sources, 'reservation.txt'),
+      'Reservation fixture: Hangzhou hotel on Friday.',
+    )
+    fs.writeFileSync(path.join(sources, 'archive.bin'), Buffer.from([0, 1, 2, 3]))
+    // Stub reads in this isolated Electron process; never change the OS clipboard.
+    await app.evaluate(({ clipboard, nativeImage }) => {
+      globalThis.__meloIntakeClipboard = {
+        readBuffer: clipboard.readBuffer,
+        read: clipboard.read,
+        readImage: clipboard.readImage,
+      }
+      clipboard.readBuffer = () => Buffer.alloc(0)
+      clipboard.read = () => ''
+      clipboard.readImage = () => nativeImage.createEmpty()
+    })
+    const paste = async (text) =>
+      page.locator('.agent-compose textarea').evaluate((element, text) => {
+        const data = new DataTransfer()
+        data.setData('text/plain', text)
+        element.dispatchEvent(
+          new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+        )
+      }, text)
+    const textarea = page.locator('.agent-compose textarea')
+    await textarea.fill('')
+    await paste('file_intake_fixture')
+    await waitUntil(
+      'ordinary textarea paste',
+      async () => (await textarea.inputValue()) === 'file_intake_fixture',
+    )
+    const dropSource = path.join(workspace, 'packing.md')
+    await page.locator('.agent-window').evaluate((element, source) => {
+      const data = new DataTransfer()
+      data.setData('application/x-melo-node', source)
+      element.dispatchEvent(
+        new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }),
+      )
+    }, dropSource)
+    await page.locator('.agent-compose[data-dragging-files]').waitFor()
+    await page.locator('.agent-window').evaluate((element, source) => {
+      const data = new DataTransfer()
+      data.setData('application/x-melo-node', source)
+      element.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }),
+      )
+    }, dropSource)
+    await page.getByRole('button', { name: 'Remove packing.md', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Got it', exact: true }).count(), 0)
+    await page.locator('.agent-compose .agent-attachment').hover()
+    await page.getByRole('button', { name: 'Remove packing.md', exact: true }).click()
+    await waitUntil(
+      'discard dropped draft',
+      async () => (await page.locator('.agent-compose .agent-attachment').count()) === 0,
+    )
+    assert(fs.existsSync(dropSource))
+    await page.evaluate(() => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.id = 'intake-native-file-fixture'
+      document.body.append(input)
+    })
+    await page
+      .locator('#intake-native-file-fixture')
+      .setInputFiles(path.join(sources, 'archive.bin'))
+    await page.locator('.agent-window').evaluate((element) => {
+      const input = document.querySelector('#intake-native-file-fixture')
+      const data = new DataTransfer()
+      data.items.add(input.files[0])
+      element.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }),
+      )
+      input.remove()
+    })
+    await page.getByRole('button', { name: 'Remove archive.bin', exact: true }).waitFor()
+    await page.locator('.agent-compose .agent-attachment').hover()
+    await page.getByRole('button', { name: 'Remove archive.bin', exact: true }).click()
+    await waitUntil(
+      'discard native file drop',
+      async () => (await page.locator('.agent-compose .agent-attachment').count()) === 0,
+    )
+    const pdfStream =
+      'BT /F1 24 Tf 24 190 Td (Melo PDF preview) Tj ET\n0.88 0.91 0.96 rg 24 120 270 40 re f\n'
+    const pdfObjects = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 240] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+      `<< /Length ${Buffer.byteLength(pdfStream)} >>\nstream\n${pdfStream}endstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ]
+    let pdf = '%PDF-1.4\n'
+    const offsets = [0]
+    for (const [index, object] of pdfObjects.entries()) {
+      offsets.push(Buffer.byteLength(pdf))
+      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+    }
+    const xref = Buffer.byteLength(pdf)
+    pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+      .slice(1)
+      .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+      .join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+    const pdfPath = path.join(sources, 'Statement.pdf')
+    fs.writeFileSync(pdfPath, pdf)
+    await app.evaluate(({ clipboard }, pdfPath) => {
+      clipboard.readBuffer = (format) =>
+        format === 'text/uri-list' ? Buffer.from(`file://${pdfPath}`) : Buffer.alloc(0)
+    }, pdfPath)
+    await paste('')
+    await page
+      .locator('.agent-compose .file-thumbnail[data-tone="pdf"][data-preview] img')
+      .waitFor()
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT)
+      await page
+        .locator('.agent-compose')
+        .screenshot({ path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-pdf.png') })
+    assert.equal(fs.readFileSync(pdfPath, 'utf8'), pdf)
+    const urls = [path.join(sources, 'reservation.txt'), path.join(sources, 'archive.bin')]
+      .map((file) => new URL(`file://${file}`).href)
+      .join('\n')
+    await app.evaluate(({ clipboard }, urls) => {
+      clipboard.readBuffer = (format) =>
+        format === 'text/uri-list' ? Buffer.from(urls) : Buffer.alloc(0)
+    }, urls)
+    await paste('do not insert a copied file path as text')
+    await waitUntil(
+      'PDF and two pasted files',
+      async () => (await page.locator('.agent-compose .agent-attachment').count()) === 3,
+    )
+    await app.evaluate(({ clipboard, nativeImage }) => {
+      clipboard.readBuffer = () => Buffer.alloc(0)
+      clipboard.readImage = () =>
+        nativeImage.createFromBitmap(Buffer.from([0, 0, 255, 255]), { width: 1, height: 1 })
+    })
+    await paste('')
+    await waitUntil(
+      'pasted screenshot',
+      async () => (await page.locator('.agent-compose .agent-attachment').count()) === 4,
+    )
+    await page.locator('.agent-compose .file-thumbnail[data-kind="image"] img').waitFor()
+    assert.equal(await textarea.inputValue(), 'file_intake_fixture')
+    assert(
+      !fs.existsSync(path.join(workspace, 'Inbox/reservation.txt')),
+      'drafts stay outside the workspace',
+    )
+    const drafts = await page.evaluate(async (workspace) => {
+      const result = await window.api.invoke('agent-command', {
+        action: 'draft-attachments',
+        workspaceRoot: workspace,
+      })
+      return result.data.intake.attachments
+    }, workspace)
+    assert.equal(drafts.length, 4)
+    assert(drafts.every((file) => !file.path))
+    intakeFiles = drafts
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
+      await page
+        .locator('.agent-window')
+        .screenshot({ path: process.env.MELO_E2E_INTAKE_SCREENSHOT })
+      const original = await page.locator('.agent-window').evaluate((element) => ({
+        style: element.getAttribute('style'),
+        theme: document.documentElement.getAttribute('data-theme'),
+      }))
+      await page.locator('.agent-window').evaluate((element) => {
+        element.style.width = '360px'
+        document.documentElement.setAttribute('data-theme', 'dark')
+      })
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-dark-narrow.png'),
+      })
+      assert.equal(
+        await page
+          .locator('.agent-compose .agent-attachments')
+          .evaluate((element) => element.scrollWidth > element.clientWidth),
+        false,
+      )
+      await page.locator('.agent-window').evaluate((element, original) => {
+        if (original.style === null) element.removeAttribute('style')
+        else element.setAttribute('style', original.style)
+        if (original.theme === null) document.documentElement.removeAttribute('data-theme')
+        else document.documentElement.setAttribute('data-theme', original.theme)
+      }, original)
+    }
+    const changesBeforeFiling = await page.locator('.agent-changes').count()
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    await waitUntil(
+      'filing suggestion completes without an approval card',
+      async () =>
+        (await page.locator('.agent-assistant').last().innerText()).includes(
+          'I suggest Travel/Hangzhou/Hotel.txt',
+        ) && (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
+    )
+    assert.equal(await page.locator('.agent-permission[data-pending]').count(), 0)
+    assert.equal(
+      await page.locator('.agent-assistant').last().locator('mark').innerText(),
+      'I suggest Travel/Hangzhou/Hotel.txt for the hotel reservation.',
+    )
+    assert.equal(
+      fs.readFileSync(path.join(workspace, 'Inbox/reservation.txt'), 'utf8'),
+      'Reservation fixture: Hangzhou hotel on Friday.',
+    )
+    assert.equal(
+      await page.locator('.agent-compose .agent-attachment').count(),
+      0,
+      'submitted attachments leave the composer',
+    )
+    const activity = page.locator('.agent-activity').last()
+    assert.equal(
+      (await activity.locator(':scope > summary').innerText()).trim(),
+      'Processing details',
+    )
+    assert.equal(await activity.getAttribute('open'), null)
+    assert.equal(await page.locator('.agent-native-record').count(), 0)
+    assert.equal(await page.locator('.agent-error').count(), 0)
+    await activity.locator(':scope > summary').click()
+    assert(
+      (await activity.locator('.agent-tool-label').allTextContents()).some(
+        (label) => label.includes('Read file') && label.includes('Statement.pdf'),
+      ),
+    )
+    const failedAttempt = activity.locator('.agent-tool[data-status="failed"]').first()
+    await failedAttempt.waitFor()
+    const attemptSummary = await failedAttempt.locator(':scope > summary').innerText()
+    assert(attemptSummary.includes('Attempt unsuccessful'))
+    assert(!attemptSummary.includes('printf'))
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
+      await activity.scrollIntoViewIfNeeded()
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-activity.png'),
+      })
+    }
+    await failedAttempt.locator(':scope > summary').click()
+    assert((await failedAttempt.locator('pre').first().innerText()).length > 0)
+    await activity.locator(':scope > summary').click()
+    assert.equal(
+      await page.locator('.agent-changes').count(),
+      changesBeforeFiling,
+      'Inbox receipt is not a file-change card',
+    )
+    assert(
+      (await page.locator('.agent-receipt').last().innerText()).includes('4 files saved to Inbox'),
+    )
+    assert(
+      !fs.existsSync(path.join(workspace, 'Travel/Hangzhou')),
+      'filing must wait for user approval',
+    )
+    assert(!fs.existsSync(path.join(workspace, 'Reference')), 'a suggestion does not move files')
+    await textarea.fill('file_intake_why_fixture: Why Hangzhou?')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    await waitUntil(
+      'explain the suggestion without cancelling or executing it',
+      async () =>
+        (await page.locator('.agent-assistant').last().innerText()).includes(
+          'I suggested Hangzhou because',
+        ) && (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
+    )
+    assert(fs.existsSync(path.join(workspace, 'Inbox/reservation.txt')))
+    assert(!fs.existsSync(path.join(workspace, 'Travel/Hangzhou')))
+    assert.equal(await page.locator('.agent-permission[data-pending]').count(), 0)
+    assert.equal(await page.locator('.agent-filing-result').count(), 0)
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT)
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-discussion.png'),
+      })
+    await textarea.fill(
+      'file_intake_confirm_fixture: Yes, use Travel/Hangzhou/Hotel.txt and Reference, and leave the archive in Inbox.',
+    )
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    await waitUntil('file intake and filing', async () => {
+      if (await page.locator('.agent-error').isVisible())
+        throw new Error(await page.locator('.agent-error').innerText())
+      return (
+        fs.existsSync(path.join(workspace, 'Travel/Hangzhou/Hotel.txt')) &&
+        fs.existsSync(path.join(workspace, 'Reference', drafts.at(-1).name)) &&
+        fs.existsSync(path.join(workspace, 'Inbox/archive.bin')) &&
+        (await page.getByRole('button', { name: 'Send', exact: true }).isVisible())
+      )
+    })
+    assert(attachmentImages.length > 0, 'the installed Harness must receive image content')
+    assert.equal(
+      fs.readFileSync(path.join(sources, 'reservation.txt'), 'utf8'),
+      'Reservation fixture: Hangzhou hotel on Friday.',
+    )
+    await page
+      .locator('.agent-user')
+      .getByRole('button', { name: 'reservation.txt', exact: true })
+      .last()
+      .click()
+    await waitUntil('open an attachment after filing', async () =>
+      (await editor.innerText()).includes('Reservation fixture'),
+    )
+    const filed = page.locator('.agent-filing-result').last()
+    await filed.waitFor()
+    assert.equal(await filed.locator('.agent-filing-details').getAttribute('open'), null)
+    assert((await filed.locator('summary').innerText()).includes('Organized 3 files'))
+    await page
+      .locator('.agent-user')
+      .filter({ hasText: 'file_intake_confirm_fixture' })
+      .last()
+      .click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Delete message', exact: true }).click()
+    await waitUntil(
+      'filing survives deletion of its question',
+      async () =>
+        (await page
+          .locator('.agent-user')
+          .filter({ hasText: 'file_intake_confirm_fixture' })
+          .count()) === 0 && (await filed.locator('summary').innerText()) === 'Organized 3 files',
+    )
+    assert.equal(await page.locator('.agent-filing-result').count(), 1)
+    assert.equal(await filed.locator('.agent-card-heading').count(), 0)
+    assert.equal(await filed.evaluate((element) => getComputedStyle(element).boxShadow), 'none')
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
+      await filed.scrollIntoViewIfNeeded()
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-completed.png'),
+      })
+    }
+    await filed.locator('summary').click()
+    assert.equal(
+      await filed.locator('.agent-filing-files .agent-quiet').count(),
+      0,
+      'expanded filing details must not offer a second undo action',
+    )
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
+      await filed.scrollIntoViewIfNeeded()
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-expanded.png'),
+      })
+    }
+    await filed.getByRole('button', { name: 'Undo this filing', exact: true }).click()
+    await waitUntil('filing undo completes', async () => {
+      const response = await page.evaluate(
+        (workspaceRoot) => window.api.invoke('agent-command', { action: 'current', workspaceRoot }),
+        workspace,
+      )
+      return (
+        response.success &&
+        response.data.view.status === 'idle' &&
+        fs.existsSync(path.join(workspace, 'Inbox/reservation.txt')) &&
+        fs.existsSync(path.join(workspace, 'Inbox', drafts.at(-1).name)) &&
+        fs.existsSync(path.join(workspace, 'Inbox/Statement.pdf')) &&
+        !fs.existsSync(path.join(workspace, 'Travel')) &&
+        !fs.existsSync(path.join(workspace, 'Reference'))
+      )
+    })
+    assert((await filed.locator('summary').innerText()).includes('Filing undone'))
+    assert.equal(await filed.locator('.agent-filing-undo').count(), 0)
+    await filed.locator('summary').click()
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT)
+      await page
+        .locator('.agent-window')
+        .screenshot({ path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-filed.png') })
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
+      // Restore the persisted state of an interrupted write in the isolated profile.
+      execFileSync(
+        electronPath,
+        [
+          '-e',
+          String.raw`
+        const Database = require('better-sqlite3')
+        const { randomUUID } = require('node:crypto')
+        const database = new Database(process.argv[1])
+        const workspaceRoot = process.argv[2]
+        try {
+          const conversation = randomUUID(), batchId = randomUUID(), createdAt = Date.now()
+          database.transaction(() => {
+            database.prepare('INSERT INTO conversations VALUES (?, ?, ?, ?, ?)')
+              .run(conversation, 'Interrupted filing fixture', workspaceRoot, 'claude', createdAt)
+            database.prepare('INSERT INTO filing_batches (id,conversationId,workspaceRoot,createdAt,state,fileCount) VALUES (?, ?, ?, ?, ?, ?)')
+              .run(batchId, conversation, workspaceRoot, createdAt, 'failed', 2)
+            database.prepare("INSERT INTO messages (conversationId,id,role,content,createdAt,presentation) VALUES (?,?,'tool','',?,?)")
+              .run(conversation, 'filing:' + batchId, createdAt, JSON.stringify({ filingId: batchId }))
+            for (const [state, name] of [['undone', 'confirmed.pdf'], ['prepared', 'unconfirmed.pdf']]) {
+              const id = randomUUID()
+              database.prepare('INSERT INTO changes (id,conversationId,workspaceRoot,data,batchId) VALUES (?, ?, ?, ?, ?)')
+                .run(id, conversation, workspaceRoot, JSON.stringify({ id, batchId, kind: 'move', source: 'Inbox/' + name, path: 'Reference/' + name, state, undone: state === 'undone' }), batchId)
+            }
+          })()
+        } finally { database.close() }
+      `,
+          path.join(profile, 'agent/conversations.db'),
+          workspace,
+        ],
+        {
+          cwd: projectRoot,
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        },
+      )
+      await page.reload()
+      await page.locator('.sidebar').waitFor()
+      await page
+        .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'note' }) })
+        .first()
+        .click()
+      await page.locator('.agent-dock').click()
+      const unresolved = page.locator('.agent-filing-result').last()
+      await waitUntil('interrupted filing stays unresolved after confirmed inverses', async () =>
+        (await unresolved.locator('summary').innerText()).includes('Unconfirmed operations: 1'),
+      )
+      assert.equal(await unresolved.locator('.agent-filing-undo').count(), 0)
+      await unresolved.locator('summary').click()
+      assert(
+        (await unresolved.locator('.agent-filing-unresolved').innerText()).includes(
+          'Inbox/unconfirmed.pdf → Reference/unconfirmed.pdf',
+        ),
+      )
+      assert.equal(await unresolved.locator('.agent-filing-unresolved button').count(), 0)
+      await unresolved.scrollIntoViewIfNeeded()
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-unresolved.png'),
+      })
+      await page.locator('.agent-window').evaluate((element) => {
+        element.style.width = '360px'
+        document.documentElement.setAttribute('data-theme', 'dark')
+      })
+      await unresolved.scrollIntoViewIfNeeded()
+      assert.equal(
+        await unresolved.evaluate((element) => element.scrollWidth > element.clientWidth),
+        false,
+      )
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-unresolved-dark-narrow.png'),
+      })
+    }
+    const cleared = await page.evaluate(() =>
+      window.api.invoke('agent-command', { action: 'clear-history' }),
+    )
+    assert(cleared.success, cleared.error)
+    for (const scratch of scratchDirectories)
+      assert(!fs.existsSync(scratch), 'closing the owned Harness must remove parser intermediates')
+    assert(fs.existsSync(path.join(workspace, 'Inbox/reservation.txt')))
+    assert(fs.existsSync(path.join(workspace, 'Inbox', drafts.at(-1).name)))
+    await app.evaluate(({ clipboard }) => {
+      Object.assign(clipboard, globalThis.__meloIntakeClipboard)
+      delete globalThis.__meloIntakeClipboard
+    })
+  }
   const errors = logs.filter((log) => log.includes('TypeError') || log.includes('ReferenceError'))
   assert.deepEqual(errors, [])
   passed = true

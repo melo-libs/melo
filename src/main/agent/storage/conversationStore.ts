@@ -1,9 +1,14 @@
+import { agentChangeSchema, filingStateSchema } from '../../../shared/agentChanges'
 import { agentOperationSchema, type AgentOperation } from '../../../shared/agentCapabilities'
+import { attachmentReceiptSchema } from '../../../shared/agentAttachments'
+import { agentToolActivitySchema } from '../../../shared/agentActivity'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type {
   AgentConversation,
+  AgentChange,
+  AgentFiling,
   AgentMessage,
   AgentProvider,
   AgentHistoryMessage,
@@ -12,6 +17,8 @@ import type {
 } from '../../../shared/types/agent'
 
 const presentationSchema = z.object({
+  toolActivity: agentToolActivitySchema.optional(),
+  receipt: attachmentReceiptSchema.optional(),
   approval: z
     .object({
       id: z.string(),
@@ -19,19 +26,31 @@ const presentationSchema = z.object({
       status: z.enum(['pending', 'allowed', 'declined', 'expired']),
     })
     .optional(),
-  change: z
-    .object({
-      id: z.string(),
-      kind: z.enum(['create-folder', 'create-note', 'edit', 'move', 'trash']),
-      path: z.string(),
-      source: z.string().optional(),
-      undone: z.boolean(),
-    })
-    .optional(),
+  filingId: z.string().uuid().optional(),
+  change: agentChangeSchema.optional(),
   plan: z
     .array(
       z.object({ content: z.string(), status: z.enum(['pending', 'in_progress', 'completed']) }),
     )
+    .optional(),
+})
+const storedChangeSchema = agentChangeSchema.extend({
+  state: z.enum(['prepared', 'applied', 'undone']),
+})
+const contextSchema = z.object({
+  activeFilePath: z.string().min(1).max(4096).nullable().optional(),
+  filePath: z.string().max(4096).optional(),
+  selection: z.string().max(24000).optional(),
+  attachments: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string(),
+        size: z.number().nonnegative(),
+        path: z.string().optional(),
+      }),
+    )
+    .max(20)
     .optional(),
 })
 
@@ -73,6 +92,8 @@ function legacyOperation(
   return { kind: 'native', title: approval.title, detail: approval.detail }
 }
 
+type StoredMessage = AgentHistoryMessage & { filingId?: string }
+
 export class ConversationStore {
   private readonly db: Database.Database
 
@@ -93,8 +114,27 @@ export class ConversationStore {
         id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, workspaceRoot TEXT NOT NULL,
         data TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS filing_batches (
+        id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, workspaceRoot TEXT NOT NULL,
+        createdAt INTEGER NOT NULL, state TEXT NOT NULL, fileCount INTEGER NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS conversations_workspace ON conversations(workspaceRoot, updatedAt);
     `)
+    const changeColumns = this.db.pragma('table_info(changes)') as { name: string }[]
+    if (!changeColumns.some((column) => column.name === 'batchId'))
+      this.db.exec('ALTER TABLE changes ADD COLUMN batchId TEXT')
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS changes_batch ON changes(batchId, conversationId, workspaceRoot)',
+    )
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS changes_attachment_sync ON changes(json_extract(data,'$.attachmentSync.pending')) WHERE json_extract(data,'$.attachmentSync.pending')=1",
+    )
+    const filingColumns = this.db.pragma('table_info(filing_batches)') as { name: string }[]
+    if (!filingColumns.some((column) => column.name === 'version'))
+      this.db.exec('ALTER TABLE filing_batches ADD COLUMN version INTEGER NOT NULL DEFAULT 0')
+    this.db.exec(
+      "UPDATE filing_batches SET state='failed',version=version+1 WHERE state='applying'",
+    )
     const columns = this.db.pragma('table_info(messages)') as { name: string }[]
     if (!columns.some((column) => column.name === 'context'))
       this.db.exec('ALTER TABLE messages ADD COLUMN context TEXT')
@@ -140,6 +180,21 @@ export class ConversationStore {
       `UPDATE messages SET toolStatus='failed' WHERE toolStatus='pending';
        UPDATE messages SET presentation=json_set(presentation,'$.approval.status','expired') WHERE json_extract(presentation,'$.approval.status')='pending';`,
     )
+    const receipts = this.db
+      .prepare(
+        "SELECT rowid AS id,presentation FROM messages WHERE json_type(presentation,'$.receipt')='object'",
+      )
+      .all() as { id: number; presentation: string }[]
+    this.db.transaction(() => {
+      const update = this.db.prepare('UPDATE messages SET presentation=? WHERE rowid=?')
+      for (const row of receipts) {
+        const stored = presentationSchema.parse(JSON.parse(row.presentation))
+        if (!stored.receipt!.files.some((file) => file.status === 'pending')) continue
+        for (const file of stored.receipt!.files)
+          if (file.status === 'pending') file.status = 'cancelled'
+        update.run(JSON.stringify(stored), row.id)
+      }
+    })()
     if (!indexed) {
       this.db.exec(
         `UPDATE messages AS answer SET context=(SELECT question.context FROM messages AS question WHERE question.conversationId=answer.conversationId AND question.role='user' AND question.rowid < answer.rowid ORDER BY question.rowid DESC LIMIT 1) WHERE role='assistant' AND context IS NULL`,
@@ -148,18 +203,104 @@ export class ConversationStore {
     }
   }
 
-  writeChange(id: string, conversationId: string, workspaceRoot: string, data: string): void {
-    this.db
-      .prepare('INSERT OR REPLACE INTO changes VALUES (?, ?, ?, ?)')
-      .run(id, conversationId, workspaceRoot, data)
+  writeChange(
+    id: string,
+    conversationId: string,
+    workspaceRoot: string,
+    data: string,
+    batchId?: string,
+  ): void {
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          'INSERT INTO changes (id,conversationId,workspaceRoot,data,batchId) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET conversationId=excluded.conversationId,workspaceRoot=excluded.workspaceRoot,data=excluded.data,batchId=excluded.batchId',
+        )
+        .run(id, conversationId, workspaceRoot, data, batchId ?? null)
+      if (batchId)
+        this.db.prepare('UPDATE filing_batches SET version=version+1 WHERE id=?').run(batchId)
+    })()
   }
 
-  readChange(id: string, conversationId: string, workspaceRoot: string): string {
+  pendingAttachmentChanges(): { conversationId: string; workspaceRoot: string; data: string }[] {
+    return this.db
+      .prepare(
+        "SELECT conversationId,workspaceRoot,data FROM changes WHERE json_extract(data,'$.attachmentSync.pending')=1 ORDER BY rowid",
+      )
+      .all() as { conversationId: string; workspaceRoot: string; data: string }[]
+  }
+
+  findChange(id: string, conversationId: string, workspaceRoot: string): string | undefined {
     const row = this.db
       .prepare('SELECT data FROM changes WHERE id=? AND conversationId=? AND workspaceRoot=?')
       .get(id, conversationId, workspaceRoot) as { data: string } | undefined
+    return row?.data
+  }
+
+  readChange(id: string, conversationId: string, workspaceRoot: string): string {
+    const value = this.findChange(id, conversationId, workspaceRoot)
+    if (!value) throw new Error('AGENT_UNDO_UNAVAILABLE')
+    return value
+  }
+
+  startFiling(conversation: AgentConversation, fileCount: number): string {
+    const id = randomUUID(),
+      createdAt = Date.now()
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          'INSERT INTO filing_batches (id,conversationId,workspaceRoot,createdAt,state,fileCount) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(id, conversation.id, conversation.workspaceRoot, createdAt, 'applying', fileCount)
+      this.db
+        .prepare(
+          "INSERT INTO messages (conversationId,id,role,content,createdAt,presentation) VALUES (?,?,'tool','',?,?)",
+        )
+        .run(conversation.id, `filing:${id}`, createdAt, JSON.stringify({ filingId: id }))
+    })()
+    return id
+  }
+
+  finishFiling(id: string, state: 'completed' | 'failed'): void {
+    this.db.prepare('UPDATE filing_batches SET state=?,version=version+1 WHERE id=?').run(state, id)
+  }
+
+  filing(id: string, conversationId: string, workspaceRoot: string): AgentFiling {
+    const row = this.db
+      .prepare(
+        'SELECT id,state,fileCount,createdAt,version FROM filing_batches WHERE id=? AND conversationId=? AND workspaceRoot=?',
+      )
+      .get(id, conversationId, workspaceRoot) as
+      | Omit<AgentFiling, 'changes' | 'unresolved'>
+      | undefined
     if (!row) throw new Error('AGENT_UNDO_UNAVAILABLE')
-    return row.data
+    const records = this.db
+      .prepare(
+        'SELECT data FROM changes WHERE batchId=? AND conversationId=? AND workspaceRoot=? ORDER BY rowid',
+      )
+      .all(id, conversationId, workspaceRoot) as { data: string }[]
+    const changes: AgentChange[] = [],
+      unresolved: AgentChange[] = []
+    for (const { data } of records) {
+      const { state, ...change } = storedChangeSchema.parse(JSON.parse(data))
+      // Prepared writes may already have reached disk; retain them without guessing an inverse.
+      if (state === 'prepared') unresolved.push(change)
+      else changes.push(change)
+    }
+    return { ...row, state: filingStateSchema.parse(row.state), changes, unresolved }
+  }
+
+  private hydrateFilings(messages: StoredMessage[]): AgentHistoryMessage[] {
+    const batches = new Set<string>()
+    const references = new Set(
+      messages.flatMap((message) => (message.filingId ? [message.filingId] : [])),
+    )
+    return messages.map(({ filingId, ...message }) => {
+      const id = filingId ?? message.change?.batchId
+      if (!id || (!filingId && references.has(id)) || batches.has(id)) return message
+      const filing = this.filing(id, message.conversationId, message.workspaceRoot)
+      batches.add(id)
+      return { ...message, filing }
+    })
   }
 
   create(workspaceRoot: string, provider: AgentProvider): AgentConversation {
@@ -195,27 +336,21 @@ export class ConversationStore {
   }
 
   messages(id: string, limit?: number): AgentMessage[] {
-    return (
-      this.db
-        .prepare(
-          `SELECT id, role, content, toolStatus, createdAt, context, presentation FROM (SELECT rowid, * FROM messages WHERE conversationId = ? ORDER BY rowid DESC LIMIT ${limit ?? -1}) ORDER BY rowid`,
-        )
-        .all(id) as (Omit<AgentMessage, 'context'> & {
-        context: string | null
-        presentation: string | null
-      })[]
-    ).map(({ presentation, ...message }) => ({
-      ...message,
-      ...(presentation ? presentationSchema.parse(JSON.parse(presentation)) : {}),
-      toolStatus: message.toolStatus ?? undefined,
-      context: message.context
-        ? z
-            .object({
-              filePath: z.string().max(4096).optional(),
-              selection: z.string().max(24000).optional(),
-            })
-            .parse(JSON.parse(message.context))
-        : undefined,
+    return this.hydrateFilings(
+      this.historyRows('m.conversationId=?', [id], 'DESC', limit ?? -1).reverse(),
+    ).map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt,
+      toolStatus: message.toolStatus,
+      context: message.context,
+      change: message.change,
+      filing: message.filing,
+      approval: message.approval,
+      receipt: message.receipt,
+      plan: message.plan,
+      toolActivity: message.toolActivity,
     }))
   }
 
@@ -236,9 +371,15 @@ export class ConversationStore {
           toolStatus: message.toolStatus ?? null,
           context: message.context ? JSON.stringify(message.context) : null,
           presentation: JSON.stringify({
+            filingId:
+              message.filing && message.id === `filing:${message.filing.id}`
+                ? message.filing.id
+                : undefined,
             change: message.change,
             plan: message.plan,
             approval: message.approval,
+            receipt: message.receipt,
+            toolActivity: message.toolActivity,
           }),
         })
     })()
@@ -249,7 +390,7 @@ export class ConversationStore {
     args: (string | number)[],
     order: 'ASC' | 'DESC',
     limit: number,
-  ): AgentHistoryMessage[] {
+  ): StoredMessage[] {
     type Row = Omit<AgentHistoryMessage, 'context' | 'change' | 'plan'> & {
       context: string | null
       presentation: string | null
@@ -262,12 +403,7 @@ export class ConversationStore {
     return rows.map(({ context, presentation, ...row }) => ({
       ...row,
       toolStatus: row.toolStatus ?? undefined,
-      context: context
-        ? z
-            .object({ filePath: z.string(), selection: z.string() })
-            .partial()
-            .parse(JSON.parse(context))
-        : undefined,
+      context: context ? contextSchema.parse(JSON.parse(context)) : undefined,
       ...(presentation ? presentationSchema.parse(JSON.parse(presentation)) : {}),
     }))
   }
@@ -295,7 +431,7 @@ export class ConversationStore {
     const first = messages[0]?.sequence,
       last = messages.at(-1)?.sequence
     return {
-      messages,
+      messages: this.hydrateFilings(messages),
       hasOlder:
         first !== undefined &&
         !!this.db.prepare('SELECT 1 FROM messages WHERE rowid < ? LIMIT 1').get(first),
@@ -356,7 +492,9 @@ export class ConversationStore {
 
   clearHistory(): void {
     this.db.transaction(() => {
-      this.db.exec('DELETE FROM messages; DELETE FROM changes; DELETE FROM conversations;')
+      this.db.exec(
+        'DELETE FROM messages; DELETE FROM changes; DELETE FROM filing_batches; DELETE FROM conversations;',
+      )
     })()
   }
 

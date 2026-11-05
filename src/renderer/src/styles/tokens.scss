@@ -54,6 +54,9 @@
   --link-soft: oklch(0.585 0.21 262 / 0.1);
   --link-hover: oklch(0.52 0.205 264);
 
+  /* Mascot gold stays yellow in both themes. */
+  --melo-gold: #fbbf0d;
+
   /* AI spark — brand gold, only on Melo/AI touchpoints */
   --ai: oklch(0.805 0.165 86);
   --ai-soft: oklch(0.805 0.165 86 / 0.16);
@@ -99,6 +102,12 @@
   --tour-file-word: #4b80e3;
 
   /* Layout */
+  /* File previews keep a paper asset in both themes, independently of the app surface. */
+  --file-paper: #fff;
+  --file-paper-edge: #e1e4e8;
+  --file-fold: #e9ecf0;
+  --file-label-ink: #fff;
+  --file-folder: color-mix(in srgb, var(--accent) 40%, var(--paper));
   --sidebar-w: 260px;
   --outline-w: 240px;
   --smart-list-min-w: 240px;
@@ -123,6 +132,11 @@
 
 /* Dark theme — cool-slate ramp */
 [data-theme='dark'] {
+  --file-folder: color-mix(in srgb, var(--accent) 72%, var(--paper));
+  --file-paper: #f0f1f3;
+  --file-paper-edge: #d4d7dc;
+  --file-fold: #dce0e5;
+  --file-label-ink: #fff;
   --paper: oklch(0.196 0.006 250);
   --paper-2: oklch(0.236 0.007 250);
   --paper-3: oklch(0.286 0.008 250);

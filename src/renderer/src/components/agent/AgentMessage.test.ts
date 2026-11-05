@@ -8,6 +8,30 @@ const render = (content: string) =>
   renderToStaticMarkup(createElement(AgentMessage, { content, role: 'assistant', complete: true }))
 
 describe('Agent reply rendering', () => {
+  it('highlights the recommendation without highlighting its explanation or ordinary emphasis', () => {
+    const html = render(
+      '==建议放进参考资料下的“字节跳动”，文件名不改。==\n\n这里已有相关资料。**确认后再移动。**',
+    )
+    expect(html).toContain('<mark>建议放进参考资料下的“字节跳动”，文件名不改。</mark>')
+    expect(html).toContain('<p>这里已有相关资料。<strong>确认后再移动。</strong></p>')
+  })
+  it('keeps code, escaped delimiters and incomplete streamed highlights literal', () => {
+    const html = render(
+      '`==literal==`\n\n```txt\n==code==\n```\n\n\\=\\=escaped\\=\\=\n\n==still streaming',
+    )
+    expect(html).not.toContain('<mark>')
+    expect(html).toContain('<code>==literal==</code>')
+    expect(html).toContain('<pre><code>==code==</code></pre>')
+    expect(html).toContain('==escaped==')
+    expect(html).toContain('==still streaming')
+  })
+  it('renders highlight contents through the same safe inline renderer', () => {
+    const html = render('==**Keep this** [unsafe](javascript:alert) <script>alert(1)</script>==')
+    expect(html).toContain('<mark>')
+    expect(html).toContain('<strong>')
+    expect(html).not.toContain('<script')
+    expect(html).not.toContain('href="javascript:')
+  })
   it('renders headings, lists, code, and tables without mounting an editor', () => {
     const html = render(
       '## A plan\n\n**Start here**\n\n- First\n- Second\n\n```js\nconst n = 1\n```\n\n| Day | Plan |\n| --- | --- |\n| Sat | Walk |',

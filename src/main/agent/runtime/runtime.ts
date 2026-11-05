@@ -5,6 +5,14 @@ import { RuntimeEnvironment } from './runtimeEnvironment'
 import { HarnessProcess } from './harnessProcess'
 import { ownedMcpTool } from './toolIdentity'
 import { runtimeOutput } from './runtimeOutput'
+import type { AgentToolActivity } from '../../../shared/agentActivity'
+
+function toolFileTarget(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return
+  if ('file_path' in input && typeof input.file_path === 'string') return input.file_path
+  if ('path' in input && typeof input.path === 'string') return input.path
+  return undefined
+}
 
 interface Tools {
   config: Extract<McpServer, { type: 'http' }>
@@ -71,7 +79,7 @@ export function createRuntimeFactory(options: {
       void close().catch((error) => console.error('Agent startup cleanup failed', error))
     }
     request.signal.addEventListener('abort', abortStartup, { once: true })
-    const toolTitles = new Map<string, string>()
+    const toolPresentations = new Map<string, { title: string; activity?: AgentToolActivity }>()
     const ownedTools = new Map<string, string>()
     const update = ({ update }: SessionNotification) => {
       if (update.sessionUpdate === 'plan') {
@@ -105,11 +113,22 @@ export function createRuntimeFactory(options: {
       if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
         const owned = ownedMcpTool(update, configuration.provider, toolName)
         if (owned) ownedTools.set(update.toolCallId, owned)
-        if (update.title) toolTitles.set(update.toolCallId, output.sanitize(update.title))
+        const previous = toolPresentations.get(update.toolCallId)
+        const title = update.title ? output.sanitize(update.title) : (previous?.title ?? 'Tool')
+        const kind = update.kind ?? previous?.activity?.kind
+        const target =
+          update.locations?.[0]?.path ??
+          toolFileTarget(update.rawInput) ??
+          previous?.activity?.target
+        const activity = kind
+          ? { kind, ...(target && { target: output.sanitize(target) }) }
+          : undefined
+        toolPresentations.set(update.toolCallId, { title, activity })
         request.onEvent({
           type: 'tool',
           id: update.toolCallId,
-          title: ownedTools.get(update.toolCallId) ?? toolTitles.get(update.toolCallId) ?? 'Tool',
+          title: ownedTools.get(update.toolCallId) ?? title,
+          ...(activity && { activity }),
           status:
             update.status === 'completed'
               ? 'completed'
@@ -143,20 +162,19 @@ export function createRuntimeFactory(options: {
               status: 'pending',
             })
           }
-          // Native writes and execution cannot bypass the document owner, even
-          // through a permission dialog. Melo tools perform their own approval.
-          const readOnly = ['read', 'search', 'fetch'].includes(permission.toolCall.kind ?? '')
+          // Owned MCP tools approve their own changes. A native request that
+          // survives the Harness mode still requires the user's decision.
           const allowed =
             !!owned ||
-            (readOnly &&
-              (await request.authorize({
-                kind: 'native',
-                title: output.sanitize(permission.toolCall.title ?? 'Agent permission'),
-                detail: output.sanitize(JSON.stringify(permission.toolCall.rawInput ?? {})),
-              })))
-          const option = allowed
-            ? permission.options.find((option) => option.kind === 'allow_once')
-            : undefined
+            (await request.authorize({
+              kind: 'native',
+              title: output.sanitize(permission.toolCall.title ?? 'Agent permission'),
+              detail: output.sanitize(JSON.stringify(permission.toolCall.rawInput ?? {})),
+            }))
+          const option =
+            allowed && !request.signal.aborted && request.isActive()
+              ? permission.options.find((option) => option.kind === 'allow_once')
+              : undefined
           return option
             ? { outcome: { outcome: 'selected', optionId: option.optionId } }
             : { outcome: { outcome: 'cancelled' } }
@@ -169,8 +187,9 @@ export function createRuntimeFactory(options: {
         async prompt(text) {
           completed = false
           ownedTools.clear()
-          toolTitles.clear()
+          toolPresentations.clear()
           try {
+            request.signal.throwIfAborted()
             const response = await active.prompt([{ type: 'text', text }])
             completed = response.stopReason !== 'cancelled'
           } catch (error) {

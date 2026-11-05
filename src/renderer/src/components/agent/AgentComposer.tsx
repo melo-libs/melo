@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
   AgentContext,
+  AgentAttachment,
   AgentModelControl,
   AgentProvider,
   AgentSetup,
@@ -11,6 +12,7 @@ import { Button } from '../ui/Button'
 import { AgentModelMenu } from './AgentModelMenu'
 import { Select } from '../ui/Select'
 import type { AgentModelLoadState } from '../../store/agent'
+import { AgentAttachments } from './AgentAttachments'
 
 export function AgentComposer({
   draft,
@@ -33,7 +35,17 @@ export function AgentComposer({
   onModelChange,
   onRemoveContext,
   onOpenFile,
+  attachments,
+  receivingFiles,
+  onPasteAttachments,
+  onRemoveAttachment,
+  draggingFiles,
 }: {
+  attachments: AgentAttachment[]
+  draggingFiles: boolean
+  onPasteAttachments(): Promise<boolean>
+  receivingFiles: boolean
+  onRemoveAttachment(id: string): void
   draft: string
   context: AgentContext
   setup: AgentSetup | null
@@ -67,8 +79,18 @@ export function AgentComposer({
     el.style.height = `${Math.min(132, Math.max(38, el.scrollHeight))}px`
   }, [draft])
   return (
-    <div className="agent-compose">
-      {(context.selection || context.filePath) && (
+    <div className="agent-compose" data-dragging-files={draggingFiles || undefined}>
+      <AgentAttachments
+        files={attachments}
+        disabled={busy || running}
+        onRemove={onRemoveAttachment}
+      />
+      {receivingFiles && (
+        <small role="status" className="agent-attachment-hint">
+          {t('agent.receivingAttachments')}
+        </small>
+      )}
+      {context.selection && (
         <div className="agent-context-strip">
           <Icon name="arrowRight" size={14} />
           <button
@@ -76,7 +98,7 @@ export function AgentComposer({
             onClick={() => context.filePath && onOpenFile(context.filePath)}
             title={context.selection || context.filePath}
           >
-            {context.selection || context.filePath?.split('/').pop()}
+            {context.selection}
           </button>
           <button
             className="agent-quiet"
@@ -92,10 +114,26 @@ export function AgentComposer({
         value={draft}
         maxLength={32000}
         placeholder={t(
-          context.selection ? 'agent.selectionPlaceholder' : 'agent.followUpPlaceholder',
+          context.selection
+            ? 'agent.selectionPlaceholder'
+            : draft || attachments.length
+              ? 'agent.followUpPlaceholder'
+              : 'agent.attachmentPlaceholder',
         )}
         aria-label={t('agent.placeholder')}
         onChange={(event) => onDraft(event.target.value)}
+        onPaste={(event) => {
+          event.preventDefault()
+          const text = event.clipboardData.getData('text/plain')
+          const { selectionStart, selectionEnd } = event.currentTarget
+          void onPasteAttachments().then((handled) => {
+            const el = input.current
+            if (!handled && el && text) {
+              el.setRangeText(text, selectionStart, selectionEnd, 'end')
+              onDraft(el.value.slice(0, 32000))
+            }
+          })
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()

@@ -11,12 +11,14 @@ Renderer
   store/agent.ts                       IPC projection, derived timeline, contextual invocation
   components/agent/AgentWindow.tsx      Floating layout, scrolling and focus
     ├─ useAgentController.ts           Loading, history, permissions, undo and provider commands
-    ├─ AgentDock.tsx                   Draggable minimized status capsule
+    ├─ AgentEntry.tsx                  Persistent mascot and collision-aware status bubbles
     ├─ AgentApiModelField.tsx          Shared Select, catalog loading and manual model entry
     ├─ AgentSettings.tsx               Connection drafts, eligible access selection and API setup
     ├─ useAgentAccounts.ts             Independent status queries for both tools
     ├─ AgentAccount.tsx                Account status, identity and sign-in actions
     ├─ AgentMessage.tsx                Safe Markdown replies and tool activity
+    ├─ AgentAttachments.tsx            Pending and sent file references
+    ├─ AgentReceipt.tsx                Inbox receiving progress, separate from AI changes
     ├─ AgentModelMenu.tsx              Model/effort loading, cached options and retry
     └─ useAgentGeometry.ts              Frame-paced drag/resize and placement
   store/documentSession.ts             Latest editor content, revisions, save/undo
@@ -41,6 +43,7 @@ Main
     │    ├─ apiTransport.ts            API endpoint/key boundaries and safe HTTP transport
     │    ├─ apiConnection.ts           Stateless Messages/Responses connection probes
     │    ├─ claudeAccess.ts            Claude authentication and API configuration
+    │    ├─ executionInstructions.ts   Native analysis and Melo MCP routing instructions
     │    ├─ claudeSession.ts           Claude session policy
     │    └─ codexLaunch.ts             Native account reuse and MCP isolation
     ├─ workspace/                      Melo document and file capabilities
@@ -48,12 +51,14 @@ Main
     │    ├─ workspaceTypes.ts          Protocol-independent capability contracts
     │    ├─ documentAccess.ts          Bridge to existing renderer document sessions
     │    ├─ changeJournal.ts           Change records, backups and undo
-    │    └─ editPreview.ts             Bounded diff generation
+    │    ├─ editPreview.ts             Bounded diff generation
+    │    └─ fileOrganization.ts        Agreed file destinations and journaled execution
     ├─ mcp/
     │    └─ workspaceTools.ts          MCP schemas, HTTP transport and cancellation
     └─ storage/
          ├─ conversationStore.ts       App-owned SQLite history and change records
          ├─ memory.ts                  Shared user/workspace memory
+         ├─ fileIntake.ts              Draft snapshots and stable imported-file identity
          └─ agentSettings.ts           Provider settings and encrypted credentials
 ```
 
@@ -68,8 +73,11 @@ there are no barrel re-exports or legacy-path forwarding modules.
 The application creates one `AgentService`. Users see one persistent Melo timeline,
 including existing conversations. Workspace-scoped execution records remain internal.
 Each turn owns a fresh ACP session with bounded recent context; this prevents the
-harness from retaining unrelated notes indefinitely. Follow-ups keep their source
-until another note is referenced. Context keeps the latest eight non-tool messages,
+harness from retaining unrelated notes indefinitely. Every send snapshots the active
+workspace file independently of explicit quotes and attachments; switching tabs while
+chat remains open takes effect on the next send. No active saved file is represented
+explicitly, so history cannot masquerade as the current editor file. Context keeps
+the latest eight non-tool messages,
 including cross-file exchanges with explicit source labels. A 64,000-character
 budget prioritizes the current request and selection; memory and older exchanges
 are truncated with an explicit marker. This is a character budget, not a tokenizer
@@ -82,7 +90,9 @@ workspace execution records remain available to the service.
 Hiding the floating window preserves the reading position and unsent draft.
 Opening the panel prepares the selected Harness after its connection is usable.
 `runtime/harnessProcess.ts` keeps one adapter process warm across successful turns;
-each turn uses a fresh MCP identity and closes its session and tool server before another session can start.
+each turn uses a fresh MCP endpoint/token and closes its session and tool server
+before another session can start. The MCP configuration name stays stable within
+the owned process so session transports inherit its timeout.
 Idle processes expire after five minutes. Workspace, Harness or connection changes,
 application shutdown, cancellation and failed turns discard the owned process.
 Session IDs fence delayed notifications and permission requests from closed sessions.
@@ -101,14 +111,27 @@ through that history.
 
 ## User flow
 
-- Open Ask Melo from the editor toolbar, a text selection, or the search palette.
+- Open Ask Melo from the persistent mascot, a text selection, or the search palette.
 - The floating window supports continuous conversation, dragging, resizing and
-  minimizing to a draggable status capsule. The capsule and expanded window keep
-  separate positions; dragging the capsule does not activate its expand action.
+  closing back to a draggable 48px mascot without stopping the active turn.
+  The mascot and expanded window keep separate positions; the mascot's position
+  survives restarts. A lightweight placement rule keeps it inside safe margins and
+  moves it to the nearest free position around fixed controls marked with
+  `data-floating-obstacle`. Temporary avoidance and viewport clamping do not replace
+  the saved preference. Layout changes and drag release recalculate placement;
+  scrolling and streamed messages do not. Dragging does not open the conversation. Every send follows
+  the active document automatically, without a file-reference chip. Explicit quotes
+  and attachments retain their own sources when tabs change. File boundaries appear
+  in history only after sending and only when the source changes.
+  Short status bubbles disappear after three seconds, except pending approvals.
+  Hover or keyboard focus reveals details. Replies received while collapsed keep
+  an unread expression until opened; cancellation and history loading do not.
   Each question retains its quoted text and source
   in history; the composer shows only pending context. Cited workspace files
   open through the editor after a canonical-path containment check.
-  Selecting another passage updates its explicit context and focuses the composer.
+  Selecting another passage updates its explicit context and focuses the composer
+  without moving or resizing an already expanded window. Selection anchors apply
+  only when opening from the collapsed state.
   Ask AI dismisses the selection toolbar; background selection changes and chat
   scrolling do not revive it. A contextual invocation also exits history search.
 - Claude Code is the initial default. Users can select Codex, reuse a native
@@ -142,6 +165,101 @@ through that history.
 - Mutations show their destination and proposed content before approval. Stop
   cancels the current task and pending permission; completed edits remain applied.
 
+## Pasted files
+
+Pasting or dropping into the composer snapshots native files or a screenshot under
+the application's private `agent/intake/` directory. Drafts are workspace-scoped,
+survive restart, and do not yet appear in the workspace. Removing a draft deletes
+only Melo's snapshot. Plain text keeps the normal composer paste behavior.
+
+Sending imports copies into the current workspace's `Inbox/` before starting
+inference. Originals stay untouched. A same-volume `.melo/intake/` staging copy
+is published with an exclusive hard link, then both staging copies are removed.
+The journal records the payload fingerprint and inode before publication so a
+retry can recover its own copy without overwriting a user's same-name file.
+Conflicts receive a numbered filename. Canceled or failed turns keep completed
+imports in Inbox; unimported drafts remain available for retry or removal.
+
+After receipt, the Harness receives stable file IDs and current workspace paths.
+It reads ordinary attachments using its native readers, shell, or parsing tools.
+Melo does not extract their content or inject it before inference. The local
+preview is presentation only, not evidence that the model understood a file.
+Markdown reads still use `melo_read_document` for the latest editor content.
+
+`melo_resolve_attachment` returns only the current path, original name, and size
+of an imported attachment. It validates the saved file's location without parsing
+its content. The Harness uses this metadata when a historical path may have
+changed, then reads the saved file itself. Unsupported or failed native reads
+must produce an honest unread reason and keep the file in Inbox. There is no
+local read-tracking boolean that can veto successful native inspection.
+
+The Harness distinguishes content it read, user-provided descriptions, and unread
+files when explaining recommendations. Future built-in parsers should address
+measured reliability or cost gaps and expose results through MCP; OCR and Office
+parsing remain deferred.
+
+Inbox receipt is a dedicated persisted timeline record, not a file-change card.
+It shows receiving/stored/failed/cancelled states and completes before the Harness
+starts. Restart marks interrupted receipt items cancelled, preserving completed
+copies. Import journaling remains internal for exclusive publication and retry;
+receipt creates no public undo actions. Only applied filing changes offer undo,
+which returns copied files to Inbox instead of deleting the received files.
+
+The composer uses the shared `ui/FileThumbnail` cell for images, documents and
+fallback paper assets.
+`main/libs/fileThumbnail.ts` reads an authorized file handle, decodes small images
+locally, and uses macOS Quick Look for document covers, HEIC and video thumbnails.
+Quick Look gets an owned temporary snapshot with the original extension, never an
+external user path. Generation has a timeout, bounded output, a small deduplicated
+memory cache and unconditional temporary-file cleanup. Unsupported previews use
+the folded-paper fallback. This is local preview generation, not PDF/OCR parsing
+or additional model input. The composer accepts native file drops and workspace
+tree copies.
+Preview support is separate from model readability; an image thumbnail does not
+prove the selected model can inspect its content.
+
+File organization is conversational: the Harness reads the files and workspace,
+explains destinations, renames and a short rationale, then ends its turn. A follow-up
+question explains or revises that recommendation; it does not cancel a pending call
+or imply approval. Only after explicit agreement does the Harness call
+`melo_organize_files`. The tool executes immediately without a second approval UI.
+There is no pending filing plan, approval timer, folder-picker state or suspended
+MCP call between messages. Recent dialogue carries the recommendation; recorded
+receipts, filing outcomes and undo status enter subsequent context separately from
+model text. Historical organization approval records remain read-only and are
+labeled as proposals rather than proof of execution.
+
+The execution request contains stable attachment IDs, reading status and agreed
+workspace-relative destinations. Unread files stay in place. Original filenames
+and extensions are preserved unless a rename was agreed. Verified dates, authors
+and useful identifying facts belong in the conversation, not a tool's UI payload.
+Note updates use the separate versioned document tool and its confirmation flow.
+
+WorkspaceAccess serializes filing with other mutations. Before creating folders
+or moving files, it validates the whole request for duplicate destinations,
+extensions, conflicts, path containment, symlinks and source fingerprints. Each
+move uses the document-session owner and existing journal; partial failures retain
+undoable changes. A no-op produces no filing receipt. Conversational consent is
+interpreted by the trusted Harness; it is not a host-enforced authorization token.
+Deletion, editing and other MCP approvals retain their existing controls.
+
+Other approval-bearing MCP calls still have a 30-minute Harness deadline. Codex
+reserves the configuration name and timeout during prewarming, then each task
+supplies a fresh URL and bearer. The existing MCP merge workaround preserves that
+timeout and disabled inherited servers. Task endpoints are never reassigned.
+Cancellation closes the task server and expires its pending approvals.
+
+`melo_resolve_attachment` resolves a stable UUID to an
+imported file in the same workspace; it cannot resolve draft snapshots or arbitrary
+external paths. Attachment buttons resolve that UUID again when opened, so
+Melo-managed moves and their undo keep references usable. External moves are not
+tracked. Latest unsaved Markdown still comes from `melo_read_document`.
+
+Undoing a filing move returns the copy to Inbox. The import journal remains private to receipt/recovery, and is not included in
+filing undo. Fingerprint and revision checks reject modified or replaced files. Clearing history removes undo records,
+but retains imported files and attachment identity. Intake metadata lives in its
+own table in `conversations.db`, independently of conversation deletion.
+
 ## Document and filesystem boundary
 
 `melo_read_document` uses the open document's current editor content, including
@@ -171,16 +289,48 @@ the owned server name and an exact tool allowlist. Claude reports ACP-supplied
 HTTP/stdio servers as `dynamic` and in-process ones as `sdk`; only the fresh
 Melo server in its strict MCP configuration is automatically approved.
 
-Claude has only native read/search/web tools, no native write or shell tools,
-strict MCP configuration, no settings sources, disabled hooks and disabled
-native memory. Codex runs read-only with shell/patch features disabled. Its
-launch disables inherited hooks, plugins, apps and native memory, and disables
-pre-existing MCP servers before adding Melo's randomly named server. Native
-write/execute permission requests are refused; approved mutations go through
-Melo. Provider safety checks for native reads are still shown to the user.
+Melo trusts the Harness to execute the user's task. Both the process cwd and
+session cwd point to the real workspace. A private temporary directory holds
+parser output and other intermediates across fresh turn sessions. It is removed
+after the owned process stops; it is an artifact lifetime, not a security boundary.
 
-Workspace contents and memory are context, not trusted instructions. These
-policies constrain execution; a system prompt alone is not the write boundary.
+Claude uses its original ACP adapter, native tools, strict MCP configuration,
+no settings sources and no sandbox. Before a task runs, Melo selects
+`bypassPermissions` through ACP `session/set_config_option`. Codex uses the native
+`agent-full-access` mode and process-local `danger-full-access`/`never` configuration.
+Neither changes the user's saved permission settings. Melo does not maintain a
+second resource-grant cache or inject permission metadata into either adapter.
+A native approval request that still reaches Melo requires a user decision; it
+is never automatically accepted just because the Harness uses a broad mode.
+Only an offered one-time option is selected, and cancellation/inactive tasks deny it.
+
+`runtime/executionInstructions.ts` directs native analysis to temporary storage and
+application operations to Melo MCP. MCP owns business confirmation, revision checks,
+operation records and undo. These checks still execute inside the MCP tools even
+when the Harness itself needs no permission prompt. Routing workspace changes to
+Melo MCP is an agent instruction, not an enforced filesystem restriction: native
+shell or file-tool writes can bypass that route and do not receive Melo undo records.
+
+Inherited hooks, plugins, apps, native memory and foreign MCP servers stay disabled.
+Codex shell subprocesses exclude model keys and launch configuration from their
+environment. This reduces accidental exposure; broad execution is not a credential
+sandbox. The host does not write native configuration files or automatically log
+out a shared native account.
+
+Completed access decisions and raw tool activity share one collapsed “Processing
+details” entry per turn. Its label does not infer task success or failure from
+individual attempts. Expanding shows structured ACP activity kinds and file targets;
+raw commands and resolved native permissions remain available on demand. Activity
+metadata is persisted independently of permissions.
+
+Use Melo MCP for existing application capabilities, including Markdown reads
+and writes, workspace discovery/search, managed file changes, history, and
+Memory. Native tools handle ordinary attachments and capabilities outside that
+surface. A failed or declined Melo operation is not permission to bypass it.
+Routing is product guidance, not an OS-enforced guarantee that arbitrary native
+commands cannot change files. Native user-approved actions are not covered by
+Melo's managed change journal or undo. Workspace and web contents remain
+untrusted task data. No separate execution MCP or `melo-cli` is added here.
 
 ## Persistence and lifecycle
 
@@ -269,8 +419,9 @@ cannot be approved after their tool call ends. Permission granted does not mean
 a change was applied; the change summary reports completed mutations.
 Edit previews use jsdiff with three context lines and a bounded computation time.
 The document revision is checked before review and again before applying the edit.
-Claude and the owned Codex MCP server use a 30-minute tool deadline for human
-review. A timeout or cancellation leaves an expired confirmation record.
+Harness tool deadlines still apply while waiting for human review (see the
+MCP lifecycle above). A timeout or cancellation leaves an expired
+confirmation record.
 Reopening a hidden window keeps a live approval. A failed approval checkpoint
 rejects that request and expires its card without poisoning the queue for later
 requests.
@@ -286,13 +437,51 @@ existing document session and revision checks, including unsaved content.
 Change summaries retain their conversation/workspace ownership even when a
 question is deleted or a history page starts mid-turn. Historical changes from
 another workspace can be read, but undo is disabled until that workspace is active.
-Each change can be undone; Undo all applies inverses in reverse execution order.
+Ordinary changes use a collapsed result line with undo (or restore for trash).
+A single change has one action; multiple changes also offer individual actions
+inside the details. Each confirmed filing
+has a persisted batch ID and an independent timeline marker. Journal entries
+carry that ID, including created folders; Inbox imports
+are excluded. Filing receipts are read-only details with one batch undo action.
+The renderer sends only the batch ID, and the main process loads every applied
+entry for that batch within its conversation and workspace. It rejects attempts
+to undo batch-owned entries through the ordinary per-change command.
+
+History pages hydrate a complete filing summary from the journal even when the
+approval or batch marker is outside the page. Cursor bounds still use the raw
+message rows. Deleting a question does not alter batch membership; multiple
+filings within one turn remain independent. Old entries without an explicit
+batch ID remain ordinary history; no ownership is inferred from nearby messages.
+An interrupted applying batch becomes failed on restart, and partial undo can be
+retried using only the remaining entries. Batch undo applies inverses in reverse
+execution order.
 It stops at a conflict and keeps earlier successful reversals visible. This is
 not an atomic filesystem transaction. Undo refuses changed file content,
 nonempty created folders, and occupied restore destinations. Restoring a
 trashed file copies the private backup to its original path; it does not remove
 the OS Trash entry. An interrupted `prepared` journal entry is retained for
-recovery and is never offered as a completed, undoable change.
+recovery and is never offered as a completed, undoable change. Filing summaries
+retain these entries as unresolved metadata with their source and target paths.
+Confirmed inverses can run independently, but unresolved entries prevent a
+receipt from reporting a complete undo. The receipt keeps an explicit checking
+state even after every confirmed change has been undone.
+
+Undo refreshes its live batch projection from the journal in its finalizer,
+including on errors and retries that skip already-undone entries. A backup
+cleanup failure is reported separately from the committed inverse; it cannot
+leave a receipt advertising an undo that has already completed.
+
+Filing summaries carry a persisted, monotonically increasing version. A canonical
+renderer cache retains the latest version across conversation and workspace
+switches; delayed history pages cannot restore an older receipt state.
+
+Before a move or deletion, the journal captures the exact imported attachment
+IDs at that path. Its applied/undone checkpoint also records a pending registry
+sync. Registry updates and acknowledgement are idempotent: startup, subsequent
+commands, and attachment resolution replay pending syncs without repeating the
+filesystem operation. Reusing a filename never reconnects an older removed
+attachment ID to a different file. Legacy records without captured IDs are not
+repaired by guessing from paths.
 
 ## Dependencies and distribution
 
@@ -339,8 +528,14 @@ CODEX_HOME="$MELO_TEST_CODEX_HOME" MELO_AGENT_LIVE=1 node scripts/e2e-agent.mjs
 
 It verifies setup, contextual invocation, composer focus/draft retention,
 dragging, position retention, API validation/save, Markdown replies, search
-handoff, execution-scoped approval, file-change summaries, reverse-order undo,
-editor/disk synchronization and history.
+handoff, business approval, file-change summaries, reverse-order undo,
+editor/disk synchronization and history. The installed Claude adapter also
+reads PDF/image/text attachments natively, runs compound inspection, temporary
+conversion, repeated native reads, workspace writes and local network requests
+without execution prompts. Filing suggestions finish their turn without moving
+files; questions retain that recommendation, and explicit agreement executes it.
+Cancellation, other operation approvals and undo remain covered by application tests.
+API fixtures use isolated profiles and local endpoints, not native accounts.
 `MELO_E2E_NATIVE_MODELS=1` adds native Codex model/effort menu switching and
 narrow-panel checks, without a model turn. `MELO_NATIVE_MODELS_CHECK=1` enables
 the real ACP capability/persistence test and verifies the CLI config is unchanged.

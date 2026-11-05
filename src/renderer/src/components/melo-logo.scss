@@ -1,0 +1,104 @@
+.melo-mascot {
+  // Preserve the released brand palette on every surface.
+  --melo-body: #ffdc00;
+  --melo-belly: #eef1f4;
+  --melo-fin: var(--melo-gold);
+  --melo-eye: #766d78;
+  flex-shrink: 0;
+  overflow: visible;
+  .melo-fish {
+    transform-origin: 32px 32px;
+    transition: transform 180ms ease;
+  }
+  .melo-greeting {
+    display: none;
+  }
+  &[data-mood='offline'] {
+    --melo-body: var(--hairline-2);
+    --melo-belly: var(--paper-2);
+    --melo-fin: var(--ink-4);
+    --melo-eye: var(--ink-3);
+  }
+  &[data-mood='idle'] .melo-sleep {
+    animation: melo-snooze 5s ease-in-out infinite;
+  }
+  &[data-mood='hover'] .melo-fish {
+    transform: rotate(-8deg);
+  }
+  &[data-mood='working'] .melo-fish {
+    transform: rotate(8deg);
+  }
+  &[data-mood='waiting'] .melo-fish {
+    animation: melo-attention 2s ease-in-out infinite;
+  }
+  .melo-wake {
+    animation: melo-wake 900ms ease-out infinite;
+  }
+  .melo-stars {
+    animation: melo-stars 2400ms ease-in-out infinite;
+  }
+  &[data-small] {
+    .melo-sleep,
+    .melo-wake {
+      display: none;
+    }
+  }
+}
+.agent-entry:is(:hover, :focus-visible) .melo-mascot[data-mood='idle'] {
+  .melo-sleep,
+  .melo-sleep-eye {
+    display: none;
+  }
+  .melo-greeting {
+    display: inline;
+  }
+  .melo-fish {
+    transform: rotate(-8deg);
+  }
+}
+@keyframes melo-snooze {
+  0%,
+  65%,
+  100% {
+    opacity: 0;
+  }
+  75%,
+  90% {
+    opacity: 1;
+  }
+}
+@keyframes melo-wake {
+  from {
+    opacity: 0.8;
+    transform: translateX(2px);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-2px);
+  }
+}
+@keyframes melo-attention {
+  50% {
+    transform: scale(1.04);
+  }
+}
+@keyframes melo-stars {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .melo-mascot[data-mood] {
+    .melo-fish,
+    .melo-sleep,
+    .melo-wake,
+    .melo-stars {
+      animation: none;
+      transition: none;
+    }
+  }
+}

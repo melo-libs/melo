@@ -1,4 +1,4 @@
-import { AGENT_TOOLS } from '../../../shared/agentCapabilities'
+import { AGENT_TOOLS, organizationRequestSchema } from '../../../shared/agentCapabilities'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
@@ -63,10 +63,38 @@ export async function startWorkspaceTools(
     )
     const actions = options.actions
     if (actions) {
+      if (actions.resolveAttachment)
+        mcp.registerTool(
+          AGENT_TOOLS.resolveAttachment.name,
+          {
+            description:
+              'Resolve an imported attachment by stable Melo ID to its current workspace-relative path, original name, and size. Use when a historical path may have changed after filing or undo. This returns metadata only; read and parse the saved file with your native tools. Use melo_read_document for Markdown including unsaved edits. Drafts, removed files, and paths outside the workspace are unavailable.',
+            inputSchema: { id: z.string().uuid() },
+            annotations: { readOnlyHint: true },
+          },
+          async ({ id }) => {
+            if (closed) throw new Error('Workspace tools are closed')
+            const attachment = await actions.resolveAttachment!(id)
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(attachment) }],
+            }
+          },
+        )
       const result = async (work: () => Promise<unknown>) => {
         if (closed) throw new Error('Workspace tools are closed')
         return { content: [{ type: 'text' as const, text: JSON.stringify(await work()) }] }
       }
+      if (actions.organize)
+        mcp.registerTool(
+          AGENT_TOOLS.organize.name,
+          {
+            description:
+              'Execute file moves/renames the user has explicitly agreed to in the conversation. This tool changes files immediately; it does not display a confirmation card or wait for approval. First inspect the attachments and workspace, explain suggested destinations and any renames in chat, then end the turn and wait for the user. A question about the proposal is not consent: explain or revise it without calling this tool. After agreement, send each stable attachment ID, reading status, and exact agreed workspace-relative destination with its original extension. Use null for files to leave in place; unread files stay in place. Do not invent a directory from the workspace name. Returns actual final paths. Name conflicts, changed files, and paths outside the workspace fail without overwriting. Note edits use the separate versioned document tool.',
+            inputSchema: organizationRequestSchema.shape,
+            annotations: { readOnlyHint: false, destructiveHint: true },
+          },
+          (organization) => result(() => actions.organize!(organization)),
+        )
       mcp.registerTool(
         AGENT_TOOLS.listFiles.name,
         {

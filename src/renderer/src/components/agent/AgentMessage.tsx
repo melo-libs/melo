@@ -1,23 +1,23 @@
-import { agentTool } from '@shared/agentCapabilities'
 import { Fragment, memo, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MarkdownManager } from '@tiptap/markdown'
 import { StarterKit } from '@tiptap/starter-kit'
+import { Highlight } from '@tiptap/extension-highlight'
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import type { JSONContent } from '@tiptap/core'
-import type { AgentMessage as Message } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
 import { safeExternalUrl } from '../../lib/url'
 import { Icon } from '../Icon'
 import type { AgentContext } from '@shared/types/agent'
 import { AgentQuote } from './AgentQuote'
+import { AgentAttachments } from './AgentAttachments'
 import { agentFilePath } from './agentFiles'
 
 // Render model output as React nodes: no raw HTML, remote images or executable
 // links. Replies share the editor's Markdown parser without mounting an editor.
 const markdown = new MarkdownManager({
-  extensions: [StarterKit, Table, TableRow, TableCell, TableHeader, TaskList, TaskItem],
+  extensions: [StarterKit, Highlight, Table, TableRow, TableCell, TableHeader, TaskList, TaskItem],
 })
 
 function renderNode(
@@ -35,6 +35,9 @@ function renderNode(
       switch (mark.type) {
         case 'bold':
           text = <strong>{text}</strong>
+          break
+        case 'highlight':
+          text = <mark>{text}</mark>
           break
         case 'italic':
           text = <em>{text}</em>
@@ -151,6 +154,7 @@ export const AgentMessage = memo(function AgentMessage({
   context,
   onOpenFile,
   onOpenMessage,
+  workspaceRoot,
 }: {
   content: string
   role: 'assistant' | 'user'
@@ -158,6 +162,7 @@ export const AgentMessage = memo(function AgentMessage({
   context?: AgentContext
   onOpenFile?(path: string): void
   onOpenMessage?(id: string): void
+  workspaceRoot?: string
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
@@ -174,6 +179,13 @@ export const AgentMessage = memo(function AgentMessage({
   )
   return (
     <div className={`agent-message agent-${role}`}>
+      {role === 'user' && context?.attachments && (
+        <AgentAttachments
+          files={context.attachments}
+          workspaceRoot={workspaceRoot}
+          onOpen={onOpenFile ? (id) => onOpenFile(`melo-attachment:${id}`) : undefined}
+        />
+      )}
       {role === 'user' && context?.selection && (
         <AgentQuote context={context} onOpenFile={onOpenFile} />
       )}
@@ -193,40 +205,3 @@ export const AgentMessage = memo(function AgentMessage({
     </div>
   )
 })
-
-export function AgentActivity({ messages }: { messages: Message[] }) {
-  const { t, i18n } = useTranslation()
-  const pending = messages.find((message) => message.toolStatus === 'pending')
-  const failed = messages.filter((message) => message.toolStatus === 'failed').length
-  const names = [...new Set(messages.map((message) => message.content))]
-  const label = (name: string) =>
-    i18n.exists(`agent.tools.${name}`) ? t(`agent.tools.${name}`) : name
-  return (
-    <details className="agent-activity">
-      <summary>
-        <Icon name="chev" size={14} />
-        <span>
-          {pending
-            ? label(pending.content)
-            : failed
-              ? t('agent.activityFailed', { count: failed })
-              : names.every((name) => agentTool(name)?.readOnly === true)
-                ? t('agent.activityReviewed', {
-                    sources: names
-                      .map((name) => t(`agent.activitySources.${name}`))
-                      .join(i18n.language.startsWith('zh') ? '、' : ', '),
-                  })
-                : t('agent.activityDone', { count: messages.length })}
-        </span>
-      </summary>
-      {messages.map((message) => (
-        <div className="agent-tool" key={message.id} data-status={message.toolStatus}>
-          <span>
-            {message.toolStatus === 'pending' ? '…' : message.toolStatus === 'failed' ? '×' : '✓'}
-          </span>
-          {label(message.content)}
-        </div>
-      ))}
-    </details>
-  )
-}

@@ -1,25 +1,32 @@
 import type { AgentOperation } from '../agentCapabilities'
 import type { AgentApiCatalog, AgentApiServiceId } from '../agentApi'
+import type { AttachmentReceipt } from '../agentAttachments'
+import type { AgentToolActivity } from '../agentActivity'
+import type { AgentChange, AgentFiling } from '../agentChanges'
+export type { AgentChange, AgentFiling } from '../agentChanges'
 
 export type AgentProvider = 'claude' | 'codex'
 export type AgentStatus = 'idle' | 'connecting' | 'running' | 'awaiting-permission' | 'error'
 
+export interface AgentAttachment {
+  id: string
+  name: string
+  size: number
+  path?: string
+}
+
 export interface AgentContext {
+  /** Workspace-relative file visible when sending; null means no saved workspace file is open. */
+  activeFilePath?: string | null
+  /** Conversation reference or source of the quoted selection; may differ from the active tab. */
   filePath?: string
   selection?: string
+  attachments?: AgentAttachment[]
 }
 
 export interface AgentPlanEntry {
   content: string
   status: 'pending' | 'in_progress' | 'completed'
-}
-
-export interface AgentChange {
-  id: string
-  kind: 'create-folder' | 'create-note' | 'edit' | 'move' | 'trash'
-  path: string
-  source?: string
-  undone: boolean
 }
 
 export interface AgentMessage {
@@ -28,9 +35,12 @@ export interface AgentMessage {
   content: string
   context?: AgentContext
   change?: AgentChange
+  filing?: AgentFiling
+  receipt?: AttachmentReceipt
   plan?: AgentPlanEntry[]
   approval?: AgentApproval
   toolStatus?: 'pending' | 'completed' | 'failed'
+  toolActivity?: AgentToolActivity
   createdAt: number
 }
 
@@ -75,6 +85,8 @@ export interface AgentView {
   allowChanges: boolean
   permission: AgentPermission | null
   error: string | null
+  /** Transient successful turn identity; not restored from conversation history. */
+  completedTurn?: string
 }
 
 export interface AgentNativePreferences {
@@ -160,6 +172,12 @@ export type AgentCommand =
       apiService?: AgentApiServiceId
     }
   | { action: 'current'; workspaceRoot: string }
+  | { action: 'paste-attachments'; workspaceRoot: string }
+  | { action: 'drop-attachments'; workspaceRoot: string; files: string[] }
+  | { action: 'attachment-preview'; workspaceRoot: string; attachmentId: string }
+  | { action: 'draft-attachments'; workspaceRoot: string }
+  | { action: 'remove-attachment'; workspaceRoot: string; attachmentId: string }
+  | { action: 'attachment'; workspaceRoot: string; attachmentId: string }
   | { action: 'history'; before?: number; after?: number; around?: string }
   | { action: 'search-history'; query: string; before?: number }
   | { action: 'delete-message'; messageId: string }
@@ -175,8 +193,14 @@ export type AgentCommand =
       conversation?: boolean
     }
   | { action: 'undo'; conversationId: string; changeIds: string[] }
+  | { action: 'undo-filing'; conversationId: string; batchId: string }
 
 export interface AgentCommandResult {
+  attachmentPreview?: string
+  intakeErrors?: { name: string; error: string }[]
+  intakeHandled?: boolean
+  intake?: { workspaceRoot: string; attachments: AgentAttachment[] }
+  attachment?: AgentAttachment
   apiCatalog?: AgentApiCatalog
   authentication?: AgentAuthentication
   setup?: AgentSetup

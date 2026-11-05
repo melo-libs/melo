@@ -21,6 +21,18 @@ beforeEach(async () => {
   tools = await startWorkspaceTools(() => ({
     documents,
     actions: {
+      organize: async (organization) => ({
+        files: organization.files.map((file) => ({
+          id: file.id,
+          path: file.destination ?? 'Inbox/unread.bin',
+        })),
+      }),
+      resolveAttachment: async (id) => ({
+        id,
+        name: 'image.png',
+        size: 7,
+        path: 'Travel/image.png',
+      }),
       list: async () => [],
       search: async () => ({ hits: [], total: 0 }),
       searchHistory: async () => ({ messages: [], total: 0 }),
@@ -50,11 +62,36 @@ afterEach(async () => {
 })
 
 describe('workspace MCP boundary', () => {
+  it('returns only current attachment metadata and accepts only stable IDs', async () => {
+    const read = await client.callTool({
+      name: 'melo_resolve_attachment',
+      arguments: { id: '00000000-0000-4000-8000-000000000001' },
+    })
+    expect(read.content).toEqual([
+      {
+        type: 'text',
+        text: JSON.stringify({
+          id: '00000000-0000-4000-8000-000000000001',
+          name: 'image.png',
+          size: 7,
+          path: 'Travel/image.png',
+        }),
+      },
+    ])
+    const invalid = await client.callTool({
+      name: 'melo_resolve_attachment',
+      arguments: { id: '../external.png' },
+    })
+    expect(invalid.isError).toBe(true)
+  })
+
   it('advertises the exact owned tool set with consistent read-only annotations', async () => {
     const { tools } = await client.listTools()
     expect(
-      tools.map((tool) => ({ name: tool.name, readOnly: tool.annotations?.readOnlyHint })),
-    ).toEqual(Object.values(AGENT_TOOLS))
+      tools
+        .map((tool) => ({ name: tool.name, readOnly: tool.annotations?.readOnlyHint }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    ).toEqual(Object.values(AGENT_TOOLS).sort((a, b) => a.name.localeCompare(b.name)))
   })
 
   it('uses the document service for current content and versioned edits', async () => {

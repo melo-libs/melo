@@ -14,11 +14,14 @@ import {
   agentSetupAtom,
   agentNativeCatalogsAtom,
   agentViewAtom,
+  agentIntakeAtom,
   agentWindowAtom,
   type AgentModelLoadState,
 } from '../../store/agent'
 import { workspacePathAtom } from '../../store/workspace'
+import { activeTabIdAtom } from '../../store/editor'
 import { appStore } from '../../store/appStore'
+import { agentErrorText } from './agentError'
 
 const preparationKey = (id: string, { configuration: c }: AgentSetup) =>
   JSON.stringify([
@@ -40,17 +43,20 @@ export function useAgentController(
   const [state, setWindow] = useAtom(agentWindowAtom),
     [view, setView] = useAtom(agentViewAtom)
   const history = useAtomValue(agentHistoryAtom),
+    intake = useAtomValue(agentIntakeAtom),
     setup = useAtomValue(agentSetupAtom),
     catalogs = useAtomValue(agentNativeCatalogsAtom),
     accounts = useAtomValue(agentAccountsAtom),
     root = useAtomValue(workspacePathAtom)
   const [commandBusy, setCommandBusy] = useState(false),
+    [receivingFiles, setReceivingFiles] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
     [modelRequests, setModelRequests] = useState<
       Partial<Record<AgentProvider, AgentModelLoadState>>
     >({})
   const pendingCommands = useRef(0)
+  const pendingFiles = useRef(0)
   const pendingModels = useRef(new Set<AgentProvider>())
   const prepared = useRef('')
   const preparing = useRef('')
@@ -64,6 +70,18 @@ export function useAgentController(
       ? preparation
       : { status: 'idle' })
   const busy = commandBusy || connectionBusy
+  const submittedFiles = new Set(
+    running
+      ? view?.messages
+          .filter((message) => message.role === 'user')
+          .at(-1)
+          ?.context?.attachments?.map((file) => file.id)
+      : [],
+  )
+  const attachments =
+    intake?.workspaceRoot === root
+      ? intake.attachments.filter((file) => !submittedFiles.has(file.id))
+      : []
   const accountStatus = accounts[selectedProvider].status
   const ready =
     !!root &&
@@ -75,7 +93,10 @@ export function useAgentController(
     (setup.configuration.access === 'api' ||
       (accountStatus === 'signed-in' && !!setup.configuration.native))
   const canSend =
-    ready && (!running || view?.status === 'awaiting-permission') && !!state.draft.trim()
+    ready &&
+    !receivingFiles &&
+    (!running || view?.status === 'awaiting-permission') &&
+    (!!state.draft.trim() || attachments.length > 0)
   const perform = async (work: () => Promise<unknown>): Promise<boolean> => {
     pendingCommands.current += 1
     setCommandBusy(true)
@@ -184,16 +205,41 @@ export function useAgentController(
   ])
   const wasRunning = useRef(false)
   useEffect(() => {
-    if (wasRunning.current && !running && !appStore.get(agentHistoryAtom)?.hasNewer)
-      void agentCommand({ action: 'history' }).catch((error) => setError(error.message))
+    if (wasRunning.current && !running) {
+      if (!appStore.get(agentHistoryAtom)?.hasNewer)
+        void agentCommand({ action: 'history' }).catch((error) => setError(error.message))
+      if (root)
+        void agentCommand({ action: 'draft-attachments', workspaceRoot: root }).catch((error) =>
+          setError(error.message),
+        )
+    }
     wasRunning.current = running
-  }, [running])
+  }, [running, root])
   const send = (text: string, context: AgentContext) => {
-    if (!ready || !view || !text || (running && view.status !== 'awaiting-permission')) return false
+    if (
+      !ready ||
+      !root ||
+      receivingFiles ||
+      !view ||
+      !text ||
+      (running && view.status !== 'awaiting-permission')
+    )
+      return false
+    const activeFile = appStore.get(activeTabIdAtom)
+    const submittedContext: AgentContext = {
+      ...context,
+      ...(attachments.length ? { attachments } : {}),
+      activeFilePath: activeFile?.startsWith(root + '/') ? activeFile.slice(root.length + 1) : null,
+    }
     void perform(async () => {
       if (running) await agentCommand({ action: 'cancel', conversationId: view.conversation.id })
       if (history?.hasNewer) await agentCommand({ action: 'history' })
-      await agentCommand({ action: 'send', conversationId: view.conversation.id, text, context })
+      await agentCommand({
+        action: 'send',
+        conversationId: view.conversation.id,
+        text,
+        context: submittedContext,
+      })
       setWindow((current) => ({
         ...current,
         draft: current.draft.trim() === text ? '' : current.draft,
@@ -217,6 +263,43 @@ export function useAgentController(
         )
       }
     })
+
+  const pasteAttachments = async (files?: File[], workspaceFile?: string): Promise<boolean> => {
+    if (!root) return false
+    pendingFiles.current++
+    setReceivingFiles(true)
+    try {
+      const paths =
+        files?.map((file) => window.api.getPathForFile(file)) ??
+        (workspaceFile ? [workspaceFile] : undefined)
+      if (paths && (paths.length > 20 || paths.some((file) => !file)))
+        throw new Error('AGENT_ATTACHMENT_LIMIT')
+      const result = await agentCommand(
+        paths
+          ? { action: 'drop-attachments', workspaceRoot: root, files: paths }
+          : { action: 'paste-attachments', workspaceRoot: root },
+      )
+      if (result.intakeErrors?.length)
+        setError(
+          result.intakeErrors
+            .map((item) => `${item.name}: ${agentErrorText(item.error)}`)
+            .join('\n'),
+        )
+      return result.intakeHandled === true
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'AGENT_ATTACHMENT_CAPTURE_FAILED')
+      return true
+    } finally {
+      pendingFiles.current--
+      setReceivingFiles(pendingFiles.current > 0)
+    }
+  }
+  const removeAttachment = (attachmentId: string) => {
+    if (root)
+      void perform(() =>
+        agentCommand({ action: 'remove-attachment', workspaceRoot: root, attachmentId }),
+      )
+  }
 
   const loadModels = async () => {
     const provider = selectedProvider
@@ -253,10 +336,18 @@ export function useAgentController(
     conversation = false,
   ) =>
     void perform(() =>
-      agentCommand({ action: 'permission', conversationId, permissionId, allow, conversation }),
+      agentCommand({
+        action: 'permission',
+        conversationId,
+        permissionId,
+        allow,
+        conversation,
+      }),
     )
   const undo = (conversationId: string, changeIds: string[]) =>
     void perform(() => agentCommand({ action: 'undo', conversationId, changeIds }))
+  const undoFiling = (conversationId: string, batchId: string) =>
+    void perform(() => agentCommand({ action: 'undo-filing', conversationId, batchId }))
   const deleteMessage = (messageId: string) =>
     void perform(() => agentCommand({ action: 'delete-message', messageId }))
   const cancel = () => {
@@ -286,6 +377,10 @@ export function useAgentController(
     selectedProvider,
     ready,
     canSend,
+    attachments,
+    receivingFiles,
+    pasteAttachments,
+    removeAttachment,
     send,
     changeProvider,
     loadModels,
@@ -293,6 +388,7 @@ export function useAgentController(
     loadHistory,
     respond,
     undo,
+    undoFiling,
     deleteMessage,
     cancel,
   }

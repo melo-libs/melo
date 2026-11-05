@@ -144,6 +144,23 @@ it('persists interrupted tool and approval recovery for the complete timeline on
         toolStatus: 'completed',
         createdAt: 2,
       },
+      {
+        id: 'receipt:interrupted',
+        role: 'tool',
+        content: '',
+        createdAt: 2,
+        receipt: {
+          files: [
+            {
+              id: '00000000-0000-4000-8000-000000000001',
+              name: 'complete.pdf',
+              path: 'Inbox/complete.pdf',
+              status: 'stored',
+            },
+            { id: '00000000-0000-4000-8000-000000000002', name: 'pending.pdf', status: 'pending' },
+          ],
+        },
+      },
       ...Array.from({ length: 80 }, (_, index) => ({
         id: `later-${index}`,
         role: 'user' as const,
@@ -173,6 +190,12 @@ it('persists interrupted tool and approval recovery for the complete timeline on
       store.messages(conversation.id).find((message) => message.id === 'finished-tool')?.toolStatus,
     ).toBe('completed')
     expect(store.messages(conversation.id).at(-1)?.approval?.status).toBe('expired')
+    expect(
+      store
+        .messages(conversation.id)
+        .find((message) => message.receipt)
+        ?.receipt?.files.map((file) => file.status),
+    ).toEqual(['stored', 'cancelled'])
     store.close()
     store = new ConversationStore(file)
     expect(store.messages(conversation.id)[0].toolStatus).toBe('failed')

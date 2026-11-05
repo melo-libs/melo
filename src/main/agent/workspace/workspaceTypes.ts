@@ -1,4 +1,9 @@
-import type { AgentDocumentSnapshot, AgentHistorySearch } from '../../../shared/types/agent'
+import type {
+  AgentAttachment,
+  AgentDocumentSnapshot,
+  AgentHistorySearch,
+} from '../../../shared/types/agent'
+import type { OrganizationRequest } from '../../../shared/agentCapabilities'
 
 // Protocol-independent capabilities supplied by the workspace service.
 export interface AgentDocumentAccess {
@@ -14,6 +19,8 @@ export interface WorkspaceOperations {
   /** Paths at this boundary are workspace-relative; the service resolves them. */
   documents: AgentDocumentAccess
   actions?: {
+    resolveAttachment?(id: string): Promise<AgentAttachment>
+    organize?(organization: OrganizationRequest): Promise<{ files: { id: string; path: string }[] }>
     list(directory: string): Promise<{ path: string; directory: boolean }[]>
     search(
       query: string,

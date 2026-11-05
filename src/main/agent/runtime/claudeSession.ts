@@ -1,11 +1,13 @@
 import type { McpServer, NewSessionRequest } from '@agentclientprotocol/sdk'
+import { executionInstructions } from './executionInstructions'
 
 export const CLAUDE_ACP_VERSION = '0.95.0'
 
-// Native write/exec tools stay unavailable; document mutations belong to Melo.
 export function claudeSession(
   mcpServers: McpServer[],
+  workspaceRoot: string,
   model?: string,
+  scratchDirectory?: string,
 ): Pick<NewSessionRequest, 'mcpServers' | '_meta'> {
   return {
     mcpServers,
@@ -13,13 +15,24 @@ export function claudeSession(
       claudeCode: {
         options: {
           ...(model ? { model } : {}),
-          tools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
+          tools: { type: 'preset', preset: 'claude_code' },
+          additionalDirectories: [workspaceRoot],
           settingSources: [],
           strictMcpConfig: true,
-          allowDangerouslySkipPermissions: false,
+          allowDangerouslySkipPermissions: true,
           persistSession: false,
           promptSuggestions: false,
-          settings: { disableAllHooks: true },
+          ...(scratchDirectory && {
+            systemPrompt: {
+              type: 'preset',
+              preset: 'claude_code',
+              append: executionInstructions(workspaceRoot, scratchDirectory),
+            },
+          }),
+          sandbox: { enabled: false },
+          settings: {
+            disableAllHooks: true,
+          },
         },
       },
     },

@@ -1,6 +1,8 @@
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 import type {
   AgentAuthentication,
+  AgentAttachment,
   AgentProvider,
   AgentCommand,
   AgentCommandResult,
@@ -9,6 +11,8 @@ import type {
   AgentView,
   AgentHistoryPage,
   AgentModelControl,
+  AgentFiling,
+  AgentMessage,
 } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
 import { appStore } from './appStore'
@@ -16,8 +20,57 @@ import { workspacePathAtom } from './workspace'
 import { activeTabIdAtom } from './editor'
 import { handleAgentDocument } from './documentSession'
 
-export const agentHistoryAtom = atom<AgentHistoryPage | null>(null)
-export const agentViewAtom = atom<AgentView | null>(null)
+const agentFilingsAtom = atom(new Map<string, AgentFiling>())
+const cacheFilingsAtom = atom(null, (get, set, messages: AgentMessage[]) => {
+  const current = get(agentFilingsAtom)
+  let next = current
+  for (const { filing } of messages) {
+    if (!filing || (next.get(filing.id)?.version ?? -1) >= filing.version) continue
+    if (next === current) next = new Map(current)
+    next.set(filing.id, filing)
+  }
+  if (next !== current) set(agentFilingsAtom, next)
+})
+const agentHistoryStateAtom = atom<AgentHistoryPage | null>(null)
+export const agentHistoryAtom = atom(
+  (get) => get(agentHistoryStateAtom),
+  (_get, set, history: AgentHistoryPage | null) => {
+    if (history) set(cacheFilingsAtom, history.messages)
+    else set(agentFilingsAtom, new Map())
+    set(agentHistoryStateAtom, history)
+  },
+)
+const agentNoticeAtom = atom<{ conversationId: string; kind: 'ready' | 'error' } | null>(null)
+const agentViewStateAtom = atom<AgentView | null>(null)
+export const agentViewAtom = atom(
+  (get) => get(agentViewStateAtom),
+  (get, set, view: AgentView | null) => {
+    const previous = get(agentViewStateAtom)
+    const sameConversation = previous?.conversation.id === view?.conversation.id
+    const finished =
+      view?.status === 'idle' &&
+      !!view.completedTurn &&
+      sameConversation &&
+      previous?.completedTurn !== view.completedTurn
+    const failed = view?.status === 'error' && sameConversation && previous?.status !== 'error'
+    if (!sameConversation || (view && !['idle', 'error'].includes(view.status)))
+      set(agentNoticeAtom, null)
+    const window = get(agentWindowAtom)
+    if (view && (finished || failed))
+      set(
+        agentNoticeAtom,
+        !window.open || window.collapsed
+          ? { conversationId: view.conversation.id, kind: failed ? 'error' : 'ready' }
+          : null,
+      )
+    if (view) set(cacheFilingsAtom, view.messages)
+    set(agentViewStateAtom, view)
+  },
+)
+export const agentIntakeAtom = atom<{
+  workspaceRoot: string
+  attachments: AgentAttachment[]
+} | null>(null)
 export const agentSetupAtom = atom<AgentSetup | null>(null)
 export const agentNativeCatalogsAtom = atom<
   Partial<
@@ -41,13 +94,61 @@ export const agentAccountsAtom = atom<Record<AgentProvider, AgentAccountState>>(
   claude: { status: 'unknown' },
   codex: { status: 'unknown' },
 })
-export const agentWindowAtom = atom<{
+export const agentEntrySeenAtom = atomWithStorage('melo.agent.entry-seen', false, undefined, {
+  getOnInit: true,
+})
+type AgentWindowState = {
   open: boolean
   collapsed: boolean
   context: AgentContext
   anchor: { x: number; y: number } | null
   draft: string
-}>({ open: false, collapsed: false, context: {}, anchor: null, draft: '' })
+}
+const agentWindowStateAtom = atom<AgentWindowState>({
+  open: false,
+  collapsed: false,
+  context: {},
+  anchor: null,
+  draft: '',
+})
+export const agentWindowAtom = atom(
+  (get) => get(agentWindowStateAtom),
+  (get, set, update: AgentWindowState | ((state: AgentWindowState) => AgentWindowState)) => {
+    const next = typeof update === 'function' ? update(get(agentWindowStateAtom)) : update
+    if (next.open && !next.collapsed) set(agentNoticeAtom, null)
+    set(agentWindowStateAtom, next)
+  },
+)
+
+export type AgentMascotState = 'idle' | 'working' | 'waiting' | 'ready' | 'error' | 'offline'
+export const agentPresenceAtom = atom((get): { state: AgentMascotState; label: string } => {
+  const root = get(workspacePathAtom)
+  const current = get(agentViewAtom)
+  const view = current?.conversation.workspaceRoot === root ? current : null
+  const notice = get(agentNoticeAtom)
+  if (view && notice?.conversationId === view.conversation.id)
+    return { state: notice.kind, label: `agent.mascot.${notice.kind}Detail` }
+  if (view?.status === 'awaiting-permission' && view.permission)
+    return { state: 'waiting', label: 'agent.waitingForYou' }
+  if (view && !['idle', 'error'].includes(view.status)) {
+    const question = view.messages.findLast((message) => message.role === 'user')
+    return {
+      state: 'working',
+      label: question?.context?.attachments?.length ? 'agent.processingFiles' : 'agent.working',
+    }
+  }
+  const setup = get(agentSetupAtom)
+  if (setup && (!view || setup.configuration.provider === view.conversation.provider)) {
+    const configuration = setup.configuration
+    const unavailable =
+      !setup.runtimeAvailable ||
+      (configuration.access === 'api'
+        ? !configuration.hasApiKey || !configuration.baseUrl.trim() || !configuration.model.trim()
+        : get(agentAccountsAtom)[configuration.provider].status === 'signed-out')
+    if (unavailable) return { state: 'offline', label: 'agent.mascot.offline' }
+  }
+  return { state: 'idle', label: 'agent.mascot.idle' }
+})
 
 export const agentMessagesAtom = atom((get) => {
   const history = get(agentHistoryAtom),
@@ -57,7 +158,12 @@ export const agentMessagesAtom = atom((get) => {
   if (view) {
     for (const message of view.messages) {
       const savedMessage = map.get(message.id)
-      if (savedMessage) map.set(message.id, { ...savedMessage, ...message })
+      if (savedMessage)
+        map.set(message.id, {
+          ...savedMessage,
+          ...message,
+          filing: message.filing ?? savedMessage.filing,
+        })
     }
   }
   if (!history?.hasNewer && view) {
@@ -71,13 +177,21 @@ export const agentMessagesAtom = atom((get) => {
       map.set(message.id, {
         ...map.get(message.id),
         ...message,
+        filing: message.filing ?? map.get(message.id)?.filing,
         conversationId: view.conversation.id,
         workspaceRoot: view.conversation.workspaceRoot,
         sequence: map.get(message.id)?.sequence ?? Number.MAX_SAFE_INTEGER,
       })
     }
   }
-  return [...map.values()].sort((a, b) => a.createdAt - b.createdAt || a.sequence - b.sequence)
+  const filings = get(agentFilingsAtom)
+  return [...map.values()]
+    .map((message) =>
+      message.filing
+        ? { ...message, filing: filings.get(message.filing.id) ?? message.filing }
+        : message,
+    )
+    .sort((a, b) => a.createdAt - b.createdAt || a.sequence - b.sequence)
 })
 
 let setupGeneration = 0
@@ -110,6 +224,11 @@ export async function agentCommand(command: AgentCommand): Promise<AgentCommandR
       : historyGeneration
   const response = await window.api.invoke(IpcChannels.AgentCommand, command)
   if (!response.success || !response.data) throw new Error(response.error ?? 'Agent request failed')
+  if (command.action === 'clear-history') appStore.set(agentFilingsAtom, new Map())
+  if (response.data.view) appStore.set(cacheFilingsAtom, response.data.view.messages)
+  if (response.data.history) appStore.set(cacheFilingsAtom, response.data.history.messages)
+  if (response.data.intake?.workspaceRoot === appStore.get(workspacePathAtom))
+    appStore.set(agentIntakeAtom, response.data.intake)
   if (
     response.data.view &&
     response.data.view.conversation.workspaceRoot === appStore.get(workspacePathAtom)
@@ -177,17 +296,23 @@ export function openAgent(
   const root = appStore.get(workspacePathAtom)
   if (!root) return
   const file = appStore.get(activeTabIdAtom)
+  const current = appStore.get(agentWindowAtom)
   appStore.set(agentWindowAtom, {
     open: true,
     collapsed: false,
     context: {
-      ...(file?.startsWith(root + '/') ? { filePath: file.slice(root.length + 1) } : {}),
+      ...(options.selection && file?.startsWith(root + '/')
+        ? { filePath: file.slice(root.length + 1) }
+        : {}),
       ...(options.selection ? { selection: options.selection.slice(0, 24000) } : {}),
     },
-    anchor: options.anchor
-      ? { x: Math.round(options.anchor.x), y: Math.round(options.anchor.y) }
-      : null,
-    draft: options.draft ?? appStore.get(agentWindowAtom).draft,
+    anchor:
+      current.open && !current.collapsed
+        ? current.anchor
+        : options.anchor
+          ? { x: Math.round(options.anchor.x), y: Math.round(options.anchor.y) }
+          : null,
+    draft: options.draft ?? current.draft,
   })
 }
 
@@ -196,6 +321,7 @@ export function openAgent(
 export function connectAgent(): () => void {
   const requests = new Map<string, AbortController>()
   const offView = window.api.on(IpcChannels.OnAgentView, (view) => {
+    appStore.set(cacheFilingsAtom, view.messages)
     if (view.conversation.workspaceRoot !== appStore.get(workspacePathAtom)) return
     if (appStore.get(agentViewAtom)?.conversation.id === view.conversation.id)
       appStore.set(agentViewAtom, view)

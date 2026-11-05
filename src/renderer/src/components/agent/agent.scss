@@ -117,95 +117,68 @@
 }
 .agent-window[data-collapsed] {
   container-type: normal;
-  width: max-content;
-  min-width: 44px;
-  max-width: calc(100vw - 40px);
-  height: 44px;
-  min-height: 44px;
-  max-height: 44px;
-  border-radius: 22px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
   overflow: visible;
+  background: transparent;
   box-shadow: none;
 }
 .agent-dock.ui-button {
+  position: relative;
   cursor: grab;
   touch-action: none;
   user-select: none;
-  font-weight: 400;
-  width: 100%;
-  height: 44px;
-  min-height: 44px;
-  min-width: 44px;
-  gap: 9px;
-  padding: 0 16px 0 10px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  padding: 0;
   border: 0;
-  border-radius: 22px;
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow:
-    0 0 0 0.5px var(--hairline),
-    var(--shadow-md);
-  font-size: 13px;
-  > svg {
-    flex-shrink: 0;
-  }
-  &[data-mode='idle'] {
-    padding: 0;
-  }
-  &[data-mode='waiting'],
-  &[data-mode='waiting']:hover {
-    background: color-mix(in srgb, var(--ai-soft), var(--paper) 45%);
-    box-shadow:
-      0 0 0 1px var(--ai),
-      var(--shadow-md);
-  }
-  &:hover {
-    background: var(--paper-2);
-  }
-}
-.agent-dock-label {
-  min-width: 0;
-  max-width: 260px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.agent-dock-hint {
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-.agent-dock-spinner {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--hairline);
-  border-top-color: var(--ai);
   border-radius: 50%;
-  animation: agent-dock-spin 900ms linear infinite;
-}
-.agent-dock-dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ai);
-  box-shadow: 0 0 0 4px var(--ai-soft);
-  animation: agent-dock-breathe 1800ms ease-in-out infinite;
-}
-@keyframes agent-dock-spin {
-  to {
-    transform: rotate(360deg);
+  background: transparent;
+  box-shadow: none;
+  &::before {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 13px;
+    width: 22px;
+    height: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ink) 16%, transparent);
+    filter: blur(2px);
+    pointer-events: none;
+  }
+  &:hover:not(:disabled) {
+    background: transparent;
   }
 }
-@keyframes agent-dock-breathe {
-  50% {
-    box-shadow: 0 0 0 6px transparent;
+.agent-dock-bubble {
+  --bubble-paper: var(--paper);
+  --bubble-edge: transparent;
+  z-index: 510;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 4px 8px;
+  border: 1px solid var(--bubble-edge);
+  border-radius: var(--r-lg);
+  background: var(--bubble-paper);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-md);
+  font: 12px/18px var(--font-sans);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  .agent-dock-bubble-arrow {
+    fill: var(--bubble-paper);
+    stroke: var(--bubble-edge);
+    stroke-width: 1px;
+    transform: translateY(-1px);
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agent-dock-spinner,
-  .agent-dock-dot {
-    animation: none;
+  &[data-mode='waiting'] {
+    --bubble-paper: color-mix(in srgb, var(--melo-gold) 12%, var(--paper));
+    --bubble-edge: var(--melo-gold);
   }
 }
 .agent-window[data-dragging] {
@@ -317,7 +290,7 @@
   min-width: 0;
   // A referenced passage needs more separation from the preceding exchange.
   &:not(:first-child) {
-    margin-top: 24px;
+    margin-top: 48px;
   }
   &::before,
   &::after {
@@ -327,7 +300,8 @@
     height: 1px;
     background: var(--hairline-3);
   }
-  button {
+  > button,
+  > span {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -407,6 +381,14 @@
   }
 }
 .agent-markdown {
+  mark {
+    padding: 1px 4px;
+    background: var(--hl-mark);
+    color: inherit;
+    font-weight: 600;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
   > :first-child {
     margin-top: 0;
   }
@@ -517,29 +499,80 @@
   margin: 2px 0 12px;
   font-size: 12px;
   color: var(--ink-3);
-  summary {
+  > summary {
     display: flex;
     align-items: center;
     gap: 4px;
     list-style: none;
     cursor: pointer;
+    color: var(--ink-2);
   }
-  summary::-webkit-details-marker {
+  > summary::-webkit-details-marker {
     display: none;
   }
-  summary svg {
+  > summary > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  > summary svg {
     flex-shrink: 0;
     transition: transform 120ms ease;
   }
-  &[open] summary svg {
+  &[open] > summary svg {
     transform: rotate(90deg);
   }
 }
 .agent-tool {
-  display: flex;
-  gap: 8px;
   margin: 6px 0 0 18px;
-  overflow-wrap: anywhere;
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 24px;
+    list-style: none;
+    cursor: pointer;
+    color: var(--ink-2);
+    > svg {
+      flex-shrink: 0;
+      transition: transform 120ms ease;
+    }
+  }
+  > summary::-webkit-details-marker {
+    display: none;
+  }
+  &[open] > summary > svg {
+    transform: rotate(90deg);
+  }
+  pre {
+    max-height: 144px;
+    overflow: auto;
+    margin: 6px 0 10px 20px;
+    padding: 8px 10px;
+    border-radius: var(--r-md);
+    background: var(--paper-2);
+    color: var(--ink-2);
+    font: 11px/18px var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+.agent-tool-label {
+  display: flex;
+  align-items: baseline;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  > span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--ink-3);
+  }
+}
+.agent-tool-result {
+  flex-shrink: 0;
+  color: var(--ink-3);
+  font-size: 11px;
 }
 .agent-plan {
   display: flex;
@@ -613,8 +646,7 @@
     line-height: 16px;
   }
 }
-.agent-permission,
-.agent-changes {
+.agent-permission {
   margin: 0 0 2px;
   padding: 14px 16px;
   border: 0;
@@ -781,6 +813,105 @@
 .agent-change-row[data-undone] .agent-change-description {
   opacity: 0.6;
 }
+.agent-changes,
+.agent-filing-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 4px 0 12px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 20px;
+}
+.agent-change-details,
+.agent-filing-details {
+  min-width: 0;
+  &[open] {
+    flex: 1;
+  }
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    list-style: none;
+    cursor: pointer;
+    border-radius: var(--r-sm);
+    > svg {
+      flex-shrink: 0;
+    }
+    &:hover {
+      color: var(--ink-2);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--accent-line);
+      outline-offset: 2px;
+    }
+  }
+  > summary::-webkit-details-marker {
+    display: none;
+  }
+  &[open] > summary > svg:last-child {
+    transform: rotate(90deg);
+  }
+}
+.agent-change-files,
+.agent-filing-files {
+  margin: 6px 0 0 20px;
+  > .agent-change-row > svg {
+    flex-shrink: 0;
+    color: var(--ink-3);
+  }
+  .agent-change-name.ui-button {
+    display: block;
+    align-self: flex-start;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+  }
+}
+.agent-change-undo.ui-button,
+.agent-filing-undo.ui-button {
+  flex-shrink: 0;
+  min-width: 0;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 400;
+  &:hover:not(:disabled) {
+    background: transparent;
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  &:disabled {
+    background: transparent;
+    color: var(--ink-4);
+  }
+}
+.agent-filing-unresolved {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+  > p {
+    margin: 0 0 6px;
+  }
+  .agent-change-description > span {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 .agent-status {
   display: flex;
   align-items: center;
@@ -859,6 +990,182 @@
     padding: 0;
     border-radius: 50%;
   }
+}
+// Attachment tiles follow the supplied file-intake design; file ownership still starts in Inbox on send.
+// Receiving is a local handoff, not an applied AI change or an undo action.
+.agent-receipt {
+  margin: 0 0 14px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 20px;
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    list-style: none;
+    cursor: pointer;
+  }
+  > summary::-webkit-details-marker {
+    display: none;
+  }
+  > summary::after {
+    content: '›';
+    margin-left: 2px;
+    font-size: 16px;
+  }
+  &[open] > summary::after {
+    transform: rotate(90deg);
+  }
+  ul {
+    list-style: none;
+    margin: 6px 0 0 22px;
+    padding: 0;
+  }
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+  li > span,
+  li > .ui-button {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  li > .ui-button {
+    min-height: 0;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+  li > small {
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+}
+.agent-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-height: 144px;
+  overflow-y: auto;
+  padding: 6px 4px 4px;
+  margin: -4px -4px 6px;
+}
+.agent-attachment {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  > .ui-button,
+  > .agent-attachment-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: 56px;
+    padding: 4px;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13px;
+  }
+  > .agent-attachment-label:has(.agent-attachment-meta) {
+    padding-right: 12px;
+  }
+  > .ui-button:last-child:not(:first-child) {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--paper);
+    opacity: 0;
+  }
+  &:hover,
+  &:focus-within {
+    > .ui-button:last-child:not(:first-child) {
+      opacity: 1;
+    }
+  }
+}
+.agent-attachment-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 150px;
+  gap: 3px;
+  strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  small {
+    color: var(--ink-3);
+    font-size: 11px;
+  }
+}
+.agent-attachments[data-sent] {
+  justify-content: flex-end;
+  margin: 0 0 6px;
+  padding: 0;
+  .agent-attachment {
+    border: 0;
+  }
+  .agent-attachment > .ui-button {
+    height: 36px;
+    padding: 0;
+  }
+  .file-thumbnail {
+    width: 44px;
+    height: 32px;
+  }
+  .file-thumbnail-paper {
+    width: 24px;
+    height: 28px;
+  }
+  .file-thumbnail-label {
+    font-size: 7px;
+    line-height: 10px;
+    right: 4px;
+    bottom: 1px;
+  }
+}
+.agent-user:has(> .agent-attachments) {
+  padding: 0;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  > .agent-user-text {
+    padding: 9px 14px;
+    border-radius: 16px 16px 4px 16px;
+    background: var(--paper-2);
+  }
+}
+.agent-attachment-hint {
+  margin-bottom: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.agent-compose[data-dragging-files] {
+  box-shadow: 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
 }
 .agent-context-strip {
   display: flex;
@@ -1554,24 +1861,6 @@
   gap: 8px;
   margin-top: 12px;
 }
-.ed-ask-melo {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: 12px;
-  svg {
-    color: var(--ai);
-  }
-  &:hover {
-    background: var(--ai-soft);
-  }
-}
 @keyframes agent-message-highlight {
   from {
     background: var(--hl-mark);
@@ -1760,12 +2049,25 @@
   margin-bottom: 12px;
   summary {
     cursor: pointer;
+    overflow-wrap: anywhere;
     color: var(--ink-2);
     font-size: 12px;
   }
   &[open] > summary {
     margin-bottom: 14px;
   }
+}
+.agent-native-purpose {
+  margin: 8px 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.agent-native-parameters > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
 }
 .agent-approval-status {
   margin: 10px 0 0;
@@ -1777,7 +2079,7 @@
 .agent-window:not([data-collapsed]):has(.agent-permission[data-pending]) {
   min-height: min(520px, calc(100vh - 64px));
 }
-.agent-permission[data-pending] .agent-card-actions {
+.agent-permission[data-pending] > .agent-card-actions {
   position: sticky;
   bottom: 0;
   z-index: 1;

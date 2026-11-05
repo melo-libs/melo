@@ -35,6 +35,136 @@ afterEach(async () => {
 })
 
 describe('AgentService lifecycle', () => {
+  it('publishes a fresh completion identity only for successful turns', async () => {
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Hello', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    const first = view.completedTurn
+    expect(first).toBeTruthy()
+    service.send(view.conversation.id, 'Again', {})
+    expect(view.completedTurn).toBeUndefined()
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(view.completedTurn).toBeTruthy()
+    expect(view.completedTurn).not.toBe(first)
+  })
+  it('retains structured tool activity across partial updates and persisted history', async () => {
+    prompt.mockImplementationOnce(async () => {
+      request.onEvent({
+        type: 'tool',
+        id: 'read',
+        title: 'Read report.pdf',
+        status: 'pending',
+        activity: { kind: 'read', target: 'Inbox/report.pdf' },
+      })
+      request.onEvent({
+        type: 'tool',
+        id: 'read',
+        title: 'Read report.pdf',
+        status: 'completed',
+        activity: { kind: 'read' },
+      })
+      request.onEvent({ type: 'text', text: 'The file is ready to organize.' })
+    })
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Read this file', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    const expected = {
+      toolStatus: 'completed',
+      toolActivity: { kind: 'read', target: 'Inbox/report.pdf' },
+    }
+    expect(view.messages.find((message) => message.role === 'tool')).toMatchObject(expected)
+    expect(
+      store.messages(view.conversation.id).find((message) => message.role === 'tool'),
+    ).toMatchObject(expected)
+    expect(store.history().messages.find((message) => message.role === 'tool')).toMatchObject(
+      expected,
+    )
+  })
+  it('finishes Inbox receipt before starting the Harness and never publishes imports as AI changes', async () => {
+    let release!: () => void
+    const receiving = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    service = new AgentService(
+      store,
+      memory,
+      factory,
+      () => {},
+      new Set(),
+      undefined,
+      async (_conversation, id) => {
+        await receiving
+        return { id, name: 'booking.pdf', size: 10, path: 'Inbox/booking.pdf' }
+      },
+    )
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Organize this file', {
+      attachments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'booking.pdf', size: 10 }],
+    })
+    expect(factory).not.toHaveBeenCalled()
+    expect(view.messages.find((message) => message.receipt)?.receipt?.files[0].status).toBe(
+      'pending',
+    )
+    release()
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(factory).toHaveBeenCalledOnce()
+    expect(view.messages.filter((message) => message.change)).toEqual([])
+    expect(
+      store.messages(view.conversation.id).find((message) => message.receipt)?.receipt?.files[0],
+    ).toMatchObject({ status: 'stored', path: 'Inbox/booking.pdf' })
+    expect(prompt.mock.calls[0][0]).toContain('Inbox/booking.pdf')
+  })
+
+  it('preserves failed receipt state without handing an unreceived file to the Harness', async () => {
+    service = new AgentService(
+      store,
+      memory,
+      factory,
+      () => {},
+      new Set(),
+      undefined,
+      async () => {
+        throw new Error('AGENT_ATTACHMENT_CAPTURE_FAILED')
+      },
+    )
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Organize', {
+      attachments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'booking.pdf', size: 10 }],
+    })
+    await vi.waitFor(() => expect(view.status).toBe('error'))
+    expect(factory).not.toHaveBeenCalled()
+    expect(view.messages.find((message) => message.receipt)?.receipt?.files[0].status).toBe(
+      'failed',
+    )
+  })
+  it('keeps a filing discussion across turns without pending approval or an executed change', async () => {
+    const view = service.create(root, 'claude')
+    prompt.mockImplementationOnce(async () => {
+      request.onEvent({
+        type: 'text',
+        text: 'I suggest Reference/report.pdf because it is reference material. Shall I move it?',
+      })
+    })
+    service.send(view.conversation.id, 'Organize this file', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(view.permission).toBeNull()
+    prompt.mockImplementationOnce(async (text) => {
+      expect(text).toContain('I suggest Reference/report.pdf')
+      expect(text).toContain('Why Reference?')
+      request.onEvent({
+        type: 'text',
+        text: 'It matches the existing reference documents. This remains a suggestion.',
+      })
+    })
+    service.send(view.conversation.id, 'Why Reference?', {})
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(
+      view.messages.some((message) => message.approval || message.change || message.filing),
+    ).toBe(false)
+    expect(
+      store.messages(view.conversation.id).filter((message) => message.role === 'assistant'),
+    ).toHaveLength(2)
+  })
   it('keeps window suspension when a workspace refresh resumes its own scope', async () => {
     const view = service.create(root, 'codex')
     await service.suspend('window')
@@ -102,6 +232,7 @@ describe('AgentService lifecycle', () => {
     await vi.waitFor(() => expect(service.open(view.conversation.id).permission).not.toBeNull())
     await service.cancel(view.conversation.id)
     expect(service.open(view.conversation.id).status).toBe('idle')
+    expect(service.open(view.conversation.id).completedTurn).toBeUndefined()
     expect(store.list(root)).toHaveLength(1)
   })
   it('refuses overlapping turns and reports harness failures without losing messages', async () => {
@@ -239,20 +370,36 @@ it('releases pending approvals before draining a failed harness', async () => {
   await expect(service.cancel(view.conversation.id)).resolves.toBeUndefined()
 })
 
-it('keeps the referenced note for follow-ups after the composer quote is consumed', async () => {
+it('keeps quotes in history without overriding the active file on follow-ups', async () => {
   const view = service.create(root, 'claude')
   service.send(view.conversation.id, 'Explain this', {
     filePath: 'Travel.md',
     selection: 'A passage',
   })
   await vi.waitFor(() => expect(view.status).toBe('idle'))
-  service.send(view.conversation.id, 'Make it shorter', {})
+  service.send(view.conversation.id, 'What am I viewing now?', {
+    activeFilePath: 'Inbox/report.pdf',
+  })
   await vi.waitFor(() => expect(view.status).toBe('idle'))
   expect(prompt.mock.calls[1][0]).toContain('Explain this')
   expect(prompt.mock.calls[1][0]).toContain('Answer')
+  expect(prompt.mock.calls[1][0]).toContain('Referenced document: Travel.md')
+  expect(prompt.mock.calls[1][0]).toContain('Quoted text (context only): A passage')
+  expect(prompt.mock.calls[1][0]).toContain(
+    'editor at send time, relative to workspace: Inbox/report.pdf',
+  )
   expect(view.messages.filter((message) => message.role === 'user').at(-1)?.context).toEqual({
-    filePath: 'Travel.md',
+    activeFilePath: 'Inbox/report.pdf',
   })
+  service.send(view.conversation.id, 'And now?', { activeFilePath: null })
+  await vi.waitFor(() => expect(view.status).toBe('idle'))
+  expect(prompt.mock.calls[2][0]).toContain('Editor at send time: no saved workspace file is open.')
+  expect(
+    store
+      .messages(view.conversation.id)
+      .filter((message) => message.role === 'user')
+      .at(-1)?.context,
+  ).toEqual({ activeFilePath: null })
 })
 
 it('persists a burst before trimming the live message buffer', async () => {

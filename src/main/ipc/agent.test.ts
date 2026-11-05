@@ -5,7 +5,7 @@ import { ipcMain } from 'electron'
 import { setupAgentIPC } from './agent'
 import { checkNativeAuthentication } from '../agent/runtime/nativeAuthentication'
 
-const { profiles, sender, select, save } = vi.hoisted(() => ({
+const { profiles, sender, select, save, reconcile, cancel, respond } = vi.hoisted(() => ({
   profiles: {
     claude: { provider: 'claude', access: 'native', baseUrl: '', model: '', hasApiKey: false },
     codex: { provider: 'codex', access: 'native', baseUrl: '', model: '', hasApiKey: false },
@@ -13,6 +13,9 @@ const { profiles, sender, select, save } = vi.hoisted(() => ({
   sender: { mainFrame: {} },
   select: vi.fn(),
   save: vi.fn(),
+  reconcile: vi.fn(),
+  cancel: vi.fn().mockResolvedValue(undefined),
+  respond: vi.fn(),
 }))
 vi.mock('electron', () => ({
   app: { getPath: () => '/fixture', getAppPath: () => '/fixture', on: vi.fn() },
@@ -50,14 +53,24 @@ vi.mock('../agent/runtime/nativeModels', () => ({
 }))
 vi.mock('../agent/runtime/nativeAuthentication', () => ({ checkNativeAuthentication: vi.fn() }))
 vi.mock('../agent/storage/conversationStore', () => ({ ConversationStore: class {} }))
+vi.mock('../agent/storage/fileIntake', () => ({ FileIntake: class {} }))
 vi.mock('../agent/storage/memory', () => ({ MemoryService: class {} }))
 vi.mock('../agent/workspace/documentAccess', () => ({ DocumentAccess: class {} }))
-vi.mock('../agent/workspace/changeJournal', () => ({ ChangeJournal: class {} }))
+vi.mock('../agent/workspace/changeJournal', () => ({
+  ChangeJournal: class {
+    reconcileAttachments = reconcile
+  },
+}))
 vi.mock('../agent/workspace/workspaceAccess', () => ({ WorkspaceAccess: class {} }))
 vi.mock('../agent/mcp/workspaceTools', () => ({ startWorkspaceTools: vi.fn() }))
 vi.mock('../agent/runtime/runtime', () => ({ createRuntimeFactory: vi.fn() }))
 vi.mock('../agent/agentService', () => ({
   AgentService: class {
+    open() {
+      return { conversation: { workspaceRoot: '/notes' } }
+    }
+    cancel = cancel
+    respond = respond
     suspend = vi.fn().mockResolvedValue(undefined)
     resume = vi.fn()
   },
@@ -65,8 +78,35 @@ vi.mock('../agent/agentService', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  reconcile.mockReset()
   vi.mocked(checkNativeAuthentication).mockResolvedValue({ status: 'signed-in' })
   setupAgentIPC()
+})
+
+it('keeps stop and permission denial available when attachment reconciliation fails', async () => {
+  const conversationId = '00000000-0000-4000-8000-000000000001'
+  const permissionId = '00000000-0000-4000-8000-000000000002'
+  reconcile.mockImplementation(() => {
+    throw new Error('registry sync failed')
+  })
+  expect((await invoke({ action: 'draft-attachments', workspaceRoot: '/notes' })).success).toBe(
+    false,
+  )
+  reconcile.mockClear()
+  expect((await invoke({ action: 'cancel', conversationId })).success).toBe(true)
+  expect(
+    (
+      await invoke({
+        action: 'permission',
+        conversationId,
+        permissionId,
+        allow: false,
+      })
+    ).success,
+  ).toBe(true)
+  expect(cancel).toHaveBeenCalledWith(conversationId)
+  expect(respond).toHaveBeenCalledWith(conversationId, permissionId, false, undefined)
+  expect(reconcile).not.toHaveBeenCalled()
 })
 
 function invoke(command: AgentCommand) {

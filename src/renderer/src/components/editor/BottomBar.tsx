@@ -47,7 +47,7 @@ export const BottomBar = ({ filePath, viewerKind }: BottomBarProps) => {
     : null
 
   return (
-    <div className="ed-bottombar">
+    <div className="ed-bottombar" data-floating-obstacle>
       {viewerKind ? (
         <span>
           <b>{fileTypeLabel(viewerKind)}</b>

@@ -21,7 +21,7 @@ const decodeXmlEntities = (s: string): string =>
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
 
-function getClipboardFiles(): string[] {
+export function getClipboardFiles(): string[] {
   const out = new Set<string>()
   // Only real, absolute, existing paths count — the probe drives the
   // menu item's enabled state, so it must not report phantom files.

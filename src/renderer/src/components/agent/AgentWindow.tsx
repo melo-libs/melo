@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import type { AgentContext } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
-import { agentMessagesAtom } from '../../store/agent'
+import { agentCommand, agentMessagesAtom, agentEntrySeenAtom, openAgent } from '../../store/agent'
 import { workspacePathAtom, treeSelectionAtom, recentNotesAtom } from '../../store/workspace'
 import { openFileAtom } from '../../store/editor'
 import { activeSmartIdAtom } from '../../store/smart'
@@ -14,8 +14,7 @@ import { Icon } from '../Icon'
 import { MeloLogo } from '../MeloLogo'
 import { useAgentAccounts } from './useAgentAccounts'
 import { AgentSettings } from './AgentSettings'
-import { AgentDock } from './AgentDock'
-import { AgentSource } from './AgentSource'
+import { AgentEntry } from './AgentEntry'
 import { AgentTranscript } from './AgentTranscript'
 import { AgentSearch } from './AgentSearch'
 import { AgentComposer } from './AgentComposer'
@@ -32,6 +31,7 @@ export const AgentWindow = () => {
     [showLatest, setShowLatest] = useState(false),
     [headerScrolling, setHeaderScrolling] = useState(false),
     [highlight, setHighlight] = useState<string | null>(null)
+  const [draggingFiles, setDraggingFiles] = useState(false)
   const {
     state,
     setWindow,
@@ -47,6 +47,10 @@ export const AgentWindow = () => {
     selectedProvider,
     ready,
     canSend,
+    attachments,
+    receivingFiles,
+    pasteAttachments,
+    removeAttachment,
     send,
     changeProvider,
     loadModels,
@@ -54,6 +58,7 @@ export const AgentWindow = () => {
     loadHistory,
     respond,
     undo,
+    undoFiling,
     deleteMessage,
     cancel,
   } = useAgentController(setSettingsOpen, connectionBusy)
@@ -62,11 +67,20 @@ export const AgentWindow = () => {
     check: checkAccount,
     login,
   } = useAgentAccounts(state.open && !!setup?.runtimeAvailable)
-  const { panel, drag, resize, captureClick } = useAgentGeometry(
-    state.open && !!root,
-    state.anchor,
-    state.collapsed,
-  )
+  const collapsed = !state.open || state.collapsed
+  const setEntrySeen = useSetAtom(agentEntrySeenAtom)
+  useEffect(() => {
+    if (root && !collapsed) setEntrySeen(true)
+  }, [root, collapsed, setEntrySeen])
+  const { panel, drag, resize, captureClick } = useAgentGeometry(!!root, state.anchor, collapsed)
+  const wasExpanded = useRef(false)
+  useLayoutEffect(() => {
+    if (collapsed && wasExpanded.current) panel.current?.querySelector('button')?.focus()
+    wasExpanded.current = !collapsed
+  }, [collapsed, panel])
+  const collapse = () => {
+    setWindow((state) => ({ ...state, collapsed: true }))
+  }
   const scroll = useRef<HTMLDivElement>(null),
     scrollTop = useRef(0),
     nearBottom = useRef(true),
@@ -84,20 +98,17 @@ export const AgentWindow = () => {
     inProgress = plan?.findIndex((entry) => entry.status === 'in_progress') ?? -1
   const step =
     inProgress >= 0 ? inProgress : (plan?.findIndex((entry) => entry.status === 'pending') ?? -1)
-  const status = t(view?.permission ? 'agent.waitingForYou' : 'agent.working')
+  const status = t(
+    view?.permission
+      ? 'agent.waitingForYou'
+      : view?.messages[turnStart]?.context?.attachments?.length
+        ? 'agent.processingFiles'
+        : 'agent.working',
+  )
   const progress =
     plan && step >= 0 && !busy
       ? t('agent.stepProgress', { step: step + 1, total: plan.length, status })
       : status
-  const lastSource = messages
-    .filter((message) => message.role === 'user' && message.context?.filePath)
-    .at(-1)
-  const pendingSource =
-    state.context.filePath &&
-    (state.context.selection ||
-      state.context.filePath !== lastSource?.context?.filePath ||
-      root !== lastSource?.workspaceRoot)
-
   useLayoutEffect(() => {
     if (state.context.selection) {
       setSearching(false)
@@ -107,7 +118,7 @@ export const AgentWindow = () => {
   }, [state.context])
   useLayoutEffect(() => {
     const el = scroll.current
-    if (!el || searching || state.collapsed) return
+    if (!el || searching || collapsed) return
     if (settingsOpen) return
     if (jump.current) {
       const target = [
@@ -128,13 +139,13 @@ export const AgentWindow = () => {
       el.scrollTop = prepend.current.top + el.scrollHeight - prepend.current.height
       prepend.current = null
     } else el.scrollTop = nearBottom.current ? el.scrollHeight : scrollTop.current
-  }, [messages, view?.status, searching, settingsOpen, state.open, state.collapsed, state.context])
+  }, [messages, view?.status, searching, settingsOpen, state.open, collapsed, state.context])
   useEffect(() => {
     setHeaderScrolling(false)
     return () => {
       if (headerIdle.current) clearTimeout(headerIdle.current)
     }
-  }, [state.open, state.collapsed, searching, settingsOpen, root])
+  }, [state.open, collapsed, searching, settingsOpen, root])
   useEffect(() => {
     if (!highlight) return
     const timer = setTimeout(() => setHighlight(null), 1800)
@@ -144,6 +155,15 @@ export const AgentWindow = () => {
   const openFile = useCallback(
     async (relative: string, workspace = root) => {
       try {
+        if (relative.startsWith('melo-attachment:') && workspace) {
+          const response = await agentCommand({
+            action: 'attachment',
+            workspaceRoot: workspace,
+            attachmentId: relative.slice(16),
+          })
+          if (!response.attachment?.path) throw Error(t('agent.fileUnavailable'))
+          relative = response.attachment.path
+        }
         if (!workspace || !agentFilePath(relative)) throw Error(t('agent.fileUnavailable'))
         const expected = workspace.replace(/\/$/, '') + '/'
         const response = await window.api.invoke(IpcChannels.InvokeGetFileStats, {
@@ -168,7 +188,10 @@ export const AgentWindow = () => {
     },
     [root, t],
   )
-  const submit = (text = state.draft.trim(), context: AgentContext = state.context) => {
+  const submit = (
+    text = state.draft.trim() || (attachments.length ? t('agent.organizeAttachments') : ''),
+    context: AgentContext = state.context,
+  ) => {
     if (send(text, context)) {
       setSearching(false)
       nearBottom.current = true
@@ -205,28 +228,62 @@ export const AgentWindow = () => {
       scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' })
   }
 
-  if (!state.open || !root) return null
+  if (!root) return null
   return (
     <div
       ref={panel}
       className="agent-window"
-      role="dialog"
+      onDragOver={(event) => {
+        if (
+          settingsOpen ||
+          collapsed ||
+          !event.dataTransfer.types.some(
+            (type) => type === 'Files' || type === 'application/x-melo-node',
+          )
+        )
+          return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'copy'
+        setDraggingFiles(true)
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setDraggingFiles(false)
+      }}
+      onDrop={(event) => {
+        setDraggingFiles(false)
+        if (settingsOpen || collapsed) return
+        const files = Array.from(event.dataTransfer.files)
+        const workspaceFile = event.dataTransfer.getData('application/x-melo-node')
+        if (!files.length && !workspaceFile) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (files.length) void pasteAttachments(files)
+        else if (workspaceFile.startsWith(root! + '/'))
+          void pasteAttachments(undefined, workspaceFile)
+      }}
+      role={collapsed ? undefined : 'dialog'}
       aria-label={t('agent.title')}
-      onPointerDown={state.collapsed ? drag : undefined}
+      onPointerDown={collapsed ? drag : undefined}
       onClickCapture={captureClick}
-      data-collapsed={state.collapsed || undefined}
-      data-scrolling={(!state.collapsed && headerScrolling) || undefined}
+      data-collapsed={collapsed || undefined}
+      data-scrolling={(!collapsed && headerScrolling) || undefined}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing) {
           if (searching) return
-          setWindow((state) => ({ ...state, open: false }))
+          event.stopPropagation()
+          collapse()
         }
       }}
     >
-      {state.collapsed ? (
-        <AgentDock
-          view={view}
-          onExpand={() => setWindow((state) => ({ ...state, collapsed: false }))}
+      {collapsed ? (
+        <AgentEntry
+          onOpen={() => {
+            if (state.draft.trim() || state.context.selection || attachments.length)
+              setWindow((state) => ({ ...state, open: true, collapsed: false }))
+            else openAgent()
+          }}
         />
       ) : searching ? (
         <AgentSearch
@@ -270,17 +327,10 @@ export const AgentWindow = () => {
                 </button>
               )}
               <button
-                className="agent-quiet agent-collapse"
-                aria-label={t('agent.minimize')}
-                aria-expanded={true}
-                onClick={() => setWindow((state) => ({ ...state, collapsed: true }))}
-              >
-                <Icon name="minus" size={16} />
-              </button>
-              <button
                 className="agent-quiet"
-                aria-label={t('agent.hide')}
-                onClick={() => setWindow((state) => ({ ...state, open: false }))}
+                aria-label={t('agent.close')}
+                title={t('agent.close')}
+                onClick={collapse}
               >
                 <Icon name="x" size={16} />
               </button>
@@ -295,7 +345,7 @@ export const AgentWindow = () => {
               setHeaderScrolling(el.scrollTop > 1)
               headerIdle.current =
                 el.scrollTop > 1 ? setTimeout(() => setHeaderScrolling(false), 180) : null
-              if (settingsOpen || state.collapsed) return
+              if (settingsOpen || collapsed) return
               scrollTop.current = el.scrollTop
               nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
               setShowLatest(!nearBottom.current || !!history?.hasNewer)
@@ -329,14 +379,8 @@ export const AgentWindow = () => {
                   onOpenMessage={openMessage}
                   onDelete={deleteMessage}
                   onUndo={undo}
+                  onUndoFiling={undoFiling}
                 />
-                {pendingSource && (
-                  <AgentSource
-                    path={state.context.filePath!}
-                    at={Date.now()}
-                    onOpen={() => openFile(state.context.filePath!)}
-                  />
-                )}
                 {(!messages.length || !!state.context.selection) && (
                   <div className="agent-empty">
                     <p className="agent-empty-intro">
@@ -417,6 +461,11 @@ export const AgentWindow = () => {
           )}
           {!settingsOpen && (
             <AgentComposer
+              draggingFiles={draggingFiles}
+              attachments={attachments}
+              receivingFiles={receivingFiles}
+              onPasteAttachments={pasteAttachments}
+              onRemoveAttachment={removeAttachment}
               draft={state.draft}
               context={state.context}
               setup={setup}
@@ -441,7 +490,7 @@ export const AgentWindow = () => {
           )}
         </>
       )}
-      {!state.collapsed && (
+      {!collapsed && (
         <button
           className="agent-resize"
           tabIndex={-1}

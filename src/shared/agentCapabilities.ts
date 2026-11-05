@@ -1,7 +1,18 @@
 import { z } from 'zod'
 
+// Retained to render resource grants already stored in conversation history.
+export const agentNativeAccessSchema = z.object({
+  scope: z.enum(['task', 'operation']),
+  read: z.array(z.string()),
+  write: z.array(z.string()),
+  network: z.boolean(),
+})
+export type AgentNativeAccess = z.infer<typeof agentNativeAccessSchema>
+
 export const AGENT_TOOLS = {
   readDocument: { name: 'melo_read_document', readOnly: true },
+  resolveAttachment: { name: 'melo_resolve_attachment', readOnly: true },
+  organize: { name: 'melo_organize_files', readOnly: false },
   editDocument: { name: 'melo_edit_document', readOnly: false },
   listFiles: { name: 'melo_list_files', readOnly: true },
   search: { name: 'melo_search', readOnly: true },
@@ -18,7 +29,44 @@ export function agentTool(name: string) {
   return Object.values(AGENT_TOOLS).find((tool) => tool.name === name)
 }
 
+const organizationFactSchema = z.object({
+  label: z.string().min(1).max(24),
+  value: z.string().min(1).max(100),
+  source: z.enum(['content', 'metadata', 'user']),
+})
+
+export const organizationRequestSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        destination: z.string().min(1).max(4096).nullable(),
+        reading: z.enum(['read', 'user-described', 'unread']),
+      }),
+    )
+    .min(1)
+    .max(20),
+})
+export type OrganizationRequest = z.infer<typeof organizationRequestSchema>
+
+// Existing conversations retain their old confirmation records for read-only history.
 export const agentOperationSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('organize'),
+    files: z
+      .array(
+        z.object({
+          id: z.string().uuid(),
+          name: z.string(),
+          source: z.string(),
+          destination: z.string().nullable(),
+          detail: z.string(),
+          facts: z.array(organizationFactSchema).max(4).optional(),
+        }),
+      )
+      .min(1)
+      .max(20),
+  }),
   z.object({ kind: z.literal('create-folder'), path: z.string() }),
   z.object({ kind: z.literal('create-note'), path: z.string(), content: z.string() }),
   z.object({ kind: z.literal('edit'), path: z.string(), diff: z.string() }),
@@ -29,11 +77,17 @@ export const agentOperationSchema = z.discriminatedUnion('kind', [
     scope: z.enum(['user', 'workspace']),
     content: z.string(),
   }),
-  z.object({ kind: z.literal('native'), title: z.string(), detail: z.string() }),
+  z.object({
+    kind: z.literal('native'),
+    title: z.string(),
+    detail: z.string(),
+    access: agentNativeAccessSchema.optional(),
+  }),
 ])
 export type AgentOperation = z.infer<typeof agentOperationSchema>
 
 export const AGENT_OPERATIONS = {
+  organize: { label: 'organizeFiles', approve: null, allowRun: false },
   'create-folder': { label: 'createFolder', approve: 'create', allowRun: true },
   'create-note': { label: 'createNote', approve: 'create', allowRun: true },
   edit: { label: 'editDocument', approve: 'apply', allowRun: true },
@@ -45,6 +99,8 @@ export const AGENT_OPERATIONS = {
 
 export function operationLocation(operation: AgentOperation): string {
   switch (operation.kind) {
+    case 'organize':
+      return 'Inbox'
     case 'move':
       return operation.destination
     case 'memory':

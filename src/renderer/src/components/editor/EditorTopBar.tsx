@@ -8,7 +8,6 @@ import type { IconName } from '../Icon'
 import { workspacePathAtom } from '../../store/workspace'
 import { activeTabAtom } from '../../store/editor'
 import { stripMarkdownExtension } from '@shared/fileKinds'
-import { openAgent } from '../../store/agent'
 
 export interface EditorTopBarProps {
   filePath: string
@@ -152,12 +151,6 @@ export const EditorTopBar = ({
       )}
 
       <div className="ed-top-actions">
-        {wsPath && (
-          <button className="ed-ask-melo" onClick={() => openAgent()}>
-            <Icon name="sparkle" size={14} />
-            {t('agent.title')}
-          </button>
-        )}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button className="ed-iconbtn" aria-label={t('topBar.export')}>

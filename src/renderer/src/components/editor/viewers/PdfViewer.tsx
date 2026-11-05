@@ -309,7 +309,7 @@ export const PdfViewer = ({ path, name }: PdfViewerProps) => {
         <div className="pdf-pages" ref={pagesRef} />
       </div>
       {doc && (
-        <div className="pdf-zoom">
+        <div className="pdf-zoom" data-floating-obstacle>
           <button aria-label={t('editor.zoomOut')} onClick={() => zoomBy(1 / 1.2)}>
             −
           </button>

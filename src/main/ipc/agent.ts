@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, clipboard, ipcMain } from 'electron'
 import { execFile } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
@@ -23,6 +23,9 @@ import { checkNativeAuthentication } from '../agent/runtime/nativeAuthentication
 import { NativeModels } from '../agent/runtime/nativeModels'
 import { ApiModels } from '../agent/runtime/apiModels'
 import { AGENT_API_SERVICES, canReuseAgentApiKey } from '../../shared/agentApi'
+import { FileIntake } from '../agent/storage/fileIntake'
+import { getClipboardFiles } from '../api/fileOperations/clipboardOperations'
+import { fileThumbnail } from '../libs/fileThumbnail'
 
 const execute = promisify(execFile)
 const provider = z.enum(['claude', 'codex'])
@@ -68,6 +71,16 @@ const COMMAND = z.discriminatedUnion('action', [
     apiKey: z.string().max(4096).optional(),
   }),
   z.object({ action: z.literal('current'), workspaceRoot: filePath }),
+  z.object({ action: z.literal('paste-attachments'), workspaceRoot: filePath }),
+  z.object({
+    action: z.literal('drop-attachments'),
+    workspaceRoot: filePath,
+    files: z.array(filePath).min(1).max(20),
+  }),
+  z.object({ action: z.literal('attachment-preview'), workspaceRoot: filePath, attachmentId: id }),
+  z.object({ action: z.literal('draft-attachments'), workspaceRoot: filePath }),
+  z.object({ action: z.literal('remove-attachment'), workspaceRoot: filePath, attachmentId: id }),
+  z.object({ action: z.literal('attachment'), workspaceRoot: filePath, attachmentId: id }),
   z.object({
     action: z.literal('history'),
     before: z.number().int().positive().optional(),
@@ -87,8 +100,10 @@ const COMMAND = z.discriminatedUnion('action', [
     conversationId: id,
     text: z.string().trim().min(1).max(32000),
     context: z.object({
+      activeFilePath: filePath.nullable().optional(),
       filePath: filePath.optional(),
       selection: z.string().max(24000).optional(),
+      attachments: z.array(z.object({ id })).max(20).optional(),
     }),
   }),
   z.object({ action: z.literal('cancel'), conversationId: id }),
@@ -97,6 +112,7 @@ const COMMAND = z.discriminatedUnion('action', [
     conversationId: id,
     changeIds: z.array(id).min(1).max(500),
   }),
+  z.object({ action: z.literal('undo-filing'), conversationId: id, batchId: id }),
   z.object({
     action: z.literal('permission'),
     conversationId: id,
@@ -127,11 +143,16 @@ function createController() {
   const nativeModels = new NativeModels(settings, environment, codexLauncher)
   const apiModels = new ApiModels()
   const store = new ConversationStore(path.join(directory, 'conversations.db'))
+  const intake = new FileIntake(path.join(directory, 'conversations.db'), directory)
   const memory = new MemoryService(directory)
   const documents = new DocumentAccess(() => getMainWindow()?.webContents ?? null)
-  const journal = new ChangeJournal(store, documents, directory)
-  const workspace = new WorkspaceAccess(documents, memory, journal, (query) =>
-    store.searchHistory(query),
+  const journal = new ChangeJournal(store, documents, directory, intake)
+  const workspace = new WorkspaceAccess(
+    documents,
+    memory,
+    journal,
+    (query) => store.searchHistory(query),
+    intake,
   )
   const service = new AgentService(
     store,
@@ -147,8 +168,19 @@ function createController() {
     (view) => getMainWindow()?.webContents.send(IpcChannels.OnAgentView, view),
     suspensions,
     (id, conversationId, root) => workspace.undo(id, conversationId, root),
+    (conversation, id, signal) => workspace.receiveAttachment(conversation, id, signal),
   )
-  return { settings, environment, nativeModels, apiModels, store, documents, service, journal }
+  return {
+    settings,
+    environment,
+    nativeModels,
+    apiModels,
+    store,
+    documents,
+    service,
+    journal,
+    intake,
+  }
 }
 const getController = () => (controller ??= createController())
 
@@ -196,10 +228,15 @@ export function setupAgentIPC(): void {
       )
         throw new Error('Invalid agent sender')
       const command = COMMAND.parse(value)
-      const { settings, environment, nativeModels, apiModels, service, store, journal } =
+      const { settings, environment, nativeModels, apiModels, service, store, journal, intake } =
         getController()
       const root = activeWorkspaceRoot()
-      if ('workspaceRoot' in command && command.workspaceRoot !== root)
+      if (
+        'workspaceRoot' in command &&
+        command.action !== 'attachment' &&
+        command.action !== 'attachment-preview' &&
+        command.workspaceRoot !== root
+      )
         throw new Error('Workspace is not active')
       if (
         'conversationId' in command &&
@@ -207,7 +244,93 @@ export function setupAgentIPC(): void {
       )
         throw new Error('Conversation belongs to a different workspace')
       let result: AgentCommandResult = {}
+      if (
+        [
+          'attachment-preview',
+          'drop-attachments',
+          'paste-attachments',
+          'draft-attachments',
+          'remove-attachment',
+          'attachment',
+          'current',
+          'send',
+          'clear-history',
+        ].includes(command.action)
+      )
+        journal.reconcileAttachments()
       switch (command.action) {
+        case 'attachment-preview': {
+          const file = intake.get(command.workspaceRoot, command.attachmentId)
+          const source = await intake.openPreview(command.workspaceRoot, file.id)
+          try {
+            result = { attachmentPreview: await fileThumbnail(source, file.name) }
+          } finally {
+            await source.close()
+          }
+          break
+        }
+        case 'drop-attachments':
+        case 'paste-attachments': {
+          if (suspensions.size || !root) throw new Error('Agent workspace is closing')
+          const sources =
+            command.action === 'drop-attachments' ? command.files : getClipboardFiles()
+          // Read image bytes before awaiting file IO so another copy cannot replace this paste.
+          const image = sources.length ? undefined : clipboard.readImage()
+          const png = image && !image.isEmpty() ? image.toPNG() : undefined
+          const errors: { name: string; error: string }[] = []
+          for (const source of sources) {
+            try {
+              await intake.stageFile(root, source)
+            } catch (error) {
+              errors.push({
+                name: path.basename(source),
+                error:
+                  error instanceof Error && error.message.startsWith('AGENT_')
+                    ? error.message
+                    : 'AGENT_ATTACHMENT_CAPTURE_FAILED',
+              })
+            }
+          }
+          if (png) {
+            try {
+              await intake.stageImage(root, png)
+            } catch (error) {
+              errors.push({
+                name: 'Screenshot',
+                error:
+                  error instanceof Error && error.message.startsWith('AGENT_')
+                    ? error.message
+                    : 'AGENT_ATTACHMENT_CAPTURE_FAILED',
+              })
+            }
+          }
+          result = {
+            intakeHandled: sources.length > 0 || !!png,
+            intake: { workspaceRoot: root, attachments: intake.drafts(root) },
+            ...(errors.length ? { intakeErrors: errors } : {}),
+          }
+          break
+        }
+        case 'draft-attachments':
+          result = {
+            intake: {
+              workspaceRoot: command.workspaceRoot,
+              attachments: intake.drafts(command.workspaceRoot),
+            },
+          }
+          break
+        case 'remove-attachment':
+          await intake.remove(command.workspaceRoot, command.attachmentId)
+          result = {
+            intake: {
+              workspaceRoot: command.workspaceRoot,
+              attachments: intake.drafts(command.workspaceRoot),
+            },
+          }
+          break
+        case 'attachment':
+          result = { attachment: intake.get(command.workspaceRoot, command.attachmentId) }
+          break
         case 'prepare':
           if (suspensions.size) throw new Error('Agent workspace is closing')
           await service.prepare(command.conversationId)
@@ -305,7 +428,13 @@ export function setupAgentIPC(): void {
           break
         }
         case 'current':
-          result = { view: service.current(command.workspaceRoot, settings.get().provider) }
+          result = {
+            view: service.current(command.workspaceRoot, settings.get().provider),
+            intake: {
+              workspaceRoot: command.workspaceRoot,
+              attachments: intake.drafts(command.workspaceRoot),
+            },
+          }
           break
         case 'history':
           if (
@@ -333,13 +462,19 @@ export function setupAgentIPC(): void {
           result = { view: await service.setProvider(command.conversationId, command.provider) }
           break
         case 'send':
-          if (
-            command.context.filePath &&
-            (path.isAbsolute(command.context.filePath) ||
-              command.context.filePath.split(/[\\/]/).some((p) => p === '..'))
-          )
-            throw new Error('Invalid context path')
-          result = { view: service.send(command.conversationId, command.text, command.context) }
+          for (const contextPath of [command.context.filePath, command.context.activeFilePath]) {
+            if (
+              contextPath &&
+              (path.isAbsolute(contextPath) || contextPath.split(/[\\/]/).some((p) => p === '..'))
+            )
+              throw new Error('Invalid context path')
+          }
+          result = {
+            view: service.send(command.conversationId, command.text, {
+              ...command.context,
+              attachments: command.context.attachments?.map((file) => intake.get(root!, file.id)),
+            }),
+          }
           break
         case 'cancel':
           await service.cancel(command.conversationId)
@@ -347,6 +482,9 @@ export function setupAgentIPC(): void {
           break
         case 'undo':
           result = { view: await service.undo(command.conversationId, command.changeIds) }
+          break
+        case 'undo-filing':
+          result = { view: await service.undoFiling(command.conversationId, command.batchId) }
           break
         case 'permission':
           service.respond(
@@ -365,5 +503,8 @@ export function setupAgentIPC(): void {
       }
     }
   })
-  app.on('will-quit', () => controller?.store.close())
+  app.on('will-quit', () => {
+    controller?.store.close()
+    controller?.intake.close()
+  })
 }
