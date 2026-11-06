@@ -124,7 +124,9 @@ describe('the update window and Settings → About', () => {
       expect(doc.body.textContent).toContain('2.0.1')
       expect(doc.querySelectorAll('button')).toHaveLength(1)
       expect(primary().textContent).toBe(language === 'en' ? 'Done' : '好')
-      expect(doc.querySelector('.updates-result-detail')).toBeNull()
+      expect(doc.querySelector('.updates-result-detail')?.textContent).toBe(
+        language === 'en' ? en.updates.justChecked : zhCN.updates.justChecked,
+      )
       await act(async () => primary().click())
       expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeCloseUpdateWindow, undefined)
       expect(invoke).not.toHaveBeenCalledWith(IpcChannels.InvokeCheckForUpdates, undefined)
@@ -136,7 +138,7 @@ describe('the update window and Settings → About', () => {
       complete = resolve
     })
     await mount('en', UpdatesRoot)
-    expect(doc.querySelector('h1')?.textContent).toBe(en.updates.checking)
+    expect(doc.querySelector('.updates-result-detail')?.textContent).toBe(en.updates.checking)
     expect(doc.querySelectorAll('button')).toHaveLength(1)
     await act(async () => complete({ success: true, data: state({ check: 'up-to-date' }) }))
     expect(doc.querySelector('h1')?.textContent).toBe(en.updates.upToDate)
@@ -153,7 +155,7 @@ describe('the update window and Settings → About', () => {
       await act(async () => primary().click())
       expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeCheckForUpdates, undefined)
       await emit(state({ revision: 2, check: 'checking' }))
-      expect(doc.querySelector('h1')?.textContent).toBe(copy.checking)
+      expect(doc.querySelector('.updates-result-detail')?.textContent).toBe(copy.checking)
       expect(doc.querySelector('.updates-window-compact')).not.toBeNull()
       expect(doc.querySelectorAll('button')).toHaveLength(1)
       await emit(state({ revision: 3, release }))
@@ -237,7 +239,8 @@ describe('the update window and Settings → About', () => {
     })
     await mount('en', UpdatesRoot)
     expect(doc.body.textContent).toContain('42%')
-    expect(primary().hasAttribute('disabled')).toBe(true)
+    expect(primary()).toBeNull()
+    expect(doc.querySelector('button')?.textContent).toBe(en.updates.backgroundDownload)
     await emit(state({ revision: 2, release, ready }))
     expect(primary().hasAttribute('disabled')).toBe(false)
     expect(primary().textContent).toBe('Open installer')
@@ -254,9 +257,9 @@ describe('the update window and Settings → About', () => {
       expect(primary().classList.contains('updates-confirm')).toBe(true)
       expect(doc.querySelector('.updates-guide')).toBeNull()
       expect([...doc.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-        language === 'en' ? 'Skip this version' : '忽略此版本',
         language === 'en' ? 'Later' : '稍后',
         language === 'en' ? 'Restart and update' : '重启并更新',
+        language === 'en' ? 'Skip this version' : '忽略此版本',
       ])
     },
   )
@@ -320,14 +323,14 @@ describe('the update window and Settings → About', () => {
     expect(doc.querySelector('.updates-release-meta time')).toBeNull()
     expect(doc.querySelector('.updates-notes-text')?.textContent).toBe(en.updates.noReleaseNotes)
   })
-  it('renders remote notes as text, without making HTML or images active', async () => {
+  it('does not activate remote HTML or images in release notes', async () => {
     initial = Promise.resolve({
       success: true,
       data: state({ release: { ...release, notes: '<img src="https://tracking.invalid">' } }),
     })
     await mount('en', UpdatesRoot)
     expect(doc.querySelector('.updates-notes img')).toBeNull()
-    expect(doc.querySelector('.updates-notes-text')?.textContent).toContain('<img')
+    expect(doc.querySelector('.updates-notes script, .updates-notes iframe')).toBeNull()
   })
   it('closes with Later while leaving the download in the main process', async () => {
     initial = Promise.resolve({ success: true, data: state({ release }) })
@@ -341,7 +344,7 @@ describe('the update window and Settings → About', () => {
   it.each(['en', 'zh-CN'])(
     'skips the displayed release and closes only after persisting it in %s',
     async (language) => {
-      initial = Promise.resolve({ success: true, data: state({ release, ready }) })
+      initial = Promise.resolve({ success: true, data: state({ release }) })
       await mount(language, UpdatesRoot)
       const skip = doc.querySelector<HTMLButtonElement>('.updates-ignore')!
       expect(skip.textContent).toBe(language === 'en' ? 'Skip this version' : '忽略此版本')
@@ -357,7 +360,7 @@ describe('the update window and Settings → About', () => {
     },
   )
   it('keeps the window open if persisting the skipped version fails', async () => {
-    initial = Promise.resolve({ success: true, data: state({ release, ready }) })
+    initial = Promise.resolve({ success: true, data: state({ release }) })
     await mount('en', UpdatesRoot)
     invoke.mockResolvedValueOnce({ success: false })
     await act(async () => doc.querySelector<HTMLButtonElement>('.updates-ignore')!.click())
@@ -420,6 +423,63 @@ describe('the update window and Settings → About', () => {
     expect(doc.querySelector('[role="alert"]')?.textContent).toBe(en.updates.downloadFailed)
     await emit(state({ revision: 2, release, ready }))
     expect(doc.querySelector('[role="alert"]')).toBeNull()
+  })
+  it('shows transferred bytes and closes without restarting a background download', async () => {
+    initial = Promise.resolve({
+      success: true,
+      data: state({
+        release,
+        download: {
+          status: 'downloading',
+          version: release.version,
+          percent: 42,
+          transferred: 34 * 1048576,
+          total: 86 * 1048576,
+        },
+      }),
+    })
+    await mount('en', UpdatesRoot)
+    expect(doc.querySelector('.updates-status')?.textContent).toContain('34 / 86 MB')
+    expect(doc.querySelector('.updates-primary-actions')?.textContent).toBe(
+      en.updates.backgroundDownload,
+    )
+    await act(async () => doc.querySelector<HTMLButtonElement>('.updates-dismiss')!.click())
+    expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeCloseUpdateWindow, undefined)
+    expect(invoke).not.toHaveBeenCalledWith(IpcChannels.InvokeDownloadUpdate, undefined)
+  })
+  it.each(['downloading', 'ready'] as const)('keeps skipping available when %s', async (phase) => {
+    initial = Promise.resolve({
+      success: true,
+      data: state({
+        release,
+        ...(phase === 'ready'
+          ? { ready }
+          : { download: { status: 'downloading', version: release.version, percent: 42 } }),
+      }),
+    })
+    await mount('en', UpdatesRoot)
+    await act(async () => doc.querySelector<HTMLButtonElement>('.updates-ignore')!.click())
+    expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeIgnoreUpdate, {
+      version: release.version,
+    })
+    expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeCloseUpdateWindow, undefined)
+  })
+  it('renders headings and emphasis while leaving remote links and images inactive', async () => {
+    initial = Promise.resolve({
+      success: true,
+      data: state({
+        release: {
+          ...release,
+          notes:
+            '## New features\n- **Search** with `Cmd K`\n\n[External](https://example.com)\n\n![Tracker](https://tracking.invalid/a)',
+        },
+      }),
+    })
+    await mount('en', UpdatesRoot)
+    expect(doc.querySelector('.updates-notes h2')?.textContent).toBe('New features')
+    expect(doc.querySelector('.updates-notes li strong')?.textContent).toBe('Search')
+    expect(doc.querySelector('.updates-notes code')?.textContent).toBe('Cmd K')
+    expect(doc.querySelector('.updates-notes a, .updates-notes img')).toBeNull()
   })
   it('unsubscribes when the pane closes', async () => {
     await mount()

@@ -75,11 +75,11 @@ describe('single-instance update window', () => {
     const { openUpdateWindow, resizeUpdateWindow } = await import('./updateWindow')
     openUpdateWindow(true, false)
     const window = mocks.windows[0]
-    expect(window.options).toMatchObject({ height: 260, minHeight: 260 })
+    expect(window.options).toMatchObject({ width: 560, height: 260, minHeight: 260 })
     resizeUpdateWindow(true)
     expect(mocks.windows).toHaveLength(1)
     expect(window.setMinimumSize).toHaveBeenLastCalledWith(520, 460)
-    expect(window.setSize).toHaveBeenLastCalledWith(560, 520)
+    expect(window.setSize).toHaveBeenLastCalledWith(560, 620)
     expect(window.show).not.toHaveBeenCalled()
     window.emit('ready-to-show')
     expect(window.show).toHaveBeenCalledOnce()
@@ -88,7 +88,7 @@ describe('single-instance update window', () => {
     const { openUpdateWindow, resizeUpdateWindow } = await import('./updateWindow')
     openUpdateWindow(false, true)
     const window = mocks.windows[0]
-    expect(window.options).toMatchObject({ height: 520, minHeight: 460 })
+    expect(window.options).toMatchObject({ width: 560, height: 620, minHeight: 460 })
     window.getSize.mockReturnValue([640, 610])
     resizeUpdateWindow(true)
     openUpdateWindow(true, true)

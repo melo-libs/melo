@@ -21,14 +21,21 @@ export function updateRelease(info: UpdateInfo): UpdateRelease {
   const { document } = parseHTML(`<html><body>${source.slice(0, 40000)}</body></html>`)
   for (const node of document.querySelectorAll('script, style, iframe, img')) node.remove()
   for (const node of document.querySelectorAll('br')) node.replaceWith('\n')
-  for (const node of document.querySelectorAll('li')) node.prepend('• ')
-  for (const node of document.querySelectorAll('p, div, li, h1, h2, h3, h4, pre')) {
+  for (const node of document.querySelectorAll('li')) node.prepend('- ')
+  for (const node of document.querySelectorAll('h1, h2, h3, h4, h5, h6')) node.prepend('## ')
+  for (const node of document.querySelectorAll('strong, b')) {
+    node.prepend('**')
+    node.append('**')
+  }
+  for (const node of document.querySelectorAll('code')) {
+    node.prepend('`')
+    node.append('`')
+  }
+  for (const node of document.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, pre, ul, ol')) {
     node.append('\n')
   }
   const notes = (document.body.textContent ?? '')
-    .replace(/^#{1,6}\s+/gm, '')
     .replace(/\[([^\]]+)\]\([^\n)]*\)/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()

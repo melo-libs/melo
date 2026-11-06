@@ -72,7 +72,7 @@ describe('macOS update installers', () => {
     const update = await downloadMacUpdate(artifact, directory, fetchInstaller, progress)
     expect(await readFile(update.filePath)).toEqual(contents)
     expect(await verifyMacUpdate(update)).toBe(true)
-    expect(progress).toHaveBeenLastCalledWith(100)
+    expect(progress).toHaveBeenLastCalledWith(100, artifact.size, artifact.size)
     await expect(downloadMacUpdate(artifact, directory, fetchInstaller, progress)).resolves.toEqual(
       update,
     )

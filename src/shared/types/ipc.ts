@@ -20,7 +20,13 @@ export interface UpdateState {
   release: UpdateRelease | null
   download:
     | { status: 'idle' }
-    | { status: 'downloading'; version: string; percent: number }
+    | {
+        status: 'downloading'
+        version: string
+        percent: number
+        transferred?: number
+        total?: number
+      }
     | { status: 'error'; version: string }
   ready: { release: UpdateRelease; install: 'manual' | 'in-app' } | null
   installation: 'idle' | 'opening' | 'opened' | 'error'

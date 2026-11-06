@@ -182,7 +182,7 @@ describe.runIf(process.platform === 'darwin')('the macOS update flow', () => {
   it('coalesces downloads and shows progress while manual checks keep the same job', async () => {
     let complete!: (value: typeof installer) => void
     mocks.download.mockImplementationOnce(async (_artifact, _cache, _fetch, progress) => {
-      progress(42)
+      progress(42, 42, 100)
       return new Promise((resolve) => {
         complete = resolve
       })
@@ -194,6 +194,8 @@ describe.runIf(process.platform === 'darwin')('the macOS update flow', () => {
         status: 'downloading',
         version: '2.0.2',
         percent: 42,
+        transferred: 42,
+        total: 100,
       }),
     )
     const second = manager.downloadAvailableUpdate()
@@ -667,7 +669,7 @@ describe.runIf(process.platform === 'darwin')('the macOS update flow', () => {
   })
   it('aborts an ignored download without surfacing an error or offering installation', async () => {
     mocks.download.mockImplementationOnce(async (_artifact, _cache, _fetch, progress, signal) => {
-      progress(42)
+      progress(42, 42, 100)
       return new Promise((_resolve, reject) => {
         signal!.addEventListener('abort', () => reject(signal!.reason), { once: true })
       })
