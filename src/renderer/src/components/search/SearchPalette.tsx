@@ -21,7 +21,7 @@ import {
 } from '../../store/workspace'
 import { findNode } from '../sidebar/treeOps'
 import { FileTypeIcon } from '../FileTypeIcon'
-import { QIcon, HiText, HiRanges, KIND_LABEL } from './SearchIcon'
+import { QIcon, HiText, HiRanges } from './SearchIcon'
 import { renderPreviewHtml } from './previewMarkdown'
 import { SearchField, SearchTips } from './SearchField'
 import {
@@ -1242,10 +1242,6 @@ function PreviewPane({ preview }: { preview: Preview }) {
   const ranges = body && preview.terms.length ? termRanges(body.toLowerCase(), preview.terms) : []
   return (
     <div className="pb-prev-doc">
-      <div className="pb-prev-kicker">
-        <FileTypeIcon kind={f.kind} size={13} />{' '}
-        {i18n.t(KIND_LABEL[f.kind] ? `search.kinds.${f.kind}` : 'search.kinds.other')}
-      </div>
       <div className="pb-prev-title">{f.name}</div>
       <div className="pb-prev-meta">
         {f.path || i18n.t('search.workspace')}

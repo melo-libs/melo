@@ -48,15 +48,6 @@
   color: var(--ink-3);
   flex-wrap: wrap;
 }
-.ed-clip-fav {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--ink-4);
-  img {
-    border-radius: 3px;
-    object-fit: contain;
-  }
-}
 .ed-clip-site {
   color: var(--ink-2);
   font-weight: 600;

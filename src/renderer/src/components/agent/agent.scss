@@ -332,31 +332,106 @@
     font-size: 11px;
   }
 }
-.agent-empty {
-  margin: 0 0 2px;
+.agent-transcript-empty {
+  justify-content: center;
 }
+.agent-welcome,
+.agent-empty {
+  width: 100%;
+  max-width: 480px;
+  margin: 24px auto;
+  h2 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    line-height: 26px;
+    text-align: center;
+  }
+}
+.agent-welcome-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  border-radius: 20px;
+  background: var(--ai-soft);
+}
+.agent-welcome-description,
 .agent-empty-intro {
-  margin: 0 0 12px;
-  font-size: 14px;
-  line-height: 24px;
+  margin: 0 auto 24px;
+  max-width: 420px;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 22px;
+  text-align: center;
+}
+.agent-connect-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-connect-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  .agent-tool-info {
+    flex: 1;
+    min-width: 0;
+    strong {
+      font-size: 14px;
+    }
+  }
+  .agent-tool-status {
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .ui-button {
+    flex-shrink: 0;
+    border-radius: 16px;
+  }
+  .ui-button-primary {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: transparent;
+    &:hover:not(:disabled) {
+      background: var(--ink-2);
+    }
+  }
+}
+.agent-welcome-api.agent-quiet {
+  display: block;
+  margin: 12px auto 0;
+  font-size: 12px;
+  text-align: center;
+}
+.agent-welcome-help,
+.agent-welcome-error {
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 20px;
+}
+.agent-welcome-error {
+  color: var(--danger);
 }
 .agent-suggestions {
-  padding: 6px;
-  border-radius: var(--r-xl);
-  background: var(--paper);
-  box-shadow:
-    0 0 0 0.5px var(--hairline),
-    var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   button {
     display: flex;
     align-items: center;
     width: 100%;
-    min-height: 36px;
-    gap: 10px;
-    padding: 6px 10px;
+    min-height: 44px;
+    gap: 12px;
+    padding: 10px 14px;
     border: 0;
-    border-radius: 9px;
-    background: transparent;
+    border-radius: var(--r-md);
+    background: var(--paper-2);
     color: var(--ink);
     font: inherit;
     font-size: 13px;
@@ -373,7 +448,7 @@
     }
     &:hover:not(:disabled),
     &:focus-visible {
-      background: var(--paper-2);
+      background: var(--paper-3);
     }
     &:disabled {
       color: var(--ink-3);
@@ -1207,6 +1282,10 @@
   display: flex;
   min-width: 0;
   max-width: 45%;
+}
+.agent-compose[data-disconnected] {
+  background: var(--paper-2);
+  box-shadow: 0 0 0 1px var(--hairline);
 }
 .agent-picker.sel-btn {
   height: 28px;

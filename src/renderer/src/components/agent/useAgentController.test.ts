@@ -48,15 +48,21 @@ afterEach(() => {
   })
 })
 
-it.each([
-  { access: 'api', status: 'signed-out' },
-  { access: 'api', status: 'checking' },
-  { access: 'api', status: 'error' },
-  { access: 'native', status: 'checking' },
-  { access: 'native', status: 'signed-in' },
-] as const)(
-  'keeps the conversation open while switching from Codex to Claude ($access, $status)',
-  async ({ access, status }) => {
+it.each(
+  (
+    [
+      { access: 'api', status: 'signed-out', hadRuntime: true },
+      { access: 'api', status: 'checking', hadRuntime: true },
+      { access: 'api', status: 'error', hadRuntime: true },
+      { access: 'native', status: 'checking', hadRuntime: true },
+      { access: 'native', status: 'checking', hadRuntime: false },
+      { access: 'native', status: 'signed-in', hadRuntime: true },
+      { access: 'native', status: 'signed-out', hadRuntime: true },
+    ] as const
+  ).flatMap((scenario) => [false, true].map((fails) => ({ ...scenario, fails }))),
+)(
+  'keeps the connection UI stable while switching ($access, $status, runtime=$hadRuntime, fails=$fails)',
+  async ({ access, status, hadRuntime, fails }) => {
     const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
     vi.stubGlobal('window', window)
     vi.stubGlobal('document', window.document)
@@ -72,11 +78,12 @@ it.each([
         hasApiKey: false,
         native: { model: 'codex-model', effort: 'high' },
       },
-      runtimeAvailable: true,
+      runtimeAvailable: hadRuntime,
       installing: false,
     }
     const target: AgentSetup = {
       ...initial,
+      runtimeAvailable: true,
       configuration: {
         provider: 'claude',
         access,
@@ -114,6 +121,7 @@ it.each([
       claude: status === 'error' ? { status, message: 'fixture failure' } : { status },
     })
     let finish!: (value: AgentCommandResult) => void
+    let fail!: (error: Error) => void
     vi.mocked(agentCommand).mockImplementation(async (command) => {
       if (command.action === 'current') return { view }
       if (command.action === 'setup') return { setup: initial }
@@ -123,8 +131,9 @@ it.each([
         return { view: next }
       }
       if (command.action === 'select-provider')
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           finish = resolve
+          fail = reject
         })
       return {}
     })
@@ -147,21 +156,43 @@ it.each([
           provider: 'claude',
         }),
       )
-      expect(controller.selectedProvider).toBe('claude')
+      expect(appStore.get(agentViewAtom)!.conversation.provider).toBe('claude')
       expect(appStore.get(agentSetupAtom)!.configuration.provider).toBe('codex')
+      expect(controller.selectedProvider).toBe('codex')
+      expect(controller.setup?.configuration.native?.model).toBe('codex-model')
+      expect(controller.connected).toBe(hadRuntime)
+      expect(controller.busy).toBe(true)
+      expect(controller.canSend).toBe(false)
+      expect(controller.send('Cannot send while switching', {})).toBe(false)
+      expect(controller.state.draft).toBe('Hello')
       expect(navigate).not.toHaveBeenCalledWith(true)
-      appStore.set(agentSetupAtom, target)
-      finish({ setup: target })
-      await vi.waitFor(() => expect(controller.busy).toBe(false))
-      expect(navigate).toHaveBeenLastCalledWith(false)
-      expect(navigate).not.toHaveBeenCalledWith(true)
-      if (access === 'native' && status === 'checking') {
-        appStore.set(agentAccountsAtom, {
-          codex: { status: 'signed-in' },
-          claude: { status: 'signed-out' },
-        })
-        await vi.waitFor(() => expect(navigate).toHaveBeenLastCalledWith(true))
+      if (fails) {
+        fail(new Error('Connection switch failed'))
+        await vi.waitFor(() => expect(controller.busy).toBe(false))
+        expect(controller.error).toBe('Connection switch failed')
+        expect(controller.connected).toBe(false)
+        expect(controller.canSend).toBe(false)
+      } else {
+        appStore.set(agentSetupAtom, target)
+        finish({ setup: target })
+        await vi.waitFor(() => expect(navigate).toHaveBeenLastCalledWith(false))
+        if (access === 'native' && status === 'checking') {
+          expect(controller.connected).toBe(hadRuntime)
+          expect(controller.runtimeAvailable).toBe(true)
+          expect(controller.selectedProvider).toBe('codex')
+          expect(controller.busy).toBe(true)
+          expect(controller.canSend).toBe(false)
+          appStore.set(agentAccountsAtom, {
+            codex: { status: 'signed-in' },
+            claude: { status: 'signed-out' },
+          })
+        }
+        await vi.waitFor(() => expect(controller.busy).toBe(false))
+        expect(controller.selectedProvider).toBe('claude')
+        expect(controller.connected).toBe(access === 'api' || status === 'signed-in')
+        expect(navigate).not.toHaveBeenCalledWith(true)
       }
+      expect(controller.state.draft).toBe('Hello')
     } finally {
       if (finish) finish({ setup: target })
       flushSync(() => root.unmount())
@@ -474,8 +505,9 @@ it('keeps commands busy until overlapping requests settle and exposes a recovera
       claude: { status: 'signed-out' },
       codex: { status: 'signed-out' },
     })
+    connectionRequired.mockClear()
     controller.changeProvider('codex')
-    await vi.waitFor(() => expect(connectionRequired).toHaveBeenLastCalledWith(true))
+    await vi.waitFor(() => expect(connectionRequired).toHaveBeenLastCalledWith(false))
   } finally {
     flushSync(() => root.unmount())
     appStore.set(agentViewAtom, null)
@@ -493,7 +525,7 @@ it('snapshots the active tab on every send while chat stays open, independently 
     configuration: {
       provider: 'claude',
       access: 'api',
-      baseUrl: '',
+      baseUrl: 'http://127.0.0.1',
       model: 'fixture',
       hasApiKey: true,
     },

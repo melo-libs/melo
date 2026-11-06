@@ -16,6 +16,7 @@ import {
   preciseCreatedAt,
   getClipSources,
   getClipSourcesForPaths,
+  getFileMeta,
   fullScan,
 } from './indexer'
 import { getSmartViews, saveSmartViews } from './smartViews'
@@ -189,6 +190,18 @@ describe('clip source batches', () => {
         capturedAt: '2026-08-09T00:00:00.000Z',
       },
     })
+  })
+})
+
+describe('file metadata', () => {
+  it('returns the captured favicon and clears it when removed from frontmatter', () => {
+    const file = write(
+      'clip.md',
+      '---\nsource: https://example.com\nfavicon: ".assets/favicons/example.svg"\n---\n\nBody',
+    )
+    expect(getFileMeta(file)?.favicon).toBe('.assets/favicons/example.svg')
+    write('clip.md', '---\nsource: https://example.com\n---\n\nBody')
+    expect(getFileMeta(file)?.favicon).toBeUndefined()
   })
 })
 

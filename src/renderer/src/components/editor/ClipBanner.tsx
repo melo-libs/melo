@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n'
 import { safeExternalUrl } from '../../lib/url'
 import { formatFrontmatterDate } from '../../lib/format'
-import { Icon } from '../Icon'
+import { Favicon } from '../Favicon'
 
 export interface ClipSource {
   url: string
@@ -63,13 +63,7 @@ export const ClipBanner = ({ source, markdown }: ClipBannerProps) => {
 
   return (
     <div className="ed-clip">
-      <span className="ed-clip-fav">
-        {source.favicon ? (
-          <img src={`app://${source.favicon}`} alt="" width={15} height={15} />
-        ) : (
-          <Icon name="paperclip" size={15} />
-        )}
-      </span>
+      <Favicon path={source.favicon} />
       <span className="ed-clip-site">{siteName}</span>
       {source.author && (
         <>

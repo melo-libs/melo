@@ -57,7 +57,15 @@ function seedWorkspace() {
   )
   fs.writeFileSync(
     path.join(workspace, 'captured.md'),
-    note('Captured', 'A note with source metadata.', 'https://www.example.com/article'),
+    note('Captured', 'A note with source metadata.', 'https://www.example.com/article').replace(
+      '---\n\n',
+      'favicon: ".assets/favicons/example #1.svg"\n---\n\n',
+    ),
+  )
+  fs.mkdirSync(path.join(workspace, '.assets', 'favicons'), { recursive: true })
+  fs.writeFileSync(
+    path.join(workspace, '.assets', 'favicons', 'example #1.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="3" fill="#356ef6"/></svg>',
   )
   fs.writeFileSync(path.join(workspace, 'delete-me.md'), note('Delete Me', 'Remove externally.'))
   fs.mkdirSync(path.join(workspace, '00 Parent', '00 Child', '00 Target', '00 Deep'), {
@@ -164,6 +172,96 @@ async function run() {
   await waitUntil(
     'workspace browsing should preserve the outline and update its headings',
     async () => (await outline.locator('.ol-label').allTextContents()).includes('Delete Me'),
+  )
+  const prose = page.locator('.ProseMirror')
+  const originalBlocks = await prose.locator(':scope > *').count()
+  const beforeBlankClick = await prose.innerText()
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+  for (const target of ['ed-page', 'ed-scroll', 'ed-page']) {
+    const point = await page.evaluate((target) => {
+      const editor = document.querySelector('.ProseMirror').getBoundingClientRect()
+      const surface = document.querySelector('.ed-scroll').getBoundingClientRect()
+      return {
+        x: editor.left + 80,
+        y: target === 'ed-page' ? editor.bottom + 40 : surface.bottom - 24,
+      }
+    }, target)
+    assert(
+      await page.evaluate(
+        ({ x, y, target }) => document.elementFromPoint(x, y)?.classList.contains(target),
+        { ...point, target },
+      ),
+      `fixture should expose blank space in ${target}`,
+    )
+    await prose.locator('h1').click()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press(`${modifier}+B`)
+    await page.mouse.click(point.x, point.y)
+    await waitUntil('blank-space click should focus an empty final paragraph', () =>
+      page.evaluate(() => {
+        const editor = document.querySelector('.ProseMirror')
+        const last = editor.lastElementChild
+        const selection = window.getSelection()
+        return (
+          document.activeElement === editor &&
+          last.tagName === 'P' &&
+          last.textContent === '' &&
+          selection?.isCollapsed &&
+          last.contains(selection.anchorNode)
+        )
+      }),
+    )
+    assert.equal(
+      await prose.locator(':scope > *').count(),
+      originalBlocks + 1,
+      'repeated blank-space clicks must reuse the empty final paragraph',
+    )
+  }
+  await page.keyboard.type('Blank-click continuation.')
+  assert.equal(
+    await prose.locator(':scope > p:last-child').innerHTML(),
+    'Blank-click continuation.',
+    'the new paragraph must not inherit bold or heading formatting',
+  )
+  await waitUntil('typing after a blank-space click should persist as a new paragraph', () =>
+    fs
+      .readFileSync(path.join(workspace, 'delete-me.md'), 'utf8')
+      .trimEnd()
+      .endsWith('Remove externally.\n\nBlank-click continuation.'),
+  )
+  await page.keyboard.press(`${modifier}+Z`)
+  await waitUntil(
+    'typing should undo normally',
+    async () => !(await prose.innerText()).includes('Blank-click continuation.'),
+  )
+  // Typing may share the insertion's history group if it begins immediately.
+  const separateInsertion = (await prose.locator(':scope > *').count()) > originalBlocks
+  if (separateInsertion) {
+    await page.keyboard.press(`${modifier}+Z`)
+  }
+  await waitUntil(
+    'the empty paragraph insertion should also undo',
+    async () =>
+      (await prose.locator(':scope > *').count()) === originalBlocks &&
+      (await prose.innerText()) === beforeBlankClick,
+  )
+  await page.keyboard.press(`${modifier}+Shift+Z`)
+  if (separateInsertion) await page.keyboard.press(`${modifier}+Shift+Z`)
+  await waitUntil(
+    'redo should restore the new paragraph',
+    async () =>
+      (await prose.locator(':scope > p:last-child').innerHTML()) === 'Blank-click continuation.',
+  )
+  await treeRow(page, 'captured').first().click()
+  await waitUntil('switch away from the edited document', async () =>
+    (await prose.innerText()).includes('A note with source metadata.'),
+  )
+  await treeRow(page, 'delete-me').first().click()
+  await waitUntil(
+    'reopening should preserve the new paragraph without extra blanks',
+    async () =>
+      (await prose.locator(':scope > *').count()) === originalBlocks + 1 &&
+      (await prose.locator(':scope > p:last-child').innerHTML()) === 'Blank-click continuation.',
   )
   await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
   await smartResults.waitFor({ state: 'visible' })
@@ -361,6 +459,27 @@ async function run() {
     0,
     'source initials should not appear as a separate status marker',
   )
+  await capturedRow.click()
+  const bannerFavicon = page.locator('.ed-clip .favicon img')
+  await waitUntil('the captured local favicon should load in the document', () =>
+    bannerFavicon.evaluate((image) => image.complete && image.naturalWidth > 0),
+  )
+  await capturedRow.click({ button: 'right' })
+  await page.locator('.ctx-item', { hasText: 'Properties' }).click()
+  const propertiesFavicon = page.locator('.prop-card .favicon img')
+  await waitUntil(
+    'properties should reuse the same local favicon',
+    async () =>
+      (await propertiesFavicon.getAttribute('src')) === (await bannerFavicon.getAttribute('src')) &&
+      (await propertiesFavicon.evaluate((image) => image.complete && image.naturalWidth > 0)),
+  )
+  if (clipScreenshotPath) {
+    await page.screenshot({
+      path: clipScreenshotPath.replace(/\.png$/, '-properties.png'),
+      fullPage: true,
+    })
+  }
+  await page.locator('.prop-close').click()
   if (clipScreenshotPath) {
     await capturedRow.scrollIntoViewIfNeeded()
     await page.screenshot({ path: clipScreenshotPath, fullPage: true })

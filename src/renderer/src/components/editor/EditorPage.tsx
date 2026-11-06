@@ -107,6 +107,42 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
     autofocus: 'start',
   })
 
+  useEffect(() => {
+    if (!editor) return
+    const surface = editor.view.dom.closest<HTMLElement>('.ed-scroll')
+    if (!surface) return
+    const page = editor.view.dom.closest('.ed-page')
+    const focusEnd = (event: MouseEvent) => {
+      if (
+        !editor.isEditable ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey ||
+        (event.target !== surface && event.target !== page) ||
+        event.clientY < editor.view.dom.getBoundingClientRect().bottom ||
+        event.clientX >= surface.getBoundingClientRect().left + surface.clientWidth
+      )
+        return
+      // The page padding and unused viewport belong to the writing surface,
+      // but clicks on tags, references, and editor controls keep their own behavior.
+      event.preventDefault()
+      const tr = editor.state.tr
+      const last = tr.doc.lastChild
+      if (last?.type !== editor.schema.nodes.paragraph || last.content.size !== 0) {
+        tr.insert(tr.doc.content.size, editor.schema.nodes.paragraph.create())
+      }
+      editor.view.dispatch(
+        tr.setSelection(Selection.atEnd(tr.doc)).setStoredMarks([]).scrollIntoView(),
+      )
+      editor.view.focus()
+    }
+    surface.addEventListener('mousedown', focusEnd)
+    return () => surface.removeEventListener('mousedown', focusEnd)
+  }, [editor])
+
   // Register the editor and its edit notifications with the session module.
   // Only document-changing transactions count as edits — `update` also
   // fires for state swaps like setEditable, which must not mark dirty.

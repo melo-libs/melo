@@ -31,7 +31,11 @@ export const PropertiesCard = ({ node, onClose }: PropertiesCardProps) => {
   const wsPath = useAtomValue(workspacePathAtom)
   // Markdown files get live word count / tags from the index; every
   // indexed file gets its creation time (smart-Created chain).
-  const [indexMeta, setIndexMeta] = useState<{ words: number; tags: string[] } | null>(null)
+  const [indexMeta, setIndexMeta] = useState<{
+    words: number
+    tags: string[]
+    favicon?: string
+  } | null>(null)
   const [createdAt, setCreatedAt] = useState<number | null>(null)
   const nodeId = node?.id
   const isMd = node?.kind === 'md'
@@ -116,7 +120,7 @@ export const PropertiesCard = ({ node, onClose }: PropertiesCardProps) => {
                 <div className="prop-row">
                   <span className="prop-k">{t('props.source')}</span>
                   <span className="prop-v prop-link">
-                    <Favicon host={node.source.host} size={12} tone="color" />
+                    <Favicon path={indexMeta?.favicon} />
                     <span className="prop-url">{node.source.url}</span>
                   </span>
                 </div>

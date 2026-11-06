@@ -473,7 +473,13 @@ export interface IpcChannelDefinitions {
   [IpcChannels.InvokeGetFileMeta]: {
     args: { path: string }
     response: IpcResponse<{
-      meta: { title: string; words: number; tags: string[]; createdAt: number } | null
+      meta: {
+        title: string
+        words: number
+        tags: string[]
+        createdAt: number
+        favicon?: string
+      } | null
     }>
   }
   [IpcChannels.InvokeGetAllTags]: {

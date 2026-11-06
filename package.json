@@ -14,6 +14,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
+    "preview:agent": "pnpm run build && node scripts/preview-agent.mjs",
     "dev": "electron-vite dev",
     "build": "pnpm run typecheck && electron-vite build",
     "postinstall": "node node_modules/electron/install.js && node scripts/prepare-electron.mjs && electron-rebuild --force --only better-sqlite3",
