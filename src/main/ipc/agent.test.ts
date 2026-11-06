@@ -36,6 +36,18 @@ vi.mock('../agent/storage/agentSettings', () => ({
 vi.mock('../agent/runtime/runtimeEnvironment', () => ({
   RuntimeEnvironment: class {
     installing = false
+    async inspect() {
+      const ready = {
+        status: 'ready',
+        source: 'managed',
+        transferred: 0,
+        total: 0,
+      }
+      return { claude: ready, codex: ready }
+    }
+    async requireProvider() {
+      return '/fixture/cli'
+    }
     async findNode() {
       return '/fixture/node'
     }
@@ -148,5 +160,5 @@ it('returns configuration without probing accounts and checks only on the dedica
   const refresh = await invoke({ action: 'check-sign-in', provider: 'claude' })
   expect(refresh.data.authentication).toEqual({ status: 'signed-in' })
   expect(checkNativeAuthentication).toHaveBeenCalledTimes(1)
-  expect(checkNativeAuthentication).toHaveBeenCalledWith('/fixture/node', 'claude')
+  expect(checkNativeAuthentication).toHaveBeenCalledWith('/fixture/cli', 'claude')
 })

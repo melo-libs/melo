@@ -71,6 +71,7 @@ export const agentIntakeAtom = atom<{
   workspaceRoot: string
   attachments: AgentAttachment[]
 } | null>(null)
+const agentRuntimeNoticeAtom = atom<'ready' | 'error' | null>(null)
 export const agentSetupAtom = atom<AgentSetup | null>(null)
 export const agentNativeCatalogsAtom = atom<
   Partial<
@@ -115,13 +116,30 @@ export const agentWindowAtom = atom(
   (get) => get(agentWindowStateAtom),
   (get, set, update: AgentWindowState | ((state: AgentWindowState) => AgentWindowState)) => {
     const next = typeof update === 'function' ? update(get(agentWindowStateAtom)) : update
-    if (next.open && !next.collapsed) set(agentNoticeAtom, null)
+    if (next.open && !next.collapsed) {
+      set(agentNoticeAtom, null)
+      set(agentRuntimeNoticeAtom, null)
+    }
     set(agentWindowStateAtom, next)
   },
 )
 
 export type AgentMascotState = 'idle' | 'working' | 'waiting' | 'ready' | 'error' | 'offline'
 export const agentPresenceAtom = atom((get): { state: AgentMascotState; label: string } => {
+  const installation = get(agentSetupAtom)?.components
+  if (
+    installation &&
+    Object.values(installation).some((component) =>
+      ['downloading', 'preparing'].includes(component.status),
+    )
+  )
+    return { state: 'working', label: 'agent.componentDownloading' }
+  const runtimeNotice = get(agentRuntimeNoticeAtom)
+  if (runtimeNotice)
+    return {
+      state: runtimeNotice,
+      label: runtimeNotice === 'ready' ? 'agent.componentPrepared' : 'agent.componentFailed',
+    }
   const root = get(workspacePathAtom)
   const current = get(agentViewAtom)
   const view = current?.conversation.workspaceRoot === root ? current : null
@@ -334,6 +352,28 @@ export function openAgent(
  * hidden. Hiding a window must not orphan an in-flight approved edit. */
 export function connectAgent(): () => void {
   const requests = new Map<string, AbortController>()
+  const offComponents = window.api.on(IpcChannels.OnAgentComponents, (components) => {
+    const current = appStore.get(agentSetupAtom)
+    if (!current) return
+    const windowState = appStore.get(agentWindowAtom)
+    if (!windowState.open || windowState.collapsed) {
+      for (const provider of ['claude', 'codex'] as const) {
+        const previous = current.components?.[provider].status
+        if (previous && ['downloading', 'preparing'].includes(previous)) {
+          if (components[provider].status === 'ready') appStore.set(agentRuntimeNoticeAtom, 'ready')
+          if (components[provider].status === 'error') appStore.set(agentRuntimeNoticeAtom, 'error')
+        }
+      }
+    }
+    appStore.set(agentSetupAtom, {
+      ...current,
+      components,
+      installing: Object.values(components).some((component) =>
+        ['downloading', 'preparing'].includes(component.status),
+      ),
+      runtimeAvailable: components[current.configuration.provider].status === 'ready',
+    })
+  })
   const offView = window.api.on(IpcChannels.OnAgentView, (view) => {
     appStore.set(cacheFilingsAtom, view.messages)
     if (view.conversation.workspaceRoot !== appStore.get(workspacePathAtom)) return
@@ -361,6 +401,7 @@ export function connectAgent(): () => void {
       .finally(() => requests.delete(request.id))
   })
   return () => {
+    offComponents()
     offView()
     offDocument()
     for (const controller of requests.values()) controller.abort()

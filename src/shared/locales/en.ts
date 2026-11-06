@@ -107,6 +107,18 @@ export const en = {
     welcomeConnectTitle: 'Connect an AI tool to get started',
     welcomeConnectDescription:
       'Melo works with Claude Code or Codex to help you understand documents, work on drafts, and organize files.',
+    componentConnect: 'Connect',
+    componentRequired: 'First use requires a download · about {{size}} MB',
+    componentLocal: 'Found on this computer',
+    componentProgress: 'Downloading · {{downloaded}} / {{total}} MB',
+    componentPaused: 'Paused · {{downloaded}} / {{total}} MB',
+    componentPreparing: 'Preparing…',
+    componentDownloading: 'Preparing your AI tool',
+    componentRetry: 'Retry download',
+    componentBackground:
+      'You can close this conversation. The download will continue in the background.',
+    componentPrepared: 'Ready to connect · open to continue',
+    componentFailed: 'Download interrupted · open to retry',
     welcomeRuntimeRequired: 'Runtime setup needed',
     welcomeConnecting: 'Connecting…',
     welcomeUseConnection: 'Use connection',
@@ -177,6 +189,12 @@ export const en = {
       updateMemory: 'Update memory',
     },
     errors: {
+      AGENT_DOWNLOAD_NETWORK: 'The download was interrupted. Check your connection and retry.',
+      AGENT_DOWNLOAD_INTEGRITY: 'The downloaded file could not be verified. Please retry.',
+      AGENT_RUNTIME_INSTALL_FAILED: 'Could not prepare the AI tool. Please retry.',
+      AGENT_DOWNLOAD_BUSY: 'Another tool is being prepared. Wait for it to finish.',
+      AGENT_RUNTIME_PLATFORM: 'AI tool downloads are not available on this platform yet.',
+
       SMART_VIEWS_CONFLICT:
         'Smart Folders have changed. Read the latest definitions before trying again.',
       AGENT_ATTACHMENT_UNAVAILABLE:

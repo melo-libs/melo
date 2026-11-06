@@ -21,6 +21,7 @@ it.each([
   async ({ kind, allow, cancel }) => {
     const environment = new RuntimeEnvironment('unused')
     vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+    vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
     let handlers!: AcpConnectionOptions
     vi.spyOn(AcpConnection, 'start').mockImplementation(async (options) => {
       handlers = options
@@ -133,6 +134,7 @@ it.each([
 it('reuses the prepared adapter while giving each turn fresh tools, callbacks and session context', async () => {
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
   let handlers!: AcpConnectionOptions
   let sequence = 0
   const createSession = vi.fn(async () => ({ sessionId: String(++sequence) }))
@@ -228,6 +230,7 @@ it.each(['native', 'api'] as const)(
     const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'melo-runtime-auth-')))
     const environment = new RuntimeEnvironment(path.join(root, 'runtime'))
     vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+    vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
     const close = vi.fn(async () => {})
     const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
       createSession: async () => ({ sessionId: 'fixture' }),
@@ -291,6 +294,7 @@ it.each(['native', 'api'] as const)(
 it('redacts credentials and maps authentication errors during background preparation', async () => {
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
   const start = vi
     .spyOn(AcpConnection, 'start')
     .mockRejectedValueOnce(new Error('Invalid fixture-key credential'))

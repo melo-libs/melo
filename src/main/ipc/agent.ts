@@ -16,7 +16,7 @@ import { DocumentAccess } from '../agent/workspace/documentAccess'
 import { ChangeJournal } from '../agent/workspace/changeJournal'
 import { WorkspaceAccess } from '../agent/workspace/workspaceAccess'
 import { startWorkspaceTools } from '../agent/mcp/workspaceTools'
-import { RuntimeEnvironment, adapterEntry } from '../agent/runtime/runtimeEnvironment'
+import { RuntimeEnvironment } from '../agent/runtime/runtimeEnvironment'
 import { createRuntimeFactory } from '../agent/runtime/runtime'
 import { testAgentApi, validateAgentApi } from '../agent/runtime/apiConnection'
 import { checkNativeAuthentication } from '../agent/runtime/nativeAuthentication'
@@ -43,7 +43,8 @@ const COMMAND = z.discriminatedUnion('action', [
     category: z.enum(['model', 'thought_level']),
     value: z.string().min(1).max(256),
   }),
-  z.object({ action: z.literal('install') }),
+  z.object({ action: z.literal('install'), provider }),
+  z.object({ action: z.literal('cancel-install'), provider }),
   z.object({ action: z.literal('login'), provider }),
   z.object({
     action: z.literal('api-models'),
@@ -136,7 +137,9 @@ function createController() {
   const directory = path.join(app.getPath('userData'), 'agent')
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   const settings = new AgentSettings(directory)
-  const environment = new RuntimeEnvironment(path.join(directory, 'runtime'))
+  const environment = new RuntimeEnvironment(path.join(directory, 'runtime'), (components) => {
+    getMainWindow()?.webContents.send(IpcChannels.OnAgentComponents, components)
+  })
   const codexLauncher = path
     .join(app.getAppPath(), 'resources/agent/codex-launch.cjs')
     .replace('app.asar/', 'app.asar.unpacked/')
@@ -197,7 +200,7 @@ export function resumeAgent(reason = 'workspace'): void {
 async function setup(p?: AgentProvider): Promise<AgentSetup> {
   const { settings, environment, nativeModels } = getController()
   const configuration = settings.get(p)
-  const node = await environment.findNode()
+  const components = await environment.inspect()
   const connectionProfile = (provider: AgentProvider) => {
     const profile = settings.get(provider)
     return {
@@ -210,7 +213,8 @@ async function setup(p?: AgentProvider): Promise<AgentSetup> {
     connectionProfiles: { claude: connectionProfile('claude'), codex: connectionProfile('codex') },
     nativeControls:
       configuration.access === 'native' ? nativeModels.cached(configuration.provider) : undefined,
-    runtimeAvailable: !!node,
+    components,
+    runtimeAvailable: components[configuration.provider].status === 'ready',
     installing: environment.installing,
   }
 }
@@ -371,25 +375,25 @@ export function setupAgentIPC(): void {
           result = { setup: await setup(command.provider) }
           break
         case 'check-sign-in': {
-          const node = await environment.requireNode()
-          result = { authentication: await checkNativeAuthentication(node, command.provider) }
+          const executable = await environment.requireProvider(command.provider)
+          result = { authentication: await checkNativeAuthentication(executable, command.provider) }
           break
         }
         case 'setup':
           result = { setup: await setup(command.provider) }
           break
         case 'install':
-          await environment.install()
+          await environment.install(command.provider)
           result = { setup: await setup() }
           break
+        case 'cancel-install':
+          environment.cancel(command.provider)
+          break
         case 'login': {
-          const node = await environment.requireNode()
-          const args =
-            command.provider === 'claude'
-              ? ['--cli', 'auth', 'login', '--claudeai']
-              : ['cli', 'login']
+          const executable = await environment.requireProvider(command.provider)
+          const args = command.provider === 'claude' ? ['auth', 'login', '--claudeai'] : ['login']
           const quote = (text: string) => "'" + text.replaceAll("'", "'\\''") + "'"
-          const script = [node, adapterEntry(command.provider), ...args].map(quote).join(' ')
+          const script = [executable, ...args].map(quote).join(' ')
           if (process.platform !== 'darwin')
             throw new Error('Use the provider CLI to sign in, then return to Melo')
           await execute('osascript', [

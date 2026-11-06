@@ -124,10 +124,20 @@ export interface AgentConnectionProfile {
   apiConfigured: boolean
 }
 
+export interface AgentComponent {
+  status: 'missing' | 'downloading' | 'preparing' | 'ready' | 'paused' | 'error'
+  source: 'local' | 'managed' | null
+  transferred: number
+  total: number
+  error?: string
+}
+export type AgentComponents = Record<AgentProvider, AgentComponent>
+
 export interface AgentSetup {
   configuration: AgentConfiguration
   connectionProfiles?: Record<AgentProvider, AgentConnectionProfile>
   nativeControls?: AgentModelControl[]
+  components?: AgentComponents
   runtimeAvailable: boolean
   installing: boolean
 }
@@ -144,7 +154,8 @@ export type AgentCommand =
       category: 'model' | 'thought_level'
       value: string
     }
-  | { action: 'install' }
+  | { action: 'install'; provider: AgentProvider }
+  | { action: 'cancel-install'; provider: AgentProvider }
   | { action: 'login'; provider: AgentProvider }
   | {
       action: 'api-models'

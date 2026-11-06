@@ -18,9 +18,7 @@ it.each(['claude', 'codex'] as const)('uses only the %s CLI status command', asy
   })
   expect((await checkNativeAuthentication('/fixture/node', provider)).status).toBe('signed-in')
   expect(execute.mock.calls[0][1]).toEqual(
-    provider === 'claude'
-      ? ['/fixture/claude.js', '--cli', 'auth', 'status', '--json']
-      : ['/fixture/codex.js', 'cli', 'login', 'status'],
+    provider === 'claude' ? ['auth', 'status', '--json'] : ['login', 'status'],
   )
   expect(execute).toHaveBeenCalledTimes(1)
 })

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import electronPath from 'electron'
 import { createServer } from 'node:http'
@@ -26,6 +27,20 @@ const scratchDirectories = new Set()
 const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'"
 let intakeFiles
 const live = process.env.MELO_AGENT_LIVE === '1'
+async function installFixtureStorage(instance) {
+  if (!process.argv.includes('--fixture-storage')) return
+  assert(!live, 'Fixture storage must never be used with real accounts')
+  // Runtime regressions do not need Keychain approval for an ad-hoc signed app.
+  // Accept only the public fixture credential, never real user input.
+  await instance.evaluate(({ safeStorage }) => {
+    safeStorage.isEncryptionAvailable = () => true
+    safeStorage.encryptString = (value) => {
+      if (value !== 'fixture-key') throw new Error('Unexpected fixture credential')
+      return Buffer.from('fixture-key')
+    }
+    safeStorage.decryptString = () => 'fixture-key'
+  })
+}
 let app
 let passed = false
 const fixtureReply =
@@ -542,6 +557,30 @@ try {
   const claudeHome = path.join(testRoot, 'claude-home')
   fs.mkdirSync(codexHome)
   fs.mkdirSync(claudeHome)
+  // Conversation regression uses an offline fixture; runtime downloads have
+  // their own E2E. Seed only the test profile from the locked development CLI.
+  const require = createRequire(import.meta.url)
+  const adapterRequire = createRequire(
+    require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js'),
+  )
+  const sdkRequire = createRequire(adapterRequire.resolve('@anthropic-ai/claude-agent-sdk'))
+  const cli = sdkRequire.resolve(
+    `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`,
+  )
+  const runtimeManifest = JSON.parse(
+    fs.readFileSync(path.join(projectRoot, 'src/main/agent/runtime/runtimeManifest.json'), 'utf8'),
+  )
+  const runtime = runtimeManifest[`${process.platform}-${process.arch}`].claude
+  fs.cpSync(
+    path.dirname(cli),
+    path.join(
+      profile,
+      'agent/runtime',
+      `claude-v${runtime.version}-${process.platform}-${process.arch}`,
+    ),
+    { recursive: true },
+  )
+
   fs.writeFileSync(
     path.join(profile, 'preferences.json'),
     JSON.stringify({ lastDirectory: workspace }),
@@ -580,6 +619,7 @@ try {
     timeout: 30000,
   }
   app = await electron.launch(launchOptions)
+  await installFixtureStorage(app)
   app.process().stderr?.on('data', (chunk) => logs.push(String(chunk)))
   const page = await app.firstWindow()
   page.setDefaultTimeout(packagedApp ? 30000 : 10000)
@@ -2094,6 +2134,7 @@ try {
     await app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => {})
     await exited
     app = await electron.launch(launchOptions)
+    await installFixtureStorage(app)
     const restoredPage = await app.firstWindow()
     restoredPage.on('pageerror', (error) => logs.push(error.stack ?? error.message))
     await restoredPage.locator('.sidebar').waitFor()

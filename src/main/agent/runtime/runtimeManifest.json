@@ -1,0 +1,94 @@
+{
+  "darwin-arm64": {
+    "node": {
+      "version": "24.14.0",
+      "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz",
+      "integrity": "sha256-oaVPRqdQ0lI9Yo2SSqthdYpRydrT4COL6xQUG+lhXdM=",
+      "bytes": 51058258,
+      "executable": "bin/node"
+    },
+    "claude": {
+      "version": "2.1.309",
+      "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.309.tgz",
+      "integrity": "sha512-qC93iDGEioaXqWsYazcZzNv3hd8d4VHkCFgb+AzvbkCWOzZHnRu1EqF4Iz5kCTLDs4VdMvCa1NkzlUwtTedBVw==",
+      "bytes": 122689403,
+      "executable": "claude"
+    },
+    "codex": {
+      "version": "0.160.1",
+      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.160.1-darwin-arm64.tgz",
+      "integrity": "sha512-6Znu97O7+Ie/cnUpsWLx6NlcPc7DNuj6sAs58xpt0/tKRgx4+xgE9zca1YrwqQUBjUQO1HexudyimmhpZjdWlA==",
+      "bytes": 134323627,
+      "executable": "vendor/aarch64-apple-darwin/bin/codex"
+    }
+  },
+  "darwin-x64": {
+    "node": {
+      "version": "24.14.0",
+      "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-x64.tar.gz",
+      "integrity": "sha256-8oeeuBDiWZOgV45dh4kwJm/S6vz/6fKDmz2Ns1TUh54=",
+      "bytes": 52238343,
+      "executable": "bin/node"
+    },
+    "claude": {
+      "version": "2.1.309",
+      "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.309.tgz",
+      "integrity": "sha512-RvP0UOcYxn42c1lgByoMufHaMOH86U2ThGGFupOxBKATY4Q6WJd6M1CukQ/qygfgJ8lcxvK8GOOd3SIny4kQ8Q==",
+      "bytes": 127778023,
+      "executable": "claude"
+    },
+    "codex": {
+      "version": "0.160.1",
+      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.160.1-darwin-x64.tgz",
+      "integrity": "sha512-Q33hmY6BxhoQRgCo4f/xS20yMxORnilQMNdr5w1bXSkXGYAty8/z9odcHbsNYUM6m0fNle12DHLQ5F0Dpfji3A==",
+      "bytes": 143424230,
+      "executable": "vendor/x86_64-apple-darwin/bin/codex"
+    }
+  },
+  "linux-arm64": {
+    "node": {
+      "version": "24.14.0",
+      "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-arm64.tar.gz",
+      "integrity": "sha256-9EdAzSGN6BJ/HETEFRCjp0D6XJyNHNzhw77a2nnzzec=",
+      "bytes": 55971213,
+      "executable": "bin/node"
+    },
+    "claude": {
+      "version": "2.1.309",
+      "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-arm64/-/claude-agent-sdk-linux-arm64-0.3.309.tgz",
+      "integrity": "sha512-+8rQwzycuXTW2e/C+yotvP/SDiEDHxItdPvIriGAf2ixh7nPRjVuzHOj1tamgVO0J8nmpPvIAO4edzJ7VZCcAg==",
+      "bytes": 133084470,
+      "executable": "claude"
+    },
+    "codex": {
+      "version": "0.160.1",
+      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.160.1-linux-arm64.tgz",
+      "integrity": "sha512-JLyjBlmjPvwTaicHemw+y5xQSz3Uja2r7F/xkvS8gFufTA2g132Ak+0fo35xnJ/k2uc9fTtjm0LrsEGI78L6Ng==",
+      "bytes": 155715063,
+      "executable": "vendor/aarch64-unknown-linux-musl/bin/codex"
+    }
+  },
+  "linux-x64": {
+    "node": {
+      "version": "24.14.0",
+      "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz",
+      "integrity": "sha256-2/W4Zl3sFeWeY1mlF/77R7I/25FS2N75dbm8o9/G01U=",
+      "bytes": 56185866,
+      "executable": "bin/node"
+    },
+    "claude": {
+      "version": "2.1.309",
+      "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-linux-x64/-/claude-agent-sdk-linux-x64-0.3.309.tgz",
+      "integrity": "sha512-96G8/uTArlvTTg0qGtiP36W76Ug/YT0gMBh8KX7J2RigdOTrk6QkHtUeCzrw6yff5hEIzecN7EWNw6uh9USo4A==",
+      "bytes": 132508229,
+      "executable": "claude"
+    },
+    "codex": {
+      "version": "0.160.1",
+      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.160.1-linux-x64.tgz",
+      "integrity": "sha512-sIDhqV+bsZKKVaVFVY5iB+pAzyOz2XRm3H1KXCsSJwGj5p98qnrT0Fweo1Hfe7WnyTp8mfBNdbVzUeO+mHYugA==",
+      "bytes": 163294814,
+      "executable": "vendor/x86_64-unknown-linux-musl/bin/codex"
+    }
+  }
+}

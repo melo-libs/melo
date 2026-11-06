@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import type { AgentProvider } from '@shared/types/agent'
-import { agentAccountsAtom, agentCommand } from '../../store/agent'
+import { agentAccountsAtom, agentCommand, agentSetupAtom } from '../../store/agent'
 import { agentErrorText } from './agentError'
 
 export function useAgentAccounts(enabled: boolean) {
+  const setup = useAtomValue(agentSetupAtom)
+  const available = useRef(setup)
+  available.current = setup
   const [accounts, setAccounts] = useAtom(agentAccountsAtom)
   const generation = useRef(0)
   const pending = useRef(new Set<AgentProvider>())
@@ -12,6 +15,11 @@ export function useAgentAccounts(enabled: boolean) {
   const check = useCallback(
     async (provider: AgentProvider) => {
       if (!enabled || pending.current.has(provider)) return
+      if (
+        available.current?.components &&
+        available.current.components[provider].status !== 'ready'
+      )
+        return
       const request = generation.current
       pending.current.add(provider)
       setAccounts((current) => ({ ...current, [provider]: { status: 'checking' } }))
@@ -46,11 +54,17 @@ export function useAgentAccounts(enabled: boolean) {
   }, [])
   useEffect(() => {
     if (!enabled) return
-    if (accounts.claude.status === 'unknown' || accounts.claude.status === 'checking')
+    if (
+      (!setup?.components || setup.components.claude.status === 'ready') &&
+      (accounts.claude.status === 'unknown' || accounts.claude.status === 'checking')
+    )
       void check('claude')
-    if (accounts.codex.status === 'unknown' || accounts.codex.status === 'checking')
+    if (
+      (!setup?.components || setup.components.codex.status === 'ready') &&
+      (accounts.codex.status === 'unknown' || accounts.codex.status === 'checking')
+    )
       void check('codex')
-  }, [enabled, accounts.claude.status, accounts.codex.status, check])
+  }, [enabled, accounts.claude.status, accounts.codex.status, check, setup?.components])
   useEffect(() => {
     if (!enabled) return
     const onFocus = () => {

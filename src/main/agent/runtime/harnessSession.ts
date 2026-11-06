@@ -29,6 +29,7 @@ export async function startHarnessConnection(
 ) {
   const { configuration, apiKey } = options
   const node = await options.environment.requireNode()
+  const executable = await options.environment.requireProvider(configuration.provider)
   const env = { ...process.env }
   for (const name of [
     'ELECTRON_RUN_AS_NODE',
@@ -68,6 +69,7 @@ export async function startHarnessConnection(
   if (configuration.provider === 'codex') {
     disabledMcpServers = await codexLaunch(
       node,
+      executable,
       options.workspaceRoot,
       options.codexLauncher,
       env,
@@ -95,6 +97,7 @@ export async function startHarnessConnection(
     }
   }
   if (configuration.provider === 'claude') {
+    env.CLAUDE_CODE_EXECUTABLE = executable
     if (options.scratchDirectory) {
       env.CLAUDE_CODE_TMPDIR = options.scratchDirectory
       env.TMPDIR = options.scratchDirectory
