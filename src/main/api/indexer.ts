@@ -474,6 +474,7 @@ export function searchIndex(query: string, limit = 50): SearchIndexResult {
 }
 
 export interface FileMeta {
+  favicon?: string
   title: string
   words: number
   tags: string[]
@@ -561,12 +562,14 @@ export function getFileMeta(filePath: string): FileMeta | null {
       tag: string
     }[]
   ).map((r) => r.tag)
-  const createdRow = db
-    .prepare("SELECT value FROM fields WHERE file_id = ? AND key = 'created'")
-    .get(f.id) as { value: string } | undefined
-  const created = createdRow ? Date.parse(createdRow.value.replace(/^"|"$/g, '')) : NaN
+  const fields = db
+    .prepare("SELECT key, value FROM fields WHERE file_id = ? AND key IN ('created', 'favicon')")
+    .all(f.id) as { key: string; value: string }[]
+  const createdValue = fields.find((field) => field.key === 'created')?.value
+  const created = createdValue ? Date.parse(createdValue.replace(/^"|"$/g, '')) : NaN
   const createdAt = Number.isFinite(created) ? created : f.btime > 0 ? f.btime : f.mtime
-  return { title: f.title, words: f.words, tags, createdAt }
+  const favicon = fields.find((field) => field.key === 'favicon')?.value.replace(/^"|"$/g, '')
+  return { title: f.title, words: f.words, tags, createdAt, favicon }
 }
 
 export function getFilesByTag(tag: string): { path: string; title: string }[] {

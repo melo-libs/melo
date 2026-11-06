@@ -57,7 +57,15 @@ function seedWorkspace() {
   )
   fs.writeFileSync(
     path.join(workspace, 'captured.md'),
-    note('Captured', 'A note with source metadata.', 'https://www.example.com/article'),
+    note('Captured', 'A note with source metadata.', 'https://www.example.com/article').replace(
+      '---\n\n',
+      'favicon: ".assets/favicons/example #1.svg"\n---\n\n',
+    ),
+  )
+  fs.mkdirSync(path.join(workspace, '.assets', 'favicons'), { recursive: true })
+  fs.writeFileSync(
+    path.join(workspace, '.assets', 'favicons', 'example #1.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="3" fill="#356ef6"/></svg>',
   )
   fs.writeFileSync(path.join(workspace, 'delete-me.md'), note('Delete Me', 'Remove externally.'))
   fs.mkdirSync(path.join(workspace, '00 Parent', '00 Child', '00 Target', '00 Deep'), {
@@ -451,6 +459,27 @@ async function run() {
     0,
     'source initials should not appear as a separate status marker',
   )
+  await capturedRow.click()
+  const bannerFavicon = page.locator('.ed-clip .favicon img')
+  await waitUntil('the captured local favicon should load in the document', () =>
+    bannerFavicon.evaluate((image) => image.complete && image.naturalWidth > 0),
+  )
+  await capturedRow.click({ button: 'right' })
+  await page.locator('.ctx-item', { hasText: 'Properties' }).click()
+  const propertiesFavicon = page.locator('.prop-card .favicon img')
+  await waitUntil(
+    'properties should reuse the same local favicon',
+    async () =>
+      (await propertiesFavicon.getAttribute('src')) === (await bannerFavicon.getAttribute('src')) &&
+      (await propertiesFavicon.evaluate((image) => image.complete && image.naturalWidth > 0)),
+  )
+  if (clipScreenshotPath) {
+    await page.screenshot({
+      path: clipScreenshotPath.replace(/\.png$/, '-properties.png'),
+      fullPage: true,
+    })
+  }
+  await page.locator('.prop-close').click()
   if (clipScreenshotPath) {
     await capturedRow.scrollIntoViewIfNeeded()
     await page.screenshot({ path: clipScreenshotPath, fullPage: true })
