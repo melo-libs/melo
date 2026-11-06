@@ -36,7 +36,7 @@ async function fixture(broken = false, cancelPreparing = false, coldStart = fals
     path.join(source, 'cli'),
     '#!/bin/sh\n' +
       (coldStart
-        ? 'marker="$(dirname "$0")/started"\nif [ ! -f "$marker" ]; then sleep 6; touch "$marker"; fi\n'
+        ? 'marker="$(dirname "$0")/started"\nif [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$0" ]; then sleep 6; printf "%s" "$0" > "$marker"; fi\n'
         : '') +
       'echo 99.0.0\n',
     { mode: 0o755 },
@@ -101,11 +101,11 @@ it('does not activate a corrupted download or discard another installed version'
   expect(states.at(-1)!.claude.status).toBe('error')
   expect(await readFile(path.join(old, 'cli'), 'utf8')).toBe('previous')
 })
-it('allows a cold first launch to take longer than a routine version probe', async () => {
+it('allows cold launches before and after activation to exceed a routine version probe', async () => {
   const { manager } = await fixture(false, false, true)
   await manager.install('claude')
   expect((await manager.inspect()).claude.status).toBe('ready')
-}, 15_000)
+}, 20_000)
 it('reinstalls if a previously selected executable disappears', async () => {
   const { manager, requests } = await fixture()
   await manager.install('claude')

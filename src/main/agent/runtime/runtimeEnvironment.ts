@@ -89,11 +89,12 @@ export class RuntimeEnvironment {
   }
   private async findProvider(
     provider: AgentProvider,
+    options: { timeout?: number; signal?: AbortSignal } = {},
   ): Promise<{ executable: string; source: 'local' | 'managed' } | null> {
     this.executables.delete(provider)
     const artifact = this.artifacts()[provider]
     const managed = path.join(this.destination(provider), artifact.executable)
-    if (await this.validExecutable(managed, artifact.version)) {
+    if (await this.validExecutable(managed, artifact.version, options)) {
       this.executables.set(provider, managed)
       return { executable: managed, source: 'managed' }
     }
@@ -254,7 +255,8 @@ export class RuntimeEnvironment {
         if (name === 'node') this.node = path.join(this.destination(name), artifact.executable)
       }
       signal.throwIfAborted()
-      const found = await this.findProvider(provider)
+      // Moving the executable can trigger another first-launch check on macOS.
+      const found = await this.findProvider(provider, { timeout: 60_000, signal })
       if (!found) throw new Error('AGENT_RUNTIME_INSTALL_FAILED')
       signal.throwIfAborted()
       this.update(provider, {
