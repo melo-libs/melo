@@ -16,17 +16,17 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 24px;
-    padding: 16px 32px 24px;
+    gap: 20px;
+    padding: 16px 32px 28px;
 
     > svg {
       flex-shrink: 0;
     }
     h1 {
       margin: 0 0 6px;
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 650;
-      line-height: 28px;
+      line-height: 26px;
     }
     p {
       margin: 0;
@@ -61,8 +61,8 @@
     min-height: 0;
     overflow-y: auto;
     margin: 0 32px;
-    padding: 20px 0 8px;
-    border-top: 1px solid var(--hairline);
+    padding: 12px 0 24px;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
     scrollbar-gutter: stable;
     &::-webkit-scrollbar-thumb {
       background-color: var(--hairline-2);
@@ -75,7 +75,7 @@
   .updates-notes-text {
     overflow-wrap: anywhere;
     color: var(--ink-2);
-    line-height: 24px;
+    line-height: 22px;
     user-select: text;
     > :first-child {
       margin-top: 0;
@@ -86,7 +86,7 @@
     }
     ul,
     ol {
-      margin: 8px 0 16px;
+      margin: 8px 0 20px;
       padding-left: 18px;
     }
     ul {
@@ -97,7 +97,7 @@
     }
     li {
       padding-left: 2px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     li::marker {
       color: var(--ink-4);
@@ -134,7 +134,7 @@
   .updates-notes-link {
     flex-shrink: 0;
     align-self: flex-start;
-    margin: 12px 32px 16px;
+    margin: 12px 32px 8px;
   }
   .updates-guide {
     margin-bottom: 24px;
@@ -200,8 +200,7 @@
   }
   .updates-footer {
     flex-shrink: 0;
-    border-top: 1px solid var(--hairline);
-    padding: 16px 32px 20px;
+    padding: 16px 32px 24px;
     p {
       margin: 0;
       line-height: 20px;
@@ -349,7 +348,8 @@
     .updates-content {
       flex: 0 1 auto;
       margin: 0;
-      padding: 0 32px 0 104px;
+      padding: 0 32px 0 100px;
+      mask-image: none;
       border: 0;
       scrollbar-gutter: auto;
     }

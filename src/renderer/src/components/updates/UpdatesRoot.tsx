@@ -353,17 +353,8 @@ export function UpdatesRoot() {
             ) : null}
           </div>
         </div>
-        {(progress || ready || state.ready) && (
+        {(ready?.install === 'manual' || (!ready && state.ready)) && (
           <div className="updates-secondary-actions">
-            {release && (progress || ready) && (
-              <Button
-                className="updates-text-action updates-ignore"
-                disabled={opening || checkBusy || ignoring}
-                onClick={() => void ignore(release.version)}
-              >
-                {t('updates.ignoreVersion')}
-              </Button>
-            )}
             {ready?.install === 'manual' && (
               <Button
                 className="updates-text-action"
