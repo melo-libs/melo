@@ -1,10 +1,7 @@
 import { execFile } from 'node:child_process'
-import { access } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
-import { adapterEntry } from './runtimeEnvironment'
 import type { AgentApiServiceId } from '../../../shared/agentApi'
 
 const execute = promisify(execFile)
@@ -24,34 +21,16 @@ const MCP_SERVERS = z.array(
  * coding workspace. Native model access remains with Codex itself. */
 export async function codexLaunch(
   node: string,
+  executable: string,
   root: string,
   launcher: string,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
   api?: { baseUrl: string; apiService: AgentApiServiceId },
 ): Promise<Record<string, DisabledMcpServer>> {
-  const candidates = [
-    path.join(path.dirname(node), 'codex'),
-    ...String(env.PATH ?? '')
-      .split(path.delimiter)
-      .filter(Boolean)
-      .map((directory) => path.join(directory, 'codex')),
-  ]
-  let executable: string | undefined
-  for (const candidate of candidates) {
-    try {
-      await access(candidate)
-      executable = candidate
-      break
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-  }
-  env.PATH = `${path.dirname(node)}${path.delimiter}${env.PATH ?? ''}`
-  const command = executable ?? node
-  const args = executable
-    ? []
-    : [createRequire(adapterEntry('codex')).resolve('@openai/codex/bin/codex.js')]
+  env.PATH = `${path.dirname(node)}${path.delimiter}${path.resolve(path.dirname(executable), '../codex-path')}${path.delimiter}${env.PATH ?? ''}`
+  const command = executable
+  const args: string[] = []
   let servers: { name: string; transport: 'stdio' | 'streamable_http' }[]
   try {
     const listed = await execute(

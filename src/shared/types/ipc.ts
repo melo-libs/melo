@@ -1,6 +1,7 @@
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 import type {
+  AgentComponents,
   AgentCommand,
   AgentCommandResult,
   AgentView,
@@ -20,7 +21,13 @@ export interface UpdateState {
   release: UpdateRelease | null
   download:
     | { status: 'idle' }
-    | { status: 'downloading'; version: string; percent: number }
+    | {
+        status: 'downloading'
+        version: string
+        percent: number
+        transferred?: number
+        total?: number
+      }
     | { status: 'error'; version: string }
   ready: { release: UpdateRelease; install: 'manual' | 'in-app' } | null
   installation: 'idle' | 'opening' | 'opened' | 'error'
@@ -38,6 +45,7 @@ export const INITIAL_UPDATE_STATE: UpdateState = {
 export enum IpcChannels {
   AgentCommand = 'agent-command',
   OnAgentView = 'on-agent-view',
+  OnAgentComponents = 'on-agent-components',
   OnAgentDocumentRequest = 'on-agent-document-request',
   AgentDocumentReply = 'agent-document-reply',
   // Send-only channels (renderer -> main)
@@ -208,6 +216,7 @@ export type WorkspaceChangedEvent =
 // Channel-specific type definitions
 export interface IpcChannelDefinitions {
   [IpcChannels.AgentCommand]: { args: AgentCommand; response: IpcResponse<AgentCommandResult> }
+  [IpcChannels.OnAgentComponents]: { args: AgentComponents; response: void }
   [IpcChannels.OnAgentView]: { args: AgentView; response: void }
   [IpcChannels.OnAgentDocumentRequest]: { args: AgentDocumentRequest; response: void }
   [IpcChannels.AgentDocumentReply]: { args: AgentDocumentReply; response: void }

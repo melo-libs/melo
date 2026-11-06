@@ -1,10 +1,16 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentProvider, AgentSetup } from '@shared/types/agent'
 import { agentCommand, type AgentAccountState } from '../../store/agent'
 import { Button } from '../ui/Button'
 import { Icon } from '../Icon'
 import { MeloLogo } from '../MeloLogo'
+import {
+  AgentRuntimeProgress,
+  AgentRuntimeStatus,
+  runtimeWorking,
+  runtimeMegabytes,
+} from './AgentRuntimeProgress'
 import { agentErrorText } from './agentError'
 
 export function AgentWelcome({
@@ -29,18 +35,33 @@ export function AgentWelcome({
   const [loggingIn, setLoggingIn] = useState<AgentProvider | null>(null)
   const [error, setError] = useState('')
   const working = useRef(false)
+  const visible = useRef(true)
+  useEffect(() => {
+    visible.current = true
+    return () => {
+      visible.current = false
+    }
+  }, [])
   const connect = async (provider: AgentProvider) => {
     if (working.current || !setup) return
     working.current = true
     setPending(provider)
     setError('')
     try {
-      if (!setup.runtimeAvailable) {
-        await agentCommand({ action: 'install' })
-        await Promise.all([onCheck('claude'), onCheck('codex')])
-        return
+      let account = accounts[provider]
+      const available = setup.components
+        ? setup.components[provider].status === 'ready'
+        : setup.runtimeAvailable
+      if (!available) {
+        const installed = await agentCommand({ action: 'install', provider })
+        if (!visible.current || installed.setup?.components?.[provider].status !== 'ready') return
+        if (setup.connectionProfiles?.[provider]?.access !== 'api') {
+          const result = await agentCommand({ action: 'check-sign-in', provider })
+          account = result.authentication!
+          if (!visible.current) return
+          await onCheck(provider)
+        }
       }
-      const account = accounts[provider]
       const profile = setup.connectionProfiles?.[provider]
       if (profile?.access === 'api' && profile.apiConfigured) {
         await onProvider(provider)
@@ -64,12 +85,14 @@ export function AgentWelcome({
           apiService: configuration.apiService,
         })
       }
-      if (account.status !== 'signed-in') {
+      if (visible.current && account.status !== 'signed-in') {
         await onLogin(provider)
         setLoggingIn(provider)
       }
     } catch (error) {
-      setError(agentErrorText(error instanceof Error ? error.message : ''))
+      const code = error instanceof Error ? error.message : ''
+      if (!code.startsWith('AGENT_DOWNLOAD_') && code !== 'AGENT_RUNTIME_INSTALL_FAILED')
+        setError(agentErrorText(code))
     } finally {
       working.current = false
       setPending(null)
@@ -88,15 +111,21 @@ export function AgentWelcome({
           const profile = setup?.connectionProfiles?.[provider]
           const apiReady = profile?.access === 'api' && profile.apiConfigured
           const checking = !setup || account.status === 'checking' || account.status === 'unknown'
-          const available = setup?.runtimeAvailable
+          const component = setup?.components?.[provider]
+          const downloading = runtimeWorking(component)
+          const available = component ? component.status === 'ready' : setup?.runtimeAvailable
           const connected = apiReady || account.status === 'signed-in'
-          const status = !setup
+          const showProgress =
+            component && ['downloading', 'preparing', 'error', 'paused'].includes(component.status)
+          const status = showProgress
             ? 'checking'
-            : !available
-              ? 'unavailable'
-              : apiReady
-                ? 'api-configured'
-                : account.status
+            : !setup
+              ? 'checking'
+              : !available
+                ? 'unavailable'
+                : apiReady
+                  ? 'api-configured'
+                  : account.status
           return (
             <div className="agent-connect-option" key={provider}>
               <span className="agent-tool-icon">
@@ -106,20 +135,29 @@ export function AgentWelcome({
                 <strong>{provider === 'claude' ? 'Claude Code' : 'Codex'}</strong>
                 <span className="agent-tool-status" data-state={status} role="status">
                   <span />
-                  {t(
-                    !setup
-                      ? 'agent.accountChecking'
-                      : !available
-                        ? 'agent.welcomeRuntimeRequired'
-                        : apiReady
-                          ? 'agent.apiConfigured'
-                          : connected
-                            ? 'agent.accountSignedIn'
-                            : checking
-                              ? 'agent.accountChecking'
-                              : account.status === 'error'
-                                ? 'agent.accountCheckFailed'
-                                : 'agent.accountSignedOut',
+                  {showProgress ? (
+                    <AgentRuntimeStatus component={component} />
+                  ) : (
+                    t(
+                      !setup
+                        ? 'agent.accountChecking'
+                        : !available
+                          ? component?.source === 'local'
+                            ? 'agent.componentLocal'
+                            : 'agent.componentRequired'
+                          : apiReady
+                            ? 'agent.apiConfigured'
+                            : connected
+                              ? 'agent.accountSignedIn'
+                              : checking
+                                ? 'agent.accountChecking'
+                                : account.status === 'error'
+                                  ? 'agent.accountCheckFailed'
+                                  : component?.source === 'local'
+                                    ? 'agent.componentLocal'
+                                    : 'agent.accountSignedOut',
+                      { size: runtimeMegabytes(component?.total ?? 0) },
+                    )
                   )}
                 </span>
               </div>
@@ -127,28 +165,48 @@ export function AgentWelcome({
                 size="small"
                 variant={connected || provider === 'claude' ? 'primary' : 'secondary'}
                 disabled={
-                  busy || pending !== null || !setup || (!!available && checking && !apiReady)
+                  !downloading &&
+                  (busy ||
+                    pending !== null ||
+                    !!setup?.installing ||
+                    !setup ||
+                    (!!available && checking && !apiReady))
                 }
-                onClick={() => void connect(provider)}
+                onClick={() =>
+                  downloading
+                    ? void agentCommand({ action: 'cancel-install', provider }).catch((error) =>
+                        setError(agentErrorText(error.message)),
+                      )
+                    : void connect(provider)
+                }
               >
                 {t(
-                  pending === provider
-                    ? 'agent.welcomeConnecting'
-                    : !setup || (available && checking && !apiReady)
-                      ? 'agent.accountChecking'
-                      : !available
-                        ? 'agent.install'
-                        : !apiReady && (account.status === 'error' || loggingIn === provider)
-                          ? 'agent.checkSignIn'
-                          : connected
-                            ? 'agent.welcomeUseConnection'
-                            : 'agent.welcomeSignIn',
+                  downloading
+                    ? 'common.cancel'
+                    : pending === provider
+                      ? 'agent.welcomeConnecting'
+                      : !setup || (available && checking && !apiReady)
+                        ? 'agent.accountChecking'
+                        : !available
+                          ? component?.status === 'error' || component?.status === 'paused'
+                            ? 'agent.componentRetry'
+                            : 'agent.componentConnect'
+                          : !apiReady && (account.status === 'error' || loggingIn === provider)
+                            ? 'agent.checkSignIn'
+                            : connected
+                              ? 'agent.welcomeUseConnection'
+                              : 'agent.welcomeSignIn',
                 )}
               </Button>
+              {component &&
+                ['downloading', 'preparing', 'error', 'paused'].includes(component.status) && (
+                  <AgentRuntimeProgress component={component} showLabel={false} />
+                )}
             </div>
           )
         })}
       </div>
+      {setup?.installing && <p className="agent-welcome-help">{t('agent.componentBackground')}</p>}
       {loggingIn && (
         <p className="agent-welcome-help" role="status">
           {t('agent.welcomeLoginHelp')}

@@ -21,14 +21,14 @@ describe('release descriptions', () => {
     const result = updateRelease({
       ...info,
       releaseNotes:
-        '<h2>New</h2><ul><li>Search</li><li>Editing</li></ul><script>bad()</script><img src="https://tracking.invalid/a" onerror="bad()">',
+        '<h2>New</h2><ul><li><strong>Search</strong> with <code>Cmd K</code></li><li>Editing</li></ul><script>bad()</script><img src="https://tracking.invalid/a" onerror="bad()">',
     })
-    expect(result.notes).toContain('• Search\n• Editing')
+    expect(result.notes).toContain('## New\n- **Search** with `Cmd K`\n- Editing')
     expect(result.notes).not.toMatch(/bad|<|tracking/)
   })
   it('accepts Markdown and selects only the current release from a changelog', () => {
     expect(updateRelease({ ...info, releaseNotes: '## Fixes\n- **Search** works' }).notes).toBe(
-      'Fixes\n- Search works',
+      '## Fixes\n- **Search** works',
     )
     expect(
       updateRelease({

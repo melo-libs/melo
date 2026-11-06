@@ -17,6 +17,10 @@ test('explicit release configuration bypasses the stale root fileset', async () 
   const require = createRequire(import.meta.url)
   const builderRequire = createRequire(require.resolve('electron-builder'))
   const { Packager } = builderRequire('app-builder-lib')
+  const yaml = builderRequire('js-yaml')
+  const base = yaml.load(
+    fs.readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8'),
+  )
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'melo-release-config-'))
   try {
     const compiled = path.join(directory, 'staged', 'out')
@@ -33,7 +37,11 @@ test('explicit release configuration bypasses the stale root fileset', async () 
     fs.writeFileSync(path.join(directory, 'electron-builder.yml'), 'files:\n  - out/**/*\n')
     fs.writeFileSync(
       configurationFile,
-      JSON.stringify({ extends: null, files: releaseFiles(compiled), mac: { notarize: false } }),
+      JSON.stringify({
+        extends: null,
+        files: releaseFiles(compiled, base.files),
+        mac: { notarize: false },
+      }),
     )
     const packager = new Packager({
       projectDir: directory,
@@ -44,7 +52,12 @@ test('explicit release configuration bypasses the stale root fileset', async () 
     const rootPatterns = packager.config.files
       .filter((entry) => !entry.from)
       .flatMap((entry) => entry.filter)
-    assert.deepEqual(rootPatterns, ['resources/**/*', 'package.json'])
+    assert.deepEqual(
+      rootPatterns,
+      base.files.filter((entry) => entry !== 'out/**/*'),
+    )
+    assert(rootPatterns.includes('!node_modules/@anthropic-ai/claude-agent-sdk-*/**/*'))
+    assert(rootPatterns.includes('!node_modules/@openai/**/vendor/**/*'))
     const staged = packager.config.files.find((entry) => entry.from === compiled)
     assert.equal(staged.to, 'out')
     assert.deepEqual(staged.filter, ['**/*'])

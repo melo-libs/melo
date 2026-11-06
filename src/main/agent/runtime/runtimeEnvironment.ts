@@ -1,16 +1,18 @@
 import { execFile } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
-import { access, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readdir, rename, rm, realpath } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { createRequire } from 'node:module'
+import type { AgentComponent, AgentComponents, AgentProvider } from '../../../shared/types/agent'
+import manifest from './runtimeManifest.json'
+import { downloadRuntimeArtifact, fileSize, type RuntimeArtifact } from './runtimeDownload'
 
 const execute = promisify(execFile)
 const NODE_VERSION = '24.14.0'
 const requireFromApp = createRequire(__filename)
-
-export function adapterEntry(provider: 'claude' | 'codex'): string {
+export function adapterEntry(provider: AgentProvider): string {
   const packageName =
     provider === 'claude'
       ? '@agentclientprotocol/claude-agent-acp'
@@ -19,16 +21,155 @@ export function adapterEntry(provider: 'claude' | 'codex'): string {
     .resolve(`${packageName}/dist/index.js`)
     .replace('app.asar/', 'app.asar.unpacked/')
 }
+const emptyComponent = (): AgentComponent => ({
+  status: 'missing',
+  source: null,
+  transferred: 0,
+  total: 0,
+})
+const providers = ['claude', 'codex'] as const
 
 export class RuntimeEnvironment {
+  private cleaned = false
   private node: string | null = null
-  private installation: Promise<string> | null = null
-  constructor(private readonly directory: string) {}
-
+  private task: { provider: AgentProvider; abort: AbortController; promise: Promise<void> } | null =
+    null
+  private components: AgentComponents = { claude: emptyComponent(), codex: emptyComponent() }
+  private readonly executables = new Map<AgentProvider, string>()
+  private inspection: Promise<AgentComponents> | null = null
+  constructor(
+    private readonly directory: string,
+    private readonly publish: (components: AgentComponents) => void = () => {},
+  ) {}
   get installing(): boolean {
-    return this.installation !== null
+    return this.task !== null
   }
-
+  private artifacts() {
+    const target = `${process.platform}-${process.arch}`
+    if (!(target in manifest)) throw new Error('AGENT_RUNTIME_PLATFORM')
+    return manifest[target as keyof typeof manifest]
+  }
+  private destination(name: AgentProvider | 'node'): string {
+    return path.join(
+      this.directory,
+      `${name}-v${this.artifacts()[name].version}-${process.platform}-${process.arch}`,
+    )
+  }
+  private archive(name: AgentProvider | 'node'): string {
+    return this.destination(name) + '.tar.gz.part'
+  }
+  private update(provider: AgentProvider, value: Partial<AgentComponent>): void {
+    this.components = { ...this.components, [provider]: { ...this.components[provider], ...value } }
+    this.publish(this.components)
+  }
+  private async validExecutable(
+    executable: string,
+    version: string,
+    options: { timeout?: number; signal?: AbortSignal } = {},
+  ): Promise<boolean> {
+    try {
+      const { stdout } = await execute(executable, ['--version'], {
+        timeout: 5000,
+        ...options,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
+      })
+      return stdout.match(/\b\d+\.\d+\.\d+\b/)?.[0] === version
+    } catch {
+      return false
+    }
+  }
+  async requireProvider(provider: AgentProvider): Promise<string> {
+    const existing = this.executables.get(provider)
+    if (existing && (await this.validExecutable(existing, this.artifacts()[provider].version)))
+      return existing
+    this.executables.delete(provider)
+    const found = await this.findProvider(provider)
+    if (!found) throw new Error('AGENT_RUNTIME_REQUIRED')
+    return found.executable
+  }
+  private async findProvider(
+    provider: AgentProvider,
+    options: { timeout?: number; signal?: AbortSignal } = {},
+  ): Promise<{ executable: string; source: 'local' | 'managed' } | null> {
+    this.executables.delete(provider)
+    const artifact = this.artifacts()[provider]
+    const managed = path.join(this.destination(provider), artifact.executable)
+    if (await this.validExecutable(managed, artifact.version, options)) {
+      this.executables.set(provider, managed)
+      return { executable: managed, source: 'managed' }
+    }
+    options.signal?.throwIfAborted()
+    const dirs = [
+      path.join(os.homedir(), '.local/bin'),
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      ...(this.node ? [path.dirname(this.node)] : []),
+      ...String(process.env.PATH ?? '')
+        .split(path.delimiter)
+        .filter(Boolean),
+    ]
+    for (const directory of new Set(dirs)) {
+      options.signal?.throwIfAborted()
+      const executable = path.join(directory, provider)
+      if (await this.validExecutable(executable, artifact.version, { signal: options.signal })) {
+        this.executables.set(provider, executable)
+        return { executable, source: 'local' }
+      }
+    }
+    return null
+  }
+  async inspect(): Promise<AgentComponents> {
+    if (this.task) return this.components
+    if (this.inspection) return this.inspection
+    this.inspection = this.scan().finally(() => {
+      this.inspection = null
+    })
+    return this.inspection
+  }
+  private async scan(): Promise<AgentComponents> {
+    if (!this.cleaned) {
+      await mkdir(this.directory, { recursive: true, mode: 0o700 })
+      for (const entry of await readdir(this.directory, { withFileTypes: true })) {
+        if (entry.isDirectory() && /^install-[a-f0-9-]{36}$/.test(entry.name))
+          await rm(path.join(this.directory, entry.name), { recursive: true, force: true })
+      }
+      this.cleaned = true
+    }
+    if (!(`${process.platform}-${process.arch}` in manifest)) {
+      for (const provider of providers)
+        this.components[provider] = {
+          ...emptyComponent(),
+          status: 'error',
+          error: 'AGENT_RUNTIME_PLATFORM',
+        }
+      return this.components
+    }
+    const node = await this.findNode()
+    for (const provider of providers) {
+      const found = await this.findProvider(provider)
+      const artifact = this.artifacts()[provider]
+      const previous = this.components[provider]
+      const total = (node ? 0 : this.artifacts().node.bytes) + (found ? 0 : artifact.bytes)
+      const transferred =
+        (node ? 0 : await fileSize(this.archive('node'))) +
+        (found ? 0 : await fileSize(this.archive(provider)))
+      this.components[provider] = {
+        status:
+          node && found
+            ? 'ready'
+            : previous.status === 'error'
+              ? 'error'
+              : transferred
+                ? 'paused'
+                : 'missing',
+        source: found?.source ?? null,
+        total,
+        transferred,
+        ...(previous.status === 'error' ? { error: previous.error } : {}),
+      }
+    }
+    return { ...this.components }
+  }
   async findNode(): Promise<string | null> {
     if (this.node) return this.node
     const managed = path.join(
@@ -74,67 +215,109 @@ export class RuntimeEnvironment {
     return node
   }
 
-  install(): Promise<string> {
-    if (this.installation) return this.installation
-    this.installation = this.download().finally(() => {
-      this.installation = null
+  async install(provider: AgentProvider): Promise<void> {
+    if (this.task) {
+      if (this.task.provider !== provider) throw new Error('AGENT_DOWNLOAD_BUSY')
+      return this.task.promise
+    }
+    await this.inspect()
+    // Another caller may have claimed the shared runtime while inspection ran.
+    if (this.task) return this.install(provider)
+    if (this.components[provider].status === 'ready') return
+    const abort = new AbortController()
+    const promise = this.prepare(provider, abort.signal).finally(() => {
+      this.task = null
     })
-    return this.installation
+    this.task = { provider, abort, promise }
+    return promise
   }
-
-  private async download(): Promise<string> {
-    if (!['darwin', 'linux'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch))
-      throw new Error('Unsupported agent runtime platform')
-    const name = `node-v${NODE_VERSION}-${process.platform}-${process.arch}`
-    const filename = `${name}.tar.gz`
-    const base = `https://nodejs.org/dist/v${NODE_VERSION}/`
-    await mkdir(this.directory, { recursive: true })
-    const staging = path.join(this.directory, `install-${randomUUID()}`)
-    await mkdir(staging)
+  cancel(provider: AgentProvider): void {
+    if (this.task?.provider === provider) this.task.abort.abort()
+  }
+  private async prepare(provider: AgentProvider, signal: AbortSignal): Promise<void> {
+    this.update(provider, { status: 'downloading', error: undefined })
     try {
-      const checksums = await fetch(`${base}SHASUMS256.txt`, {
-        signal: AbortSignal.timeout(30_000),
-      })
-      if (!checksums.ok) throw new Error('Could not retrieve runtime checksums')
-      const expected = (await checksums.text())
-        .split('\n')
-        .find((line) => line.endsWith(`  ${filename}`))
-        ?.split(' ')[0]
-      if (!expected || !/^[a-f0-9]{64}$/.test(expected)) throw new Error('Runtime checksum missing')
-      const response = await fetch(base + filename, { signal: AbortSignal.timeout(180_000) })
-      if (!response.ok || !response.body) throw new Error('Runtime download failed')
-      const chunks: Uint8Array[] = []
-      let bytes = 0
-      for await (const chunk of response.body) {
-        bytes += chunk.length
-        if (bytes > 100 * 1024 * 1024) throw new Error('Runtime archive too large')
-        chunks.push(chunk)
+      const needed: (AgentProvider | 'node')[] = []
+      if (!(await this.findNode())) needed.push('node')
+      if (!this.executables.has(provider)) needed.push(provider)
+      const total = needed.reduce((sum, name) => sum + this.artifacts()[name].bytes, 0)
+      let completed = 0
+      for (const name of needed) {
+        const artifact = this.artifacts()[name]
+        let last = 0
+        await downloadRuntimeArtifact(artifact, this.archive(name), signal, (bytes) => {
+          const now = Date.now()
+          if (now - last < 100 && bytes !== artifact.bytes) return
+          last = now
+          this.update(provider, { status: 'downloading', total, transferred: completed + bytes })
+        })
+        this.update(provider, { status: 'preparing' })
+        await this.extract(name, artifact, signal)
+        completed += artifact.bytes
+        if (name === 'node') this.node = path.join(this.destination(name), artifact.executable)
       }
-      const archive = Buffer.concat(chunks)
-      if (createHash('sha256').update(archive).digest('hex') !== expected)
-        throw new Error('Runtime checksum mismatch')
-      const archivePath = path.join(staging, filename)
-      await writeFile(archivePath, archive)
-      await execute('tar', ['-xzf', archivePath, '-C', staging], { timeout: 30_000 })
-      const executable = path.join(staging, name, 'bin/node')
-      await access(executable)
-      const { stdout } = await execute(executable, ['-p', 'process.versions.node'], {
-        timeout: 5000,
+      signal.throwIfAborted()
+      // Moving the executable can trigger another first-launch check on macOS.
+      const found = await this.findProvider(provider, { timeout: 60_000, signal })
+      if (!found) throw new Error('AGENT_RUNTIME_INSTALL_FAILED')
+      signal.throwIfAborted()
+      this.update(provider, {
+        status: 'ready',
+        source: found.source,
+        transferred: total,
+        total,
       })
-      if (stdout.trim() !== NODE_VERSION) throw new Error('Downloaded runtime version mismatch')
-      const destination = path.join(this.directory, name)
-      try {
-        await rename(path.join(staging, name), destination)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw error
-        const existing = await execute(
-          path.join(destination, 'bin/node'),
-          ['-p', 'process.versions.node'],
-          { timeout: 5000 },
-        )
-        if (existing.stdout.trim() !== NODE_VERSION) throw error
-      }
-      return (this.node = path.join(destination, 'bin/node'))
+    } catch (error) {
+      const code =
+        error instanceof Error && error.message.startsWith('AGENT_')
+          ? error.message
+          : 'AGENT_DOWNLOAD_NETWORK'
+      this.update(provider, {
+        status: signal.aborted ? 'paused' : 'error',
+        error: signal.aborted ? undefined : code,
+      })
+      throw new Error(signal.aborted ? 'AGENT_DOWNLOAD_CANCELLED' : code, { cause: error })
+    }
+  }
+  private async extract(
+    name: AgentProvider | 'node',
+    artifact: RuntimeArtifact,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const staging = path.join(this.directory, `install-${randomUUID()}`)
+    await mkdir(staging, { recursive: true, mode: 0o700 })
+    try {
+      const archive = this.archive(name)
+      // Only pinned, fully verified archives reach tar. Reject traversal before extraction.
+      const { stdout } = await execute('tar', ['-tzf', archive], {
+        signal,
+        maxBuffer: 8 * 1024 * 1024,
+      })
+      if (
+        stdout
+          .split('\n')
+          .filter(Boolean)
+          .some((entry) => path.isAbsolute(entry) || entry.split('/').includes('..'))
+      )
+        throw new Error('AGENT_DOWNLOAD_INTEGRITY')
+      await execute(
+        'tar',
+        ['-xzf', archive, '-C', staging, '--strip-components=1', '--no-same-owner'],
+        { signal, timeout: 120_000 },
+      )
+      const executable = path.join(staging, artifact.executable)
+      const resolved = await realpath(executable)
+      if (
+        !resolved.startsWith((await realpath(staging)) + path.sep) ||
+        // First launch may include macOS verification or Rosetta translation.
+        !(await this.validExecutable(executable, artifact.version, { timeout: 60_000, signal }))
+      )
+        throw new Error('AGENT_RUNTIME_INSTALL_FAILED')
+      signal.throwIfAborted()
+      // A failed previous installation is never treated as usable.
+      await rm(this.destination(name), { recursive: true, force: true })
+      await rename(staging, this.destination(name))
+      await rm(archive, { force: true })
     } finally {
       await rm(staging, { recursive: true, force: true })
     }

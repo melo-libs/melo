@@ -8,12 +8,7 @@
   font-size: 13px;
 
   .updates-titlebar {
-    flex: 0 0 48px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    color: var(--ink-2);
-    font-size: 12px;
+    flex: 0 0 40px;
     -webkit-app-region: drag;
   }
 
@@ -21,103 +16,133 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 16px 24px 28px;
+    gap: 24px;
+    padding: 16px 32px 24px;
 
-    svg {
+    > svg {
       flex-shrink: 0;
     }
-
     h1 {
       margin: 0 0 6px;
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 650;
-      line-height: 26px;
+      line-height: 28px;
     }
-
     p {
-      display: flex;
-      flex-wrap: wrap;
-      column-gap: 12px;
       margin: 0;
       color: var(--ink-3);
-      font-size: 12px;
+      font-size: 13px;
       line-height: 20px;
     }
-
     strong {
       color: var(--ink-2);
       font-weight: 600;
     }
   }
-
   .updates-heading-text {
     min-width: 0;
   }
-
-  // Version and release date describe the same release; keep them together when the row wraps.
   .updates-release-meta {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 8px;
-    white-space: nowrap;
+    gap: 6px;
   }
 
   h2 {
-    margin: 0;
-    color: var(--ink);
+    margin: 20px 0 8px;
+    color: var(--ink-3);
     font-size: 13px;
     line-height: 20px;
     font-weight: 600;
   }
-
   .updates-content {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 0 24px 24px;
+    margin: 0 32px;
+    padding: 20px 0 8px;
+    border-top: 1px solid var(--hairline);
     scrollbar-gutter: stable;
-
     &::-webkit-scrollbar-thumb {
       background-color: var(--hairline-2);
     }
-
     &:focus-visible {
       outline: 2px solid var(--accent-line);
       outline-offset: -2px;
     }
   }
-
-  .updates-notes-heading {
-    margin-bottom: 12px;
-  }
-
   .updates-notes-text {
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
     color: var(--ink-2);
-    line-height: 22px;
+    line-height: 24px;
     user-select: text;
+    > :first-child {
+      margin-top: 0;
+    }
+    p {
+      margin: 0 0 8px;
+      white-space: pre-wrap;
+    }
+    ul,
+    ol {
+      margin: 8px 0 16px;
+      padding-left: 18px;
+    }
+    ul {
+      list-style: disc;
+    }
+    ol {
+      list-style: decimal;
+    }
+    li {
+      padding-left: 2px;
+      margin-bottom: 8px;
+    }
+    li::marker {
+      color: var(--ink-4);
+    }
+    li p {
+      margin: 0;
+    }
+    strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--paper-2);
+      border-radius: var(--r-sm);
+      padding: 1px 4px;
+    }
+    pre {
+      white-space: pre-wrap;
+    }
   }
-
-  .updates-notes a {
-    display: inline-block;
-    margin-top: 16px;
+  .updates-notes-link,
+  .updates-result a {
     color: var(--ink-2);
     font-size: 12px;
+    line-height: 20px;
     text-decoration: underline;
     text-underline-offset: 3px;
-
     &:hover {
       color: var(--ink);
     }
   }
-
+  .updates-notes-link {
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin: 12px 32px 16px;
+  }
   .updates-guide {
     margin-bottom: 24px;
     padding-bottom: 20px;
     border-bottom: 1px solid var(--hairline);
-
+    h2 {
+      margin-top: 0;
+    }
     ol {
       list-style: decimal;
       margin: 12px 0;
@@ -125,7 +150,6 @@
       color: var(--ink-2);
       line-height: 24px;
     }
-
     li {
       padding-left: 4px;
     }
@@ -135,81 +159,144 @@
       font-size: 12px;
     }
   }
-
-  .updates-result-detail {
-    margin: 0;
-    color: var(--ink-2);
-    line-height: 24px;
-  }
-
-  .updates-footer {
-    position: relative;
-    flex-shrink: 0;
-    padding: 16px 24px 20px;
-
-    &::before {
-      position: absolute;
-      inset: 0 24px auto;
-      height: 1px;
-      background: var(--hairline);
-      content: '';
+  .updates-result {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    .updates-result-detail {
+      display: inline;
+      margin: 0;
+      color: var(--ink-2);
+      line-height: 24px;
     }
-
+    a {
+      display: inline-block;
+      margin-left: 8px;
+    }
+  }
+  .updates-indicator {
+    display: inline-block;
+    flex: 0 0 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ink-4);
+    &.is-success {
+      background: var(--status-success);
+    }
+    &.is-error {
+      background: var(--status-warning);
+    }
+    &.is-checking {
+      flex-basis: 14px;
+      width: 14px;
+      height: 14px;
+      align-self: center;
+      background: transparent;
+      border: 2px solid var(--hairline);
+      border-top-color: var(--melo-gold);
+      animation: updates-spin 1s linear infinite;
+    }
+  }
+  .updates-footer {
+    flex-shrink: 0;
+    border-top: 1px solid var(--hairline);
+    padding: 16px 32px 20px;
     p {
-      margin: 0 0 12px;
+      margin: 0;
       line-height: 20px;
     }
     progress {
+      appearance: none;
       display: block;
       width: 100%;
       height: 4px;
-      margin: 0 0 16px;
-      accent-color: var(--ink);
+      margin-top: 8px;
+      border: 0;
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      &::-webkit-progress-bar {
+        background: var(--hairline);
+      }
+      &::-webkit-progress-value {
+        background: var(--melo-gold);
+        border-radius: var(--r-sm);
+      }
     }
   }
-
   .updates-status {
     color: var(--ink-2);
     font-size: 12px;
   }
-  .updates-error {
-    color: var(--ink);
+  .updates-ready {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
-
+  .updates-error {
+    color: var(--ink-2);
+    margin-bottom: 12px !important;
+  }
+  .updates-download {
+    flex: 1;
+    min-width: 0;
+    .updates-status {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .updates-status > :last-child {
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink-3);
+    }
+  }
   .updates-actions,
   .updates-primary-actions {
     display: flex;
     align-items: center;
     gap: 8px;
   }
-
   .updates-actions {
     justify-content: space-between;
-    column-gap: 16px;
+    column-gap: 24px;
   }
-
   .updates-primary-actions {
     flex-shrink: 0;
+    margin-left: auto;
   }
-
   .updates-dismiss {
+    background: var(--paper-2);
+    border-color: var(--hairline-3);
     min-width: 64px;
-    border-color: transparent;
     font-weight: 500;
   }
-
-  // The approved update-window design uses Melo's quiet ink CTA, not the blue settings action.
+  // The approved update design uses ink actions and brand-yellow progress.
   .updates-confirm:not(:disabled) {
     border-color: var(--ink);
     background: var(--ink);
     color: var(--paper);
-
     &:hover {
       border-color: var(--ink-2);
       background: var(--ink-2);
     }
   }
-
+  .updates-auto {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink-2);
+    font-size: 12px;
+    cursor: pointer;
+    input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--ink);
+      cursor: inherit;
+    }
+  }
   .updates-text-action {
     display: block;
     min-width: 0;
@@ -224,7 +311,6 @@
     font-weight: 400;
     line-height: 20px;
     cursor: pointer;
-
     &:not(:disabled):hover {
       background: transparent;
       color: var(--ink);
@@ -242,38 +328,47 @@
       cursor: default;
     }
   }
-
+  .updates-secondary-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 8px;
+    .updates-text-action {
+      margin-top: 0;
+      height: 20px;
+    }
+  }
   .updates-ignore {
     margin: 0;
     white-space: nowrap;
   }
-
-  // A check result has no release notes; keep it in the same visual family without a blank panel.
   &.updates-window-compact {
     .updates-heading {
-      padding-bottom: 16px;
+      padding-bottom: 20px;
     }
-
     .updates-content {
       flex: 0 1 auto;
-      padding: 0 24px 0 78px;
+      margin: 0;
+      padding: 0 32px 0 104px;
+      border: 0;
       scrollbar-gutter: auto;
     }
-
     .updates-footer {
       margin-top: auto;
-
-      &::before {
-        content: none;
-      }
+      border: 0;
     }
-
-    .updates-result-actions {
-      justify-content: flex-end;
-    }
-
     .updates-result-close {
       min-width: 72px;
     }
+  }
+}
+@keyframes updates-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .updates-window .updates-indicator.is-checking {
+    animation: none;
   }
 }

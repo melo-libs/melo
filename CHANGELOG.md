@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.1](https://github.com/melo-libs/melo/compare/v2.1.0...v2.1.1) (2026-11-06)
+
+- Download native AI tools on first connection, with progress, cancellation, retry, background downloads, and reuse of compatible local installations.
+- Clarified disconnected and empty conversation states while preserving the existing model controls.
+- Redesigned update feedback, release notes, background downloading, and restart actions.
+- Added click-below-content editing, simplified search previews, and reused captured website icons in web clip properties.
+
+## [2.1.0](https://github.com/melo-libs/melo/compare/v2.0.3...v2.1.0) (2026-11-05)
+
+- Added the Melo workspace assistant with Claude Code and Codex connections, active-document context, attachments, and conversational file organization.
+- Added a floating assistant with activity states and persistent conversations.
+- Added inline document tags, tag suggestions, and Ask Melo integration in workspace search.
+- Improved file-processing feedback, conversation placement, and document-switching focus behavior.
+
 ## [2.0.3](https://github.com/melo-libs/melo/compare/v2.0.2...v2.0.3) (2026-10-23)
 
 - Added a final onboarding page showing that notes, PDFs, Office documents, images, and videos can be managed in one workspace.

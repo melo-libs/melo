@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { IpcChannels } from '@shared/types/ipc'
 import { useUpdateState } from '../../hooks/useUpdateState'
 import { cn } from '../../lib/cn'
-import { resolveTheme, settingsAtom } from '../../store/settings'
+import { resolveTheme, setSetting, settingsAtom } from '../../store/settings'
 import { MeloLogo } from '../MeloLogo'
 import { Button } from '../ui/Button'
+import { ReleaseNotes } from './ReleaseNotes'
 import './updates.scss'
 
 export function UpdatesRoot() {
@@ -37,7 +38,13 @@ export function UpdatesRoot() {
           : null)
   const checkFailed = !release && failure === 'check'
   const installFailed = !release && failure === 'install'
-  const canRetryCheck = !release && !checkBusy && (failure !== null || state.check !== 'up-to-date')
+  const canRetryCheck =
+    !release &&
+    !checkBusy &&
+    state.check !== 'disabled' &&
+    (failure !== null || state.check !== 'up-to-date')
+  const upToDate = !release && state.check === 'up-to-date' && !failure
+  const disabled = !release && state.check === 'disabled'
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)')
@@ -112,37 +119,50 @@ export function UpdatesRoot() {
       }).format(new Date(release.date))
     : null
   const error = failure ? t(`updates.${failure}Failed`) : null
-  const status = progress
-    ? t('updates.downloading', { version: progress.version })
-    : ready
-      ? t(state.installation === 'opened' ? 'updates.installerOpened' : 'updates.downloaded', {
-          version: ready.release.version,
-        })
-      : checkBusy
-        ? t('updates.checking')
-        : null
+  const status = ready
+    ? t(
+        state.installation === 'opened'
+          ? 'updates.installerOpened'
+          : ready.install === 'manual'
+            ? 'updates.downloaded'
+            : 'updates.readyToRestart',
+        { version: ready.release.version },
+      )
+    : null
   const resultTitle = checkBusy
-    ? t('updates.checking')
+    ? 'Melo'
     : installFailed
       ? t('updates.installFailedTitle')
       : checkFailed
         ? t('updates.checkFailedTitle')
-        : state.check === 'up-to-date' && !failure
+        : upToDate
           ? t('updates.upToDate')
           : 'Melo'
   const resultDetail = checkBusy
-    ? null
+    ? t('updates.checking')
     : installFailed
       ? t('updates.invalidInstaller')
       : checkFailed
         ? t('updates.checkFailedDetail')
-        : (error ?? (state.check === 'disabled' ? t('updates.disabled') : null))
+        : (error ?? (disabled ? t('updates.disabled') : upToDate ? t('updates.justChecked') : null))
+  const notesUrl = (version: string) =>
+    `https://github.com/melo-libs/melo/releases/tag/v${encodeURIComponent(version)}`
+  const openNotes = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault()
+    void window.api.invoke(IpcChannels.InvokeOpenExternal, { url: event.currentTarget.href })
+  }
+  const downloadAmount =
+    progress && progress.total && progress.transferred !== undefined
+      ? `${Math.floor(progress.transferred / 1048576)} / ${Math.ceil(progress.total / 1048576)} MB`
+      : progress
+        ? `${progress.percent}%`
+        : ''
 
   return (
     <div className={cn('updates-window', !release && 'updates-window-compact')}>
-      <div className="updates-titlebar">{t('updates.title')}</div>
+      <div className="updates-titlebar" aria-hidden="true" />
       <header className="updates-heading">
-        <MeloLogo size={40} />
+        <MeloLogo size={48} />
         <div className="updates-heading-text">
           <h1 role={!release ? (failure && !checkBusy ? 'alert' : 'status') : undefined}>
             {release ? t('updates.available') : resultTitle}
@@ -150,6 +170,12 @@ export function UpdatesRoot() {
           <p>
             {release && (
               <span className="updates-release-meta">
+                {currentVersion && (
+                  <>
+                    <span>{currentVersion}</span>
+                    <span aria-hidden="true">→</span>
+                  </>
+                )}
                 <strong>{release.version}</strong>
                 {date && (
                   <>
@@ -158,14 +184,20 @@ export function UpdatesRoot() {
                       dateTime={release.date ?? undefined}
                       aria-label={t('updates.releaseDate', { date })}
                     >
-                      {date}
+                      {t('updates.releaseDate', { date })}
                     </time>
                   </>
                 )}
               </span>
             )}
-            {currentVersion && (
-              <span>{t('updates.currentVersion', { version: currentVersion })}</span>
+            {!release && currentVersion && (
+              <span>
+                {upToDate
+                  ? `Melo ${currentVersion}`
+                  : t(disabled ? 'updates.devVersion' : 'updates.currentVersion', {
+                      version: currentVersion,
+                    })}
+              </span>
             )}
           </p>
         </div>
@@ -188,26 +220,39 @@ export function UpdatesRoot() {
           </section>
         )}
         {release && (
-          <section className="updates-notes" aria-labelledby="release-notes-heading">
-            <h2 id="release-notes-heading" className="updates-notes-heading">
-              {t('updates.releaseNotes')}
-            </h2>
-            <div className="updates-notes-text">{release.notes || t('updates.noReleaseNotes')}</div>
-            <a
-              href={`https://github.com/melo-libs/melo/releases/tag/v${release.version}`}
-              onClick={(event) => {
-                event.preventDefault()
-                void window.api.invoke(IpcChannels.InvokeOpenExternal, {
-                  url: event.currentTarget.href,
-                })
-              }}
-            >
-              {t('updates.fullReleaseNotes')}
-            </a>
+          <section className="updates-notes" aria-label={t('updates.releaseNotes')}>
+            <div className="updates-notes-text">
+              <ReleaseNotes notes={release.notes || t('updates.noReleaseNotes')} />
+            </div>
           </section>
         )}
-        {!release && resultDetail && <p className="updates-result-detail">{resultDetail}</p>}
+        {!release && resultDetail && (
+          <div className="updates-result" role={failure && !checkBusy ? 'alert' : 'status'}>
+            <span
+              aria-hidden="true"
+              className={cn(
+                'updates-indicator',
+                checkBusy && 'is-checking',
+                upToDate && 'is-success',
+                failure && !checkBusy && 'is-error',
+              )}
+            />
+            <div>
+              <p className="updates-result-detail">{resultDetail}</p>
+              {upToDate && currentVersion && (
+                <a href={notesUrl(currentVersion)} onClick={openNotes}>
+                  {t('updates.currentReleaseNotes')}
+                </a>
+              )}
+            </div>
+          </div>
+        )}
       </main>
+      {release && (
+        <a className="updates-notes-link" href={notesUrl(release.version)} onClick={openNotes}>
+          {t('updates.fullReleaseNotes')} ↗
+        </a>
+      )}
 
       <footer className="updates-footer">
         {release && error && (
@@ -215,21 +260,25 @@ export function UpdatesRoot() {
             {error}
           </p>
         )}
-        {release && status && (
-          <p className="updates-status" role="status">
-            {status}
-            {progress && ` ${progress.percent}%`}
-          </p>
-        )}
-        {state.download.status === 'downloading' && (
-          <progress
-            max={100}
-            value={state.download.percent}
-            aria-label={t('updates.downloading', { version: state.download.version })}
-          />
-        )}
         <div className={cn('updates-actions', !release && 'updates-result-actions')}>
-          {release && (
+          {progress ? (
+            <div className="updates-download">
+              <p className="updates-status" role="status">
+                <span>{t('updates.downloading', { version: progress.version })}</span>
+                <span>{downloadAmount}</span>
+              </p>
+              <progress
+                max={100}
+                value={progress.percent}
+                aria-label={t('updates.downloading', { version: progress.version })}
+              />
+            </div>
+          ) : ready ? (
+            <p className="updates-status updates-ready" role="status">
+              <span className="updates-indicator is-success" aria-hidden="true" />
+              {status}
+            </p>
+          ) : release ? (
             <Button
               className="updates-text-action updates-ignore"
               disabled={opening || checkBusy || ignoring}
@@ -237,23 +286,35 @@ export function UpdatesRoot() {
             >
               {t('updates.ignoreVersion')}
             </Button>
-          )}
+          ) : upToDate ? (
+            <label className="updates-auto">
+              <input
+                type="checkbox"
+                checked={settings.autoUpdate}
+                onChange={(event) => setSetting('autoUpdate', event.target.checked)}
+              />
+              {t('prefs.autoUpdate')}
+            </label>
+          ) : null}
           <div className="updates-primary-actions">
             <Button
-              variant={!release && !canRetryCheck ? 'primary' : 'secondary'}
+              variant={!release && !canRetryCheck && !checkBusy ? 'primary' : 'secondary'}
               className={
-                !release && !canRetryCheck
+                !release && !canRetryCheck && !checkBusy
                   ? 'updates-confirm updates-result-close'
                   : 'updates-dismiss'
               }
+              disabled={opening || ignoring}
               onClick={close}
             >
               {t(
-                release
-                  ? 'updates.later'
-                  : state.check === 'up-to-date' && !failure
-                    ? 'updates.done'
-                    : 'updates.close',
+                progress
+                  ? 'updates.backgroundDownload'
+                  : release
+                    ? 'updates.later'
+                    : upToDate || disabled
+                      ? 'updates.done'
+                      : 'updates.close',
               )}
             </Button>
             {canRetryCheck && (
@@ -280,43 +341,48 @@ export function UpdatesRoot() {
                       : 'updates.restart',
                 )}
               </Button>
-            ) : (
-              release && (
-                <Button
-                  variant="primary"
-                  className="updates-confirm"
-                  disabled={downloading || checkBusy || ignoring}
-                  onClick={() => void download()}
-                >
-                  {t(
-                    downloading
-                      ? 'prefs.downloadingUpdate'
-                      : state.download.status === 'error'
-                        ? 'updates.retry'
-                        : 'updates.download',
-                  )}
-                </Button>
-              )
-            )}
+            ) : release && !downloading ? (
+              <Button
+                variant="primary"
+                className="updates-confirm"
+                disabled={checkBusy || ignoring}
+                onClick={() => void download()}
+              >
+                {t(state.download.status === 'error' ? 'updates.retry' : 'updates.download')}
+              </Button>
+            ) : null}
           </div>
         </div>
-        {ready?.install === 'manual' && (
-          <Button
-            className="updates-text-action"
-            disabled={opening}
-            onClick={() => void install(ready.release.version, true)}
-          >
-            {t('updates.showInstaller')}
-          </Button>
-        )}
-        {!ready && state.ready && (
-          <Button
-            className="updates-text-action"
-            disabled={opening || downloading}
-            onClick={() => void install(state.ready!.release.version)}
-          >
-            {t('updates.installCached', { version: state.ready.release.version })}
-          </Button>
+        {(progress || ready || state.ready) && (
+          <div className="updates-secondary-actions">
+            {release && (progress || ready) && (
+              <Button
+                className="updates-text-action updates-ignore"
+                disabled={opening || checkBusy || ignoring}
+                onClick={() => void ignore(release.version)}
+              >
+                {t('updates.ignoreVersion')}
+              </Button>
+            )}
+            {ready?.install === 'manual' && (
+              <Button
+                className="updates-text-action"
+                disabled={opening || ignoring}
+                onClick={() => void install(ready.release.version, true)}
+              >
+                {t('updates.showInstaller')}
+              </Button>
+            )}
+            {!ready && state.ready && (
+              <Button
+                className="updates-text-action"
+                disabled={opening || downloading || ignoring}
+                onClick={() => void install(state.ready!.release.version)}
+              >
+                {t('updates.installCached', { version: state.ready.release.version })}
+              </Button>
+            )}
+          </div>
         )}
       </footer>
     </div>

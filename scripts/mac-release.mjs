@@ -72,8 +72,11 @@ export async function sha512(file) {
   return hash.digest('base64')
 }
 
-export function releaseFiles(compiled) {
-  return [{ from: compiled, to: 'out', filter: ['**/*'] }, 'resources/**/*', 'package.json']
+export function releaseFiles(compiled, files) {
+  return [
+    { from: compiled, to: 'out', filter: ['**/*'] },
+    ...files.filter((entry) => entry !== 'out/**/*'),
+  ]
 }
 
 async function verifyArtifacts(output, architectures, nativeUpdates, compiledFiles) {
@@ -192,7 +195,7 @@ async function buildMac(args) {
       extends: null,
       appId: APP_ID,
       directories: { ...base.directories, output },
-      files: releaseFiles(compiled),
+      files: releaseFiles(compiled, base.files),
       compression: 'normal',
       extraMetadata: { meloMacNativeUpdates: !unsigned },
       artifactName: '${name}-${version}-${arch}.${ext}',

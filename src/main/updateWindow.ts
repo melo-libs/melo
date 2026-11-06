@@ -9,7 +9,7 @@ let focusRequested = false
 let releaseVisible = false
 
 const COMPACT_HEIGHT = 260
-const RELEASE_HEIGHT = 520
+const RELEASE_HEIGHT = 620
 const RELEASE_MIN_HEIGHT = 460
 
 export function resizeUpdateWindow(expanded: boolean): void {

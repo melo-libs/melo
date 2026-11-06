@@ -24,8 +24,9 @@ async function inspectLayout(url) {
   const failures = []
   try {
     for (const scenario of [
-      { name: 'zh-light', language: 'zh-CN', theme: 'light' },
-      { name: 'en-light', language: 'en', theme: 'light' },
+      { name: 'zh-light', language: 'zh-CN', theme: 'light', available: true },
+      { name: 'zh-ready', language: 'zh-CN', theme: 'light' },
+      { name: 'en-light', language: 'en', theme: 'light', available: true },
       { name: 'zh-dark', language: 'zh-CN', theme: 'dark' },
       { name: 'en-dark', language: 'en', theme: 'dark' },
       { name: 'en-manual-narrow', language: 'en', theme: 'light', manual: true, narrow: true },
@@ -35,11 +36,25 @@ async function inspectLayout(url) {
       { name: 'en-downloading', language: 'en', theme: 'light', downloading: true },
       { name: 'zh-up-to-date', language: 'zh-CN', theme: 'light', check: 'up-to-date' },
       { name: 'en-up-to-date', language: 'en', theme: 'light', check: 'up-to-date' },
+      {
+        name: 'en-up-to-date-narrow',
+        language: 'en',
+        theme: 'light',
+        check: 'up-to-date',
+        narrow: true,
+      },
       { name: 'en-up-to-date-dark', language: 'en', theme: 'dark', check: 'up-to-date' },
       { name: 'zh-checking', language: 'zh-CN', theme: 'light', check: 'checking' },
       { name: 'en-check-error', language: 'en', theme: 'light', check: 'error' },
       { name: 'zh-check-error-dark', language: 'zh-CN', theme: 'dark', check: 'error' },
       { name: 'en-disabled', language: 'en', theme: 'light', check: 'disabled' },
+      {
+        name: 'en-disabled-narrow',
+        language: 'en',
+        theme: 'light',
+        check: 'disabled',
+        narrow: true,
+      },
       {
         name: 'en-missing-installer',
         language: 'en',
@@ -52,7 +67,7 @@ async function inspectLayout(url) {
       const page = await browser.newPage({
         viewport: {
           width: scenario.narrow ? 520 : 560,
-          height: scenario.check ? 260 : scenario.narrow ? 460 : 520,
+          height: scenario.check ? 260 : scenario.narrow ? 460 : 620,
         },
         deviceScaleFactor: 2,
       })
@@ -63,8 +78,8 @@ async function inspectLayout(url) {
           date: '2026-10-22',
           notes:
             fixture.language === 'en'
-              ? 'A quieter, more focused update experience.\n\n• Refined window layout and actions\n• Skip a version without repeated reminders\n• Clearer download and installation guidance'
-              : '更新体验，少一点打扰。\n\n• 优化更新窗口的布局与按钮\n• 支持忽略此版本，不再重复提醒\n• 改进下载与安装引导',
+              ? '## New features\n- **Melo conversations.** Ask about the document you’re reading, work on a draft, or organize files.\n- **Floating companion.** Melo stays nearby while you work.\n- **Connect Claude Code or Codex.** Sign in or connect with an API key.\n\n## Improvements\n- Edit tags directly above your document.'
+              : '## 新功能\n- **Melo 对话窗口。** 在侧边打开对话，问正在读的这篇文档；切换标签时 Melo 跟着当前文件走，选中一段文字按 `⌘ L` 就能发给它。\n- **悬浮小河豚。** 收起对话后，小河豚停在窗口右下角：在工作时会游动，等你确认时会鼓起来。\n- **在对话里整理文件。** 把文件或截图拖进对话，Melo 会给出名字和存放的文件夹，你确认后才移动。\n- **连接 Claude Code 或 Codex。** 可以用账号登录，也可以填 API 密钥。\n\n## 改进\n- 标签可以在笔记顶部直接点击修改，输入时会提示已有标签。',
         }
         if (fixture.long) release.notes = `${release.notes}\n\n`.repeat(12)
         if (fixture.unbroken) release.notes = `https://example.com/${'long-path-'.repeat(180)}`
@@ -79,7 +94,10 @@ async function inspectLayout(url) {
                 data: { language: fixture.language, resolved: fixture.language },
               }
             if (channel === 'invoke-get-settings')
-              return { success: true, data: { settings: { theme: fixture.theme } } }
+              return {
+                success: true,
+                data: { settings: { theme: fixture.theme, autoUpdate: true } },
+              }
             if (channel === 'invoke-get-update-state')
               return {
                 success: true,
@@ -91,10 +109,16 @@ async function inspectLayout(url) {
                   download: fixture.installError
                     ? { status: 'error', version: release.version }
                     : fixture.downloading
-                      ? { status: 'downloading', version: release.version, percent: 42 }
+                      ? {
+                          status: 'downloading',
+                          version: release.version,
+                          percent: 42,
+                          transferred: 34 * 1048576,
+                          total: 86 * 1048576,
+                        }
                       : { status: 'idle' },
                   ready:
-                    fixture.check || fixture.downloading
+                    fixture.check || fixture.downloading || fixture.available
                       ? null
                       : { release, install: fixture.manual ? 'manual' : 'in-app' },
                 },
@@ -104,7 +128,7 @@ async function inspectLayout(url) {
         }
       }, scenario)
       await page.goto(`${url}#updates`)
-      await page.locator(scenario.check ? '.updates-window-compact' : '.updates-ignore').waitFor()
+      await page.locator(scenario.check ? '.updates-window-compact' : '.updates-notes').waitFor()
       await page.evaluate(() => document.fonts.ready)
       await page.locator('.updates-heading p').filter({ hasText: '2.0.4' }).waitFor()
       await page
@@ -134,7 +158,10 @@ async function inspectLayout(url) {
         return {
           overflow: document.documentElement.scrollWidth > window.innerWidth,
           footer: box('.updates-footer'),
-          ignore: box('.updates-ignore'),
+          ignore: document
+            .querySelector('.updates-actions > .updates-ignore')
+            ?.getBoundingClientRect()
+            .toJSON(),
           actions: box('.updates-primary-actions'),
           content: box('.updates-content'),
           height: window.innerHeight,
@@ -142,7 +169,8 @@ async function inspectLayout(url) {
       })
       assert.equal(layout.overflow, false, scenario.name)
       assert(layout.footer.bottom <= layout.height, `${scenario.name}: footer is clipped`)
-      assert(layout.ignore.right < layout.actions.left, `${scenario.name}: actions overlap`)
+      if (layout.ignore)
+        assert(layout.ignore.right < layout.actions.left, `${scenario.name}: actions overlap`)
       assert(layout.content.height >= 100, `${scenario.name}: notes have too little room`)
       const version = await page.locator('.updates-release-meta strong').boundingBox()
       const date = await page.locator('.updates-release-meta time').boundingBox()
@@ -169,7 +197,7 @@ async function inspectLayout(url) {
         })
         const afterScroll = await page.locator('.updates-footer').boundingBox()
         assert.equal(afterScroll.y, layout.footer.y, `${scenario.name}: footer must not move`)
-        const link = await page.locator('.updates-notes a').boundingBox()
+        const link = await page.locator('.updates-notes-link').boundingBox()
         assert(link && link.y + link.height <= afterScroll.y, 'End of release notes is unreachable')
         await page.screenshot({ path: path.join(screenshots, `${scenario.name}-scrolled.png`) })
       }
@@ -292,12 +320,45 @@ try {
     (await app.windows()).filter((window) => window.url().endsWith('#updates')).length,
     0,
   )
+  const latest = {
+    revision: 102,
+    check: 'up-to-date',
+    release: null,
+    download: { status: 'idle' },
+    ready: null,
+    installation: 'idle',
+  }
+  await app.evaluate(({ ipcMain }, fixture) => {
+    ipcMain.removeHandler('invoke-get-update-state')
+    ipcMain.handle('invoke-get-update-state', () => ({ success: true, data: fixture }))
+  }, latest)
+  const [resultPage] = await Promise.all([app.waitForEvent('window'), open()])
+  await resultPage.waitForURL('**#updates')
+  const autoUpdate = resultPage.locator('.updates-auto input')
+  await autoUpdate.waitFor()
+  const previousAutoUpdate = await autoUpdate.isChecked()
+  await autoUpdate.setChecked(!previousAutoUpdate)
+  await resultPage.waitForFunction(async (expected) => {
+    const result = await window.api.invoke('invoke-get-settings')
+    return result.data.settings.autoUpdate === expected
+  }, !previousAutoUpdate)
+  await resultPage.reload()
+  await resultPage.locator('.updates-auto input').waitFor()
+  assert.equal(await resultPage.locator('.updates-auto input').isChecked(), !previousAutoUpdate)
+  await resultPage.screenshot({ path: path.join(testRoot, 'latest-persisted-setting.png') })
   assert.deepEqual(errors, [])
   console.log(
     JSON.stringify({
       ok: true,
       screenshots: testRoot,
-      checked: ['single-window', 'progress-to-install', 'zh-light', 'en-dark-narrow', 'later'],
+      checked: [
+        'single-window',
+        'progress-to-install',
+        'zh-light',
+        'en-dark-narrow',
+        'later',
+        'auto-update-persistence',
+      ],
       installation: 'not exercised',
     }),
   )

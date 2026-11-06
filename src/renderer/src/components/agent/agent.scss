@@ -373,6 +373,7 @@
 }
 .agent-connect-option {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 12px;
@@ -2177,4 +2178,35 @@
   align-items: center;
   gap: 3px;
   font-size: 11px;
+}
+
+.agent-runtime-progress {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  progress {
+    display: block;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    margin-top: 8px;
+    border: 0;
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    &::-webkit-progress-bar {
+      background: var(--paper-2);
+    }
+    &::-webkit-progress-value {
+      background: var(--ai);
+    }
+    &[data-paused]::-webkit-progress-value {
+      background: var(--ink-4);
+    }
+  }
+}
+.agent-connect-option > .agent-runtime-progress {
+  margin-left: 44px;
 }

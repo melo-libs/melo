@@ -19,6 +19,7 @@ import type { AgentProvider } from '@shared/types/agent'
 import { agentErrorText } from './agentError'
 import { AgentAccount } from './AgentAccount'
 import { AgentApiModelField } from './AgentApiModelField'
+import { AgentRuntimeProgress, runtimeWorking, runtimeMegabytes } from './AgentRuntimeProgress'
 import { toast } from '../Toaster'
 
 export function AgentSettings({
@@ -41,6 +42,8 @@ export function AgentSettings({
   const { t } = useTranslation()
   const setup = useAtomValue(agentSetupAtom)!
   const configuration = setup.configuration
+  const component = setup.components?.[configuration.provider]
+  const downloading = runtimeWorking(component)
   const presets = agentApiPresets(configuration.provider)
   const savedService = savedAgentApiService(
     configuration.provider,
@@ -96,7 +99,8 @@ export function AgentSettings({
       await work()
       return true
     } catch (error) {
-      setError(agentErrorText(error instanceof Error ? error.message : ''))
+      if (!(error instanceof Error && error.message === 'AGENT_DOWNLOAD_CANCELLED'))
+        setError(agentErrorText(error instanceof Error ? error.message : ''))
       return false
     } finally {
       working.current = null
@@ -160,26 +164,18 @@ export function AgentSettings({
             ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
           })
           savedAccess.current = access
+          if (!setup.runtimeAvailable) {
+            const installed = await agentCommand({
+              action: 'install',
+              provider: configuration.provider,
+            })
+            if (installed.setup?.components?.[configuration.provider].status !== 'ready') return
+          }
           setConnected(true)
         })
       }}
     >
       <div className="agent-settings-fields">
-        {!setup.runtimeAvailable && (
-          <div className="agent-runtime">
-            <p>{t('agent.installDescription')}</p>
-            <Button
-              disabled={busy}
-              onClick={() =>
-                void run('install', async () => {
-                  await agentCommand({ action: 'install' })
-                })
-              }
-            >
-              {t(pending === 'install' ? 'agent.installing' : 'agent.install')}
-            </Button>
-          </div>
-        )}
         <fieldset className="agent-tool-choice">
           <legend>Harness</legend>
           <div className="agent-tool-cards">
@@ -188,7 +184,9 @@ export function AgentSettings({
               const profile = setup.connectionProfiles?.[provider]
               const usesApi = selected ? configuration.access === 'api' : profile?.access === 'api'
               const apiConfigured = selected ? savedApiReady : profile?.apiConfigured
-              const status = !setup.runtimeAvailable
+              const status = !(setup.components
+                ? setup.components[provider].status === 'ready'
+                : setup.runtimeAvailable)
                 ? 'unavailable'
                 : usesApi
                   ? apiConfigured
@@ -259,6 +257,47 @@ export function AgentSettings({
             onChange={(value) => void chooseAccess(value)}
           />
         </div>
+        {!setup.runtimeAvailable && (
+          <div className="agent-runtime">
+            {component &&
+            ['downloading', 'preparing', 'paused', 'error'].includes(component.status) ? (
+              <AgentRuntimeProgress component={component} />
+            ) : (
+              <p>
+                {t(
+                  component?.source === 'local'
+                    ? 'agent.componentLocal'
+                    : 'agent.componentRequired',
+                  { size: runtimeMegabytes(component?.total ?? 0) },
+                )}
+              </p>
+            )}
+            <Button
+              disabled={!downloading && (busy || setup.installing)}
+              onClick={() =>
+                downloading
+                  ? void agentCommand({
+                      action: 'cancel-install',
+                      provider: configuration.provider,
+                    }).catch((error) => setError(agentErrorText(error.message)))
+                  : void run('install', async () => {
+                      await agentCommand({
+                        action: 'install',
+                        provider: configuration.provider,
+                      })
+                    })
+              }
+            >
+              {t(
+                downloading
+                  ? 'common.cancel'
+                  : component?.status === 'error' || component?.status === 'paused'
+                    ? 'agent.componentRetry'
+                    : 'agent.componentConnect',
+              )}
+            </Button>
+          </div>
+        )}
         {access === 'native' ? (
           <AgentAccount
             provider={configuration.provider}

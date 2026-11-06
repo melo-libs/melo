@@ -175,7 +175,7 @@ export async function downloadMacUpdate(
   artifact: MacUpdateArtifact,
   cacheDirectory: string,
   fetchInstaller: (url: string, init: RequestInit) => Promise<Response>,
-  onProgress: (percent: number) => void,
+  onProgress: (percent: number, transferred: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<DownloadedMacUpdate> {
   const directory = path.join(cacheDirectory, artifact.version)
@@ -218,7 +218,7 @@ export async function downloadMacUpdate(
         const percent = Math.min(99, Math.floor((received / artifact.size) * 100))
         if (percent !== lastPercent) {
           lastPercent = percent
-          onProgress(percent)
+          onProgress(percent, received, artifact.size)
         }
       }
     } finally {
@@ -229,7 +229,7 @@ export async function downloadMacUpdate(
       throw new Error('Installer integrity check failed')
     }
     await rename(partialPath, update.filePath)
-    onProgress(100)
+    onProgress(100, artifact.size, artifact.size)
     return update
   } finally {
     signal?.removeEventListener('abort', abort)

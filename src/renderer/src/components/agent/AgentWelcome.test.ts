@@ -97,3 +97,73 @@ it.each([true, false])(
     }
   },
 )
+
+it.each([false, true])(
+  'continues to login only while the welcome panel is visible (closed=%s)',
+  async (closed) => {
+    const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
+    vi.stubGlobal('window', window)
+    vi.stubGlobal('document', window.document)
+    const { createRoot } = await import('react-dom/client')
+    const { flushSync } = await import('react-dom')
+    const root = createRoot(window.document.getElementById('root')!)
+    const missing = {
+      status: 'missing' as const,
+      source: null,
+      transferred: 0,
+      total: 100,
+    }
+    const unconfigured = {
+      ...setup,
+      runtimeAvailable: false,
+      components: { claude: missing, codex: missing },
+    }
+    let complete!: (value: { setup: AgentSetup }) => void
+    const install = new Promise<{ setup: AgentSetup }>((resolve) => {
+      complete = resolve
+    })
+    vi.mocked(agentCommand).mockImplementation(async (command) =>
+      command.action === 'install' ? install : { authentication: { status: 'signed-out' } },
+    )
+    const onLogin = vi.fn().mockResolvedValue(undefined)
+    const onProvider = vi.fn().mockResolvedValue(true)
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(AgentWelcome, {
+            setup: unconfigured,
+            accounts: { claude: { status: 'signed-out' }, codex: { status: 'signed-out' } },
+            busy: false,
+            onProvider,
+            onLogin,
+            onCheck: vi.fn().mockResolvedValue(undefined),
+            onSettings: vi.fn(),
+          }),
+        ),
+      )
+      window.document.querySelector<HTMLButtonElement>('.agent-connect-option button')!.click()
+      await vi.waitFor(() =>
+        expect(agentCommand).toHaveBeenCalledWith({ action: 'install', provider: 'claude' }),
+      )
+      if (closed) flushSync(() => root.unmount())
+      complete({
+        setup: {
+          ...unconfigured,
+          runtimeAvailable: true,
+          components: {
+            ...unconfigured.components,
+            claude: { ...missing, status: 'ready', source: 'managed' },
+          },
+        },
+      })
+      if (closed) {
+        await install
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        expect(onLogin).not.toHaveBeenCalled()
+        expect(onProvider).not.toHaveBeenCalled()
+      } else await vi.waitFor(() => expect(onLogin).toHaveBeenCalledWith('claude'))
+    } finally {
+      if (!closed) flushSync(() => root.unmount())
+    }
+  },
+)

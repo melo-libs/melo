@@ -44,7 +44,6 @@ export const AgentWindow = () => {
     view,
     history,
     setup,
-    runtimeAvailable,
     root,
     busy,
     loading,
@@ -70,7 +69,7 @@ export const AgentWindow = () => {
     deleteMessage,
     cancel,
   } = useAgentController(setSettingsOpen, connectionBusy)
-  const { accounts, check: checkAccount, login } = useAgentAccounts(state.open && runtimeAvailable)
+  const { accounts, check: checkAccount, login } = useAgentAccounts(state.open)
   const collapsed = !state.open || state.collapsed
   const setEntrySeen = useSetAtom(agentEntrySeenAtom)
   useEffect(() => {

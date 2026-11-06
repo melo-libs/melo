@@ -16,6 +16,7 @@ afterEach(() => vi.restoreAllMocks())
 it('reserves the MCP deadline during prewarm and supplies task transports under that key', async () => {
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
   const createSession = vi.fn(async () => ({ sessionId: 'test', configOptions: [] }))
   const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
     isClosed: false,
@@ -66,6 +67,7 @@ it.each(['claude', 'codex'] as const)(
   async (provider) => {
     const environment = new RuntimeEnvironment('unused')
     vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+    vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
     const close = vi.fn(async () => {})
     const createSession = vi.fn(async () => ({ sessionId: 'test', configOptions: [] }))
     const start = vi
@@ -130,6 +132,7 @@ it('closes the adapter when cancellation occurs after initialize but during sess
   const controller = new AbortController()
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
   let rejectSession: (reason: Error) => void = () => {}
   const close = vi.fn(async () => {
     rejectSession(new Error('disconnected'))
@@ -165,6 +168,7 @@ it('closes the adapter when cancellation occurs after initialize but during sess
 it('selects native full access without changing the workspace or persistent settings', async () => {
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
   const createSession = vi.fn(async () => ({ sessionId: 'scratch', configOptions: [] }))
   const close = vi.fn(async () => {})
   const setConfigOption = vi.fn(async () => [])
@@ -217,6 +221,7 @@ it('selects native full access without changing the workspace or persistent sett
 it('pins API routing for Codex without placing credentials in config or native preferences', async () => {
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
+  vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
   const close = vi.fn(async () => {}),
     authenticate = vi.fn(async () => {})
   const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
@@ -253,6 +258,7 @@ it('pins API routing for Codex without placing credentials in config or native p
   expect(env.CODEX_CONFIG).not.toContain('native-model')
   expect(codexLaunch).toHaveBeenCalledWith(
     expect.anything(),
+    '/fixture/cli',
     expect.anything(),
     expect.anything(),
     expect.anything(),

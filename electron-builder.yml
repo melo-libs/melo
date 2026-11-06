@@ -8,6 +8,11 @@ files:
   - out/**/*
   - resources/**/*
   - package.json
+  # Native AI tools are fetched for the host architecture on first connection.
+  - '!node_modules/@anthropic-ai/claude-agent-sdk-*/**/*'
+  - '!node_modules/@openai/codex-*/**/*'
+  # npm aliases are filtered by their original package path before being renamed.
+  - '!node_modules/@openai/**/vendor/**/*'
 compression: maximum
 asar: true
 asarUnpack:

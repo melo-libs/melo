@@ -61,7 +61,14 @@ export class UpdateManager {
     })
     updater.on('download-progress', (progress) => {
       if (this.state.download.status !== 'downloading') return
-      this.setState({ download: { ...this.state.download, percent: Math.floor(progress.percent) } })
+      this.setState({
+        download: {
+          ...this.state.download,
+          percent: Math.floor(progress.percent),
+          transferred: progress.transferred,
+          total: progress.total,
+        },
+      })
     })
   }
 
@@ -284,10 +291,16 @@ export class UpdateManager {
             selectMacUpdate(info, process.arch),
             this.cacheDirectory,
             (url, init) => net.fetch(url, init),
-            (percent) => {
+            (percent, transferred, total) => {
               if (controller.signal.aborted) return
               this.setState({
-                download: { status: 'downloading', version: info.version, percent },
+                download: {
+                  status: 'downloading',
+                  version: info.version,
+                  percent,
+                  transferred,
+                  total,
+                },
               })
             },
             controller.signal,

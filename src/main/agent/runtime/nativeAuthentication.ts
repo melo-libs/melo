@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import type { AgentAuthentication, AgentProvider } from '../../../shared/types/agent'
-import { adapterEntry } from './runtimeEnvironment'
 
 const execute = promisify(execFile)
 const CLAUDE_STATUS = z.object({
@@ -12,13 +11,12 @@ const CLAUDE_STATUS = z.object({
 
 /** Query CLI status only; never initialize an ACP session or request authentication. */
 export async function checkNativeAuthentication(
-  node: string,
+  executable: string,
   provider: AgentProvider,
 ): Promise<AgentAuthentication> {
   try {
-    const args =
-      provider === 'claude' ? ['--cli', 'auth', 'status', '--json'] : ['cli', 'login', 'status']
-    const result = await execute(node, [adapterEntry(provider), ...args], {
+    const args = provider === 'claude' ? ['auth', 'status', '--json'] : ['login', 'status']
+    const result = await execute(executable, args, {
       timeout: 8000,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
     })

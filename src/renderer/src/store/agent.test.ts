@@ -16,6 +16,7 @@ import {
   agentAccountsAtom,
 } from './agent'
 import type {
+  AgentComponents,
   AgentView,
   AgentHistoryMessage,
   AgentSetup,
@@ -612,4 +613,56 @@ it('appends search questions without replacing a draft or moving the expanded wi
   const beforeEmptySearch = appStore.get(agentWindowAtom)
   openAgent({ appendDraft: true })
   expect(appStore.get(agentWindowAtom)).toEqual(beforeEmptySearch)
+})
+
+it('shows background preparation and a completion notice without switching the selected provider', () => {
+  const missing = {
+    status: 'missing' as const,
+    source: null,
+    total: 100,
+    transferred: 0,
+  }
+  appStore.set(agentSetupAtom, {
+    configuration: {
+      provider: 'codex',
+      access: 'native',
+      baseUrl: '',
+      model: '',
+      hasApiKey: false,
+    },
+    runtimeAvailable: false,
+    installing: false,
+    components: { claude: missing, codex: missing },
+  })
+  appStore.set(agentWindowAtom, (state) => ({ ...state, collapsed: true }))
+  let publish!: (components: AgentComponents) => void
+  vi.stubGlobal('window', {
+    api: {
+      on: (channel: IpcChannels, listener: (components: AgentComponents) => void) => {
+        if (channel === IpcChannels.OnAgentComponents) publish = listener
+        return () => {}
+      },
+    },
+  })
+  const disconnect = connectAgent()
+  try {
+    publish({ claude: { ...missing, status: 'downloading', transferred: 40 }, codex: missing })
+    expect(appStore.get(agentPresenceAtom).state).toBe('working')
+    publish({
+      claude: {
+        ...missing,
+        status: 'ready',
+        source: 'managed',
+        transferred: 100,
+      },
+      codex: missing,
+    })
+    expect(appStore.get(agentPresenceAtom).state).toBe('ready')
+    expect(appStore.get(agentSetupAtom)?.configuration.provider).toBe('codex')
+    expect(appStore.get(agentSetupAtom)?.runtimeAvailable).toBe(false)
+    appStore.set(agentWindowAtom, (state) => ({ ...state, open: true, collapsed: false }))
+    expect(appStore.get(agentPresenceAtom).state).not.toBe('ready')
+  } finally {
+    disconnect()
+  }
 })
