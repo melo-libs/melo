@@ -915,7 +915,7 @@ try {
   await page.getByLabel('API base URL', { exact: true }).fill(fixtureUrl)
   await page.getByLabel('Model', { exact: true }).fill('invalid-model')
   await page.getByLabel('API key', { exact: true }).fill('fixture-key')
-  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  await page.getByRole('button', { name: 'Verify and save', exact: true }).click()
   await page.locator('.agent-settings .agent-error').waitFor()
   assert((await page.locator('.agent-settings .agent-error').innerText()).includes('model ID'))
   assert(
@@ -954,7 +954,7 @@ try {
   await page.getByRole('button', { name: 'Enter model ID', exact: true }).click()
   assert.equal(await page.getByLabel('Model', { exact: true }).inputValue(), 'melo-fixture')
   if (packagedApp) console.log('Packaged Agent: saving the isolated API connection')
-  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  await page.getByRole('button', { name: 'Verify and save', exact: true }).click()
   await page.locator('.agent-test-success').waitFor()
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.locator('.agent-settings').waitFor({ state: 'hidden' })
