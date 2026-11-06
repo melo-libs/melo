@@ -110,8 +110,19 @@ export function useAgentController(
   useEffect(() => {
     if (providerSwitch && !switchingProvider) setProviderSwitch(null)
   }, [providerSwitch, switchingProvider])
+  const connectionChecking =
+    !switchingProvider &&
+    (((!setup ||
+      !view ||
+      view.conversation.workspaceRoot !== root ||
+      setup.configuration.provider !== selectedProvider) &&
+      !error) ||
+      (!!setup?.runtimeAvailable &&
+        setup.configuration.access === 'native' &&
+        (accountStatus === 'unknown' || accountStatus === 'checking')))
   const ready =
     !switchingProvider &&
+    !connectionChecking &&
     connected &&
     !!root &&
     !!view &&
@@ -387,12 +398,13 @@ export function useAgentController(
     root,
     busy: busy || switchingProvider,
     loading,
+    connectionChecking,
     modelLoad,
     error,
     running,
     selectedProvider: switchingProvider ? providerSwitch!.provider : selectedProvider,
     ready,
-    connected: switchingProvider ? providerSwitch!.connected : connected,
+    connected: switchingProvider ? providerSwitch!.connected : connected && !connectionChecking,
     canSend,
     attachments,
     receivingFiles,

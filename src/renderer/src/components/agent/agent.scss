@@ -1731,10 +1731,14 @@
     background: var(--ink-4);
   }
   &[data-state='signed-in'] > span,
-  &[data-state='api-configured'] > span {
+  &[data-state='api-connected'] > span {
     background: var(--tour-success);
   }
-  &[data-state='checking'] > span {
+  &[data-state='api-error'] > span {
+    background: var(--danger);
+  }
+  &[data-state='checking'] > span,
+  &[data-state='api-checking'] > span {
     background: var(--ai);
   }
 }
@@ -2209,4 +2213,14 @@
 }
 .agent-connect-option > .agent-runtime-progress {
   margin-left: 44px;
+}
+
+.agent-settings input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.agent-key-error {
+  margin: -2px 0 10px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 18px;
 }

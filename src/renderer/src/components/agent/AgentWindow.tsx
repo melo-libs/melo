@@ -47,6 +47,7 @@ export const AgentWindow = () => {
     root,
     busy,
     loading,
+    connectionChecking,
     modelLoad,
     error,
     running,
@@ -388,17 +389,21 @@ export const AgentWindow = () => {
                   onUndo={undo}
                   onUndoFiling={undoFiling}
                 />
-                {!connected && !running && (
-                  <AgentWelcome
-                    setup={setup}
-                    accounts={accounts}
-                    busy={busy || loading}
-                    onProvider={changeProvider}
-                    onLogin={login}
-                    onCheck={checkAccount}
-                    onSettings={() => openSettings('api')}
-                  />
-                )}
+                {!connected &&
+                  !running &&
+                  (setup || connectionChecking) &&
+                  (!connectionChecking || !messages.length) && (
+                    <AgentWelcome
+                      checking={connectionChecking}
+                      setup={setup}
+                      accounts={accounts}
+                      busy={busy || loading}
+                      onProvider={changeProvider}
+                      onLogin={login}
+                      onCheck={checkAccount}
+                      onSettings={() => openSettings('api')}
+                    />
+                  )}
                 {connected && (!messages.length || !!state.context.selection) && (
                   <div className="agent-empty">
                     {!state.context.selection && (
@@ -504,6 +509,7 @@ export const AgentWindow = () => {
               modelLoad={modelLoad}
               canSend={canSend}
               connected={connected}
+              connectionChecking={connectionChecking}
               focusKey={state.context}
               onDraft={(draft) => setWindow((state) => ({ ...state, draft }))}
               onSend={() => submit()}

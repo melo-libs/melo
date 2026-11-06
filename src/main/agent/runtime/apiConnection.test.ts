@@ -4,6 +4,10 @@ import { testAgentApi } from './apiConnection'
 import { requestAgentApi } from './apiTransport'
 import { claudeApiConfiguration } from './claudeAccess'
 
+vi.mock('electron', () => ({
+  net: { fetch: vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)) },
+}))
+
 let server: Server | undefined
 afterEach(async () => {
   vi.unstubAllGlobals()

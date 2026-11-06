@@ -29,8 +29,15 @@ export function createRuntimeFactory(options: {
   ): Promise<NonNullable<AgentConfiguration['native']>>
   apiKey(provider: AgentConfiguration['provider']): string | undefined
   tools(request: RuntimeRequest): Promise<Tools>
+  onApiAuthenticationFailed?(configuration: AgentConfiguration, apiKey: string): void
 }): RuntimeFactory {
   const host = new HarnessProcess()
+  const failure = (error: unknown, configuration: AgentConfiguration, apiKey?: string) => {
+    const result = runtimeFailure(error, configuration, apiKey)
+    if (configuration.access === 'api' && apiKey && result.message === 'AGENT_API_AUTH_FAILED')
+      options.onApiAuthenticationFailed?.(configuration, apiKey)
+    return result
+  }
   const prepareConfiguration = async (
     provider: AgentConfiguration['provider'],
     signal: AbortSignal,
@@ -57,7 +64,7 @@ export function createRuntimeFactory(options: {
         configuration = await prepareConfiguration(configuration.provider, request.signal)
       }
     } catch (error) {
-      throw runtimeFailure(error, configuration, apiKey)
+      throw failure(error, configuration, apiKey)
     }
     const tools = await options.tools(request)
     let lease: Awaited<ReturnType<HarnessProcess['open']>> | undefined
@@ -194,7 +201,7 @@ export function createRuntimeFactory(options: {
             completed = response.stopReason !== 'cancelled'
           } catch (error) {
             // Typed prompt failures also cover auth changes after initialization.
-            throw runtimeFailure(error, configuration, apiKey)
+            throw failure(error, configuration, apiKey)
           } finally {
             const tail = output.flush()
             if (tail) request.onEvent({ type: 'text', text: tail })
@@ -205,7 +212,7 @@ export function createRuntimeFactory(options: {
       return runtime
     } catch (error) {
       await close()
-      throw runtimeFailure(error, configuration, apiKey)
+      throw failure(error, configuration, apiKey)
     } finally {
       request.signal.removeEventListener('abort', abortStartup)
     }
@@ -226,7 +233,7 @@ export function createRuntimeFactory(options: {
         apiKey,
       })
     } catch (error) {
-      throw runtimeFailure(error, configuration, apiKey)
+      throw failure(error, configuration, apiKey)
     }
   }
   create.close = async () => {

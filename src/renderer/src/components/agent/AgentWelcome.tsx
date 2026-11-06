@@ -15,6 +15,7 @@ import { agentErrorText } from './agentError'
 
 export function AgentWelcome({
   setup,
+  checking = false,
   accounts,
   busy,
   onProvider,
@@ -23,6 +24,7 @@ export function AgentWelcome({
   onSettings,
 }: {
   setup: AgentSetup | null
+  checking?: boolean
   accounts: Record<AgentProvider, AgentAccountState>
   busy: boolean
   onProvider(provider: AgentProvider): Promise<boolean>
@@ -31,6 +33,13 @@ export function AgentWelcome({
   onSettings(): void
 }) {
   const { t } = useTranslation()
+  const [slowCheck, setSlowCheck] = useState(false)
+  useEffect(() => {
+    setSlowCheck(false)
+    if (!checking) return
+    const timer = setTimeout(() => setSlowCheck(true), 1000)
+    return () => clearTimeout(timer)
+  }, [checking])
   const [pending, setPending] = useState<AgentProvider | null>(null)
   const [loggingIn, setLoggingIn] = useState<AgentProvider | null>(null)
   const [error, setError] = useState('')
@@ -74,16 +83,7 @@ export function AgentWelcome({
       }
       if (!(await onProvider(provider))) return
       if (profile?.access === 'api') {
-        const response = await agentCommand({ action: 'setup', provider })
-        const configuration = response.setup!.configuration
-        await agentCommand({
-          action: 'configure',
-          provider,
-          access: 'native',
-          baseUrl: configuration.baseUrl,
-          model: configuration.model,
-          apiService: configuration.apiService,
-        })
+        await agentCommand({ action: 'set-access', provider, access: 'native' })
       }
       if (visible.current && account.status !== 'signed-in') {
         await onLogin(provider)
@@ -98,6 +98,21 @@ export function AgentWelcome({
       setPending(null)
     }
   }
+  if (checking)
+    return (
+      <section className="agent-welcome" role="status" aria-label={t('agent.preparingConnection')}>
+        <span className="agent-welcome-logo" aria-hidden="true">
+          <MeloLogo size={44} />
+        </span>
+        <p
+          className="agent-welcome-description"
+          aria-hidden={!slowCheck}
+          style={{ visibility: slowCheck ? 'visible' : 'hidden' }}
+        >
+          {t('agent.preparingConnection')}
+        </p>
+      </section>
+    )
   return (
     <section className="agent-welcome" aria-labelledby="agent-welcome-title">
       <span className="agent-welcome-logo">

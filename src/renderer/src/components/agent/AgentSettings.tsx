@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
@@ -21,6 +21,21 @@ import { AgentAccount } from './AgentAccount'
 import { AgentApiModelField } from './AgentApiModelField'
 import { AgentRuntimeProgress, runtimeWorking, runtimeMegabytes } from './AgentRuntimeProgress'
 import { toast } from '../Toaster'
+
+const connectionLabels = {
+  'api-unverified': 'agent.apiUnverified',
+  'api-error': 'agent.apiConnectionFailed',
+  'api-connected': 'agent.apiVerified',
+  'api-checking': 'agent.testingConnection',
+  'api-configured': 'agent.apiConfigured',
+  'api-unconfigured': 'agent.apiUnconfigured',
+  'signed-in': 'agent.accountSignedIn',
+  'signed-out': 'agent.accountSignedOut',
+  checking: 'agent.accountChecking',
+  unknown: 'agent.accountChecking',
+  unavailable: 'agent.accountUnavailable',
+  error: 'agent.accountCheckFailed',
+} as const
 
 export function AgentSettings({
   disabled = false,
@@ -62,11 +77,17 @@ export function AgentSettings({
       : configuration.model,
   )
   const [apiKey, setApiKey] = useState('')
-  const [pending, setPending] = useState<'access' | 'save' | 'install' | 'login' | 'clear' | null>(
-    null,
-  )
-  const [error, setError] = useState('')
-  const [connected, setConnected] = useState(false)
+  const [pending, setPending] = useState<
+    'access' | 'test' | 'save' | 'install' | 'login' | 'clear' | null
+  >(null)
+  const [error, setError] = useState<{
+    operation: NonNullable<typeof pending>
+    code: string
+  } | null>(null)
+  const errorElement = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    errorElement.current?.scrollIntoView({ block: 'nearest' })
+  }, [error])
   const [confirmClear, setConfirmClear] = useState(false)
   const confirmationId = useId()
   const working = useRef<typeof pending>(null)
@@ -83,24 +104,38 @@ export function AgentSettings({
   const hasKey =
     configuration.hasApiKey &&
     canReuseAgentApiKey(configuration.provider, configuration, { baseUrl, apiService })
+  const matchesSavedApi = hasKey && !apiKey.trim() && model === configuration.model
+  const verified = matchesSavedApi && !!configuration.apiVerified
+  const apiEdited =
+    !!apiKey.trim() ||
+    apiService !== savedService ||
+    baseUrl !== normalizeAgentApiUrl(configuration.provider, configuration.baseUrl) ||
+    model !== configuration.model
+  const apiError =
+    error && (error.operation === 'save' || error.operation === 'test') ? error : null
+  const keyError = apiError?.code === 'AGENT_API_AUTH_FAILED'
+  const testOnly = verified && configuration.access === 'api'
+  const keyErrorId = useId()
   const ready = !!(baseUrl.trim() && model.trim() && (apiKey.trim() || hasKey))
   const change = (update: () => void) => {
     update()
-    setConnected(false)
-    setError('')
+    setError(null)
   }
   const run = async (operation: NonNullable<typeof pending>, work: () => Promise<void>) => {
     if (working.current) return
     working.current = operation
     setPending(operation)
     onBusyChange(true)
-    setError('')
+    setError(null)
     try {
       await work()
       return true
     } catch (error) {
       if (!(error instanceof Error && error.message === 'AGENT_DOWNLOAD_CANCELLED'))
-        setError(agentErrorText(error instanceof Error ? error.message : ''))
+        setError({
+          operation,
+          code: error instanceof Error ? error.message : '',
+        })
       return false
     } finally {
       working.current = null
@@ -115,7 +150,8 @@ export function AgentSettings({
     )
       return
     desiredAccess.current = value
-    change(() => setAccess(value))
+    setAccess(value)
+    setError(null)
     if (working.current) return
     if ((value === 'native' && !nativeReady) || (value === 'api' && !savedApiReady)) return
     const saved = await run('access', async () => {
@@ -124,12 +160,9 @@ export function AgentSettings({
         const next = desiredAccess.current
         if ((next === 'native' && !nativeReady) || (next === 'api' && !savedApiReady)) return
         await agentCommand({
-          action: 'configure',
+          action: 'set-access',
           provider: configuration.provider,
           access: next,
-          apiService: savedService,
-          baseUrl: configuration.baseUrl,
-          model: configuration.model,
         })
         savedAccess.current = next
       }
@@ -139,40 +172,52 @@ export function AgentSettings({
       setAccess(savedAccess.current)
     }
   }
+  const saveApi = async () => {
+    if (!ready) return
+    let needsRuntime = false
+    const saved = await run('save', async () => {
+      const result = await agentCommand({
+        action: 'configure',
+        provider: configuration.provider,
+        access: 'api',
+        apiService,
+        baseUrl,
+        model,
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      })
+      const updated = result.setup!
+      setBaseUrl(updated.configuration.baseUrl)
+      setModel(updated.configuration.model)
+      setApiService(
+        savedAgentApiService(
+          configuration.provider,
+          updated.configuration.baseUrl,
+          updated.configuration.apiService,
+        ),
+      )
+      setApiKey('')
+      savedAccess.current = 'api'
+      needsRuntime = !updated.runtimeAvailable
+    })
+    if (saved && needsRuntime)
+      await run('install', async () => {
+        await agentCommand({ action: 'install', provider: configuration.provider })
+      })
+  }
+  const connected =
+    verified && configuration.access === 'api' && setup.runtimeAvailable && !busy && !error
   return (
     <form
       className="agent-settings"
       onSubmit={(event) => {
         event.preventDefault()
-        if (access !== 'api' || !ready) return
-        void run('save', async () => {
-          await agentCommand({
-            action: 'test-connection',
-            provider: configuration.provider,
-            apiService,
-            baseUrl,
-            model,
-            ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        if (access !== 'api') return
+        if (testOnly)
+          void run('test', async () => {
+            await agentCommand({ action: 'test-connection', provider: configuration.provider })
+            toast(t('agent.connectionTestPassed'))
           })
-          await agentCommand({
-            action: 'configure',
-            provider: configuration.provider,
-            access,
-            apiService,
-            baseUrl,
-            model,
-            ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-          })
-          savedAccess.current = access
-          if (!setup.runtimeAvailable) {
-            const installed = await agentCommand({
-              action: 'install',
-              provider: configuration.provider,
-            })
-            if (installed.setup?.components?.[configuration.provider].status !== 'ready') return
-          }
-          setConnected(true)
-        })
+        else void saveApi()
       }}
     >
       <div className="agent-settings-fields">
@@ -184,15 +229,32 @@ export function AgentSettings({
               const profile = setup.connectionProfiles?.[provider]
               const usesApi = selected ? configuration.access === 'api' : profile?.access === 'api'
               const apiConfigured = selected ? savedApiReady : profile?.apiConfigured
-              const status = !(setup.components
-                ? setup.components[provider].status === 'ready'
-                : setup.runtimeAvailable)
-                ? 'unavailable'
-                : usesApi
-                  ? apiConfigured
-                    ? 'api-configured'
-                    : 'api-unconfigured'
-                  : accounts[provider].status
+              const apiStatus =
+                pending === 'save' || pending === 'test'
+                  ? 'api-checking'
+                  : apiError
+                    ? 'api-error'
+                    : verified
+                      ? 'api-connected'
+                      : apiEdited
+                        ? 'api-unverified'
+                        : apiConfigured
+                          ? 'api-configured'
+                          : 'api-unconfigured'
+              const status =
+                selected && access === 'api'
+                  ? apiStatus
+                  : !(setup.components
+                        ? setup.components[provider].status === 'ready'
+                        : setup.runtimeAvailable)
+                    ? 'unavailable'
+                    : usesApi
+                      ? (selected ? configuration.apiVerified : profile?.apiVerified)
+                        ? 'api-connected'
+                        : apiConfigured
+                          ? 'api-configured'
+                          : 'api-unconfigured'
+                      : accounts[provider].status
               return (
                 <Button
                   key={provider}
@@ -210,21 +272,7 @@ export function AgentSettings({
                     <strong>{provider === 'claude' ? 'Claude Code' : 'Codex'}</strong>
                     <span className="agent-tool-status" data-state={status}>
                       <span />
-                      {t(
-                        status === 'api-configured'
-                          ? 'agent.apiConfigured'
-                          : status === 'api-unconfigured'
-                            ? 'agent.apiUnconfigured'
-                            : status === 'signed-in'
-                              ? 'agent.accountSignedIn'
-                              : status === 'signed-out'
-                                ? 'agent.accountSignedOut'
-                                : status === 'checking' || status === 'unknown'
-                                  ? 'agent.accountChecking'
-                                  : status === 'unavailable'
-                                    ? 'agent.accountUnavailable'
-                                    : 'agent.accountCheckFailed',
-                      )}
+                      {t(connectionLabels[status])}
                     </span>
                   </span>
                   {selected && (
@@ -257,8 +305,13 @@ export function AgentSettings({
             onChange={(value) => void chooseAccess(value)}
           />
         </div>
-        {!setup.runtimeAvailable && (
+        {(!setup.runtimeAvailable || error?.operation === 'install') && (
           <div className="agent-runtime">
+            {error?.operation === 'install' && (
+              <div className="agent-error" role="alert" ref={errorElement}>
+                {agentErrorText(error.code)}
+              </div>
+            )}
             {component &&
             ['downloading', 'preparing', 'paused', 'error'].includes(component.status) ? (
               <AgentRuntimeProgress component={component} />
@@ -279,7 +332,12 @@ export function AgentSettings({
                   ? void agentCommand({
                       action: 'cancel-install',
                       provider: configuration.provider,
-                    }).catch((error) => setError(agentErrorText(error.message)))
+                    }).catch((error) =>
+                      setError({
+                        operation: 'install',
+                        code: error.message,
+                      }),
+                    )
                   : void run('install', async () => {
                       await agentCommand({
                         action: 'install',
@@ -365,17 +423,26 @@ export function AgentSettings({
                 }
               />
             </label>
-            <label>
-              API key
-              <input
-                type="password"
-                value={apiKey}
-                disabled={editingDisabled}
-                autoComplete="off"
-                onChange={(event) => change(() => setApiKey(event.target.value))}
-                placeholder={hasKey ? t('agent.keySaved') : ''}
-              />
-            </label>
+            <div ref={keyError ? errorElement : undefined}>
+              <label>
+                API key
+                <input
+                  type="password"
+                  aria-invalid={keyError || undefined}
+                  aria-describedby={keyError ? keyErrorId : undefined}
+                  value={apiKey}
+                  disabled={editingDisabled}
+                  autoComplete="off"
+                  onChange={(event) => change(() => setApiKey(event.target.value))}
+                  placeholder={hasKey ? t('agent.keySaved') : ''}
+                />
+              </label>
+              {apiError && keyError && (
+                <div className="agent-key-error" role="alert" id={keyErrorId}>
+                  {agentErrorText(apiError.code)}
+                </div>
+              )}
+            </div>
             <small className="agent-key-note">
               <Icon name="lock" size={14} />
               {t('agent.keyStorage')}
@@ -391,16 +458,31 @@ export function AgentSettings({
               disabled={editingDisabled}
               onChange={(value) => change(() => setModel(value))}
             />
-            <div className="agent-test-row">
-              <Button type="submit" variant="primary" size="small" disabled={busy || !ready}>
-                {t(pending === 'save' ? 'agent.testingConnection' : 'agent.connectApi')}
-              </Button>
-              {connected && (
-                <span className="agent-test-success" role="status">
-                  <Icon name="tick" size={14} />
-                  {t('agent.connectionReady')}
-                </span>
+            <div ref={apiError && !keyError ? errorElement : undefined}>
+              {apiError && !keyError && (
+                <div className="agent-error" role="alert">
+                  {agentErrorText(apiError.code)}
+                </div>
               )}
+              <div className="agent-test-row">
+                <Button type="submit" variant="primary" size="small" disabled={busy || !ready}>
+                  {t(
+                    pending === 'test'
+                      ? 'agent.testingConnection'
+                      : pending === 'save'
+                        ? 'agent.verifyingConnection'
+                        : testOnly
+                          ? 'agent.testConnection'
+                          : 'agent.saveApiConnection',
+                  )}
+                </Button>
+                {connected && (
+                  <span className="agent-test-success" role="status">
+                    <Icon name="tick" size={14} />
+                    {t('agent.connectionReady')}
+                  </span>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -414,7 +496,7 @@ export function AgentSettings({
             onOpenChange={(open) => {
               if (pending === 'clear') return
               setConfirmClear(open)
-              if (open) setError('')
+              if (open) setError(null)
             }}
           >
             <Popover.Trigger asChild>
@@ -441,7 +523,7 @@ export function AgentSettings({
                 <p id={`${confirmationId}-description`}>{t('agent.clearHistoryDetail')}</p>
                 {error && (
                   <p className="agent-error" role="alert">
-                    {error}
+                    {agentErrorText(error.code)}
                   </p>
                 )}
                 <div className="agent-history-confirm-actions">
@@ -468,9 +550,9 @@ export function AgentSettings({
             </Popover.Portal>
           </Popover.Root>
         </section>
-        {error && !confirmClear && (
-          <div className="agent-error" role="alert">
-            {error}
+        {error && !['save', 'test', 'install'].includes(error.operation) && !confirmClear && (
+          <div className="agent-error" role="alert" ref={errorElement}>
+            {agentErrorText(error.code)}
           </div>
         )}
       </div>

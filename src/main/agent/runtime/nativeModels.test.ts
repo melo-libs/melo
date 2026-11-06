@@ -8,7 +8,12 @@ import { openHarnessSession } from './harnessSession'
 import { NativeModels } from './nativeModels'
 
 vi.mock('./harnessSession', () => ({ openHarnessSession: vi.fn() }))
-vi.mock('electron', () => ({ safeStorage: {} }))
+vi.mock('electron', () => ({
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value),
+  },
+}))
 const directories: string[] = []
 afterEach(async () => {
   vi.clearAllMocks()
@@ -72,9 +77,9 @@ it('inherits once, keeps API fields separate, and restores Melo choices after re
   await writeFile(file, JSON.stringify({ model: 'terminal-changed', effortLevel: 'low' }))
   await models.load('claude', { category: 'model', value: 'opus' })
   expect(settings.get('claude').native).toEqual({ model: 'opus', effort: 'high' })
-  settings.save({
+  settings.saveVerifiedApi({
     provider: 'claude',
-    access: 'api',
+    apiKey: 'fixture-key',
     model: 'api-model',
     baseUrl: 'https://example.com',
   })

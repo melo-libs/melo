@@ -6,6 +6,10 @@ import { agentApiService, type AgentApiServiceId } from '../../../shared/agentAp
 import type { AgentProvider } from '../../../shared/types/agent'
 import { claudeApiConfiguration } from './claudeAccess'
 
+vi.mock('electron', () => ({
+  net: { fetch: vi.fn((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)) },
+}))
+
 afterEach(() => vi.unstubAllGlobals())
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 const input = (provider: AgentProvider, apiService: AgentApiServiceId) => ({
@@ -48,6 +52,8 @@ it('queries the official directory with bounded, redirect-free authenticated req
     'https://api.deepseek.com/models',
     expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer fixture-key' }),
+      credentials: 'omit',
+      cache: 'no-store',
       redirect: 'error',
       signal: expect.any(AbortSignal),
     }),

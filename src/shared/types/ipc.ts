@@ -2,6 +2,7 @@ import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from '.
 import type { AppSettings } from './settings'
 import type {
   AgentComponents,
+  AgentConfiguration,
   AgentCommand,
   AgentCommandResult,
   AgentView,
@@ -45,6 +46,7 @@ export const INITIAL_UPDATE_STATE: UpdateState = {
 export enum IpcChannels {
   AgentCommand = 'agent-command',
   OnAgentView = 'on-agent-view',
+  OnAgentApiVerificationInvalidated = 'on-agent-api-verification-invalidated',
   OnAgentComponents = 'on-agent-components',
   OnAgentDocumentRequest = 'on-agent-document-request',
   AgentDocumentReply = 'agent-document-reply',
@@ -218,6 +220,10 @@ export interface IpcChannelDefinitions {
   [IpcChannels.AgentCommand]: { args: AgentCommand; response: IpcResponse<AgentCommandResult> }
   [IpcChannels.OnAgentComponents]: { args: AgentComponents; response: void }
   [IpcChannels.OnAgentView]: { args: AgentView; response: void }
+  [IpcChannels.OnAgentApiVerificationInvalidated]: {
+    args: Pick<AgentConfiguration, 'provider' | 'baseUrl' | 'model' | 'apiService'>
+    response: void
+  }
   [IpcChannels.OnAgentDocumentRequest]: { args: AgentDocumentRequest; response: void }
   [IpcChannels.AgentDocumentReply]: { args: AgentDocumentReply; response: void }
   [IpcChannels.FileNew]: {

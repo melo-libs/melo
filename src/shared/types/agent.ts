@@ -108,6 +108,7 @@ export interface AgentConfiguration {
   access: 'native' | 'api'
   baseUrl: string
   model: string
+  apiVerified?: boolean
   hasApiKey: boolean
   apiService?: AgentApiServiceId
   native?: AgentNativePreferences
@@ -122,6 +123,7 @@ export interface AgentAuthentication {
 export interface AgentConnectionProfile {
   access: 'native' | 'api'
   apiConfigured: boolean
+  apiVerified?: boolean
 }
 
 export interface AgentComponent {
@@ -165,18 +167,12 @@ export type AgentCommand =
       apiKey?: string
       refresh?: boolean
     }
-  | {
-      action: 'test-connection'
-      provider: AgentProvider
-      baseUrl: string
-      model: string
-      apiKey?: string
-      apiService?: AgentApiServiceId
-    }
+  | { action: 'test-connection'; provider: AgentProvider }
+  | { action: 'set-access'; provider: AgentProvider; access: 'native' | 'api' }
   | {
       action: 'configure'
       provider: AgentProvider
-      access: 'native' | 'api'
+      access: 'api'
       baseUrl: string
       model: string
       apiKey?: string

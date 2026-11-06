@@ -26,6 +26,7 @@ export function AgentComposer({
   modelLoad,
   canSend,
   connected,
+  connectionChecking = false,
   focusKey,
   onDraft,
   onSend,
@@ -58,6 +59,7 @@ export function AgentComposer({
   modelLoad: AgentModelLoadState
   canSend: boolean
   connected: boolean
+  connectionChecking?: boolean
   focusKey: unknown
   onDraft(value: string): void
   onSend(): void
@@ -120,15 +122,19 @@ export function AgentComposer({
         value={draft}
         disabled={!connected}
         maxLength={32000}
-        placeholder={t(
-          !connected
-            ? 'agent.connectToChat'
-            : context.selection
-              ? 'agent.selectionPlaceholder'
-              : draft || attachments.length
-                ? 'agent.followUpPlaceholder'
-                : 'agent.attachmentPlaceholder',
-        )}
+        placeholder={
+          connectionChecking || !setup
+            ? ''
+            : t(
+                !connected
+                  ? 'agent.connectToChat'
+                  : context.selection
+                    ? 'agent.selectionPlaceholder'
+                    : draft || attachments.length
+                      ? 'agent.followUpPlaceholder'
+                      : 'agent.attachmentPlaceholder',
+              )
+        }
         aria-label={t('agent.placeholder')}
         onChange={(event) => onDraft(event.target.value)}
         onPaste={(event) => {

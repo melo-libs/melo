@@ -1,3 +1,4 @@
+import { net } from 'electron'
 import type { AgentProvider } from '../../../shared/types/agent'
 import {
   agentApiService,
@@ -56,7 +57,14 @@ export async function requestAgentApi(
 ): Promise<string> {
   let response: Response
   try {
-    response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(20000) })
+    // Chromium follows the system proxy used by the desktop app; Node fetch does not.
+    response = await net.fetch(url, {
+      ...init,
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'error',
+      signal: AbortSignal.timeout(20000),
+    })
   } catch (error) {
     // Transport errors may retain request credentials; only expose a safe code.
     // eslint-disable-next-line preserve-caught-error
