@@ -65,21 +65,6 @@ export const KIND_ICON: Record<string, string> = {
   folder: 'folder',
 }
 
-export const KIND_LABEL: Record<string, string> = {
-  md: 'Markdown',
-  txt: 'Text',
-  html: 'Web clip',
-  bookmark: 'Bookmark',
-  pdf: 'PDF',
-  image: 'Image',
-  audio: 'Audio',
-  video: 'Video',
-  code: 'Code',
-  data: 'Data',
-  zip: 'Archive',
-  folder: 'Folder',
-}
-
 export const QIcon = ({
   name,
   size = 16,
