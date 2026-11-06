@@ -98,6 +98,7 @@ export class RuntimeEnvironment {
       this.executables.set(provider, managed)
       return { executable: managed, source: 'managed' }
     }
+    options.signal?.throwIfAborted()
     const dirs = [
       path.join(os.homedir(), '.local/bin'),
       '/opt/homebrew/bin',
@@ -108,8 +109,9 @@ export class RuntimeEnvironment {
         .filter(Boolean),
     ]
     for (const directory of new Set(dirs)) {
+      options.signal?.throwIfAborted()
       const executable = path.join(directory, provider)
-      if (await this.validExecutable(executable, artifact.version)) {
+      if (await this.validExecutable(executable, artifact.version, { signal: options.signal })) {
         this.executables.set(provider, executable)
         return { executable, source: 'local' }
       }
