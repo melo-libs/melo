@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import path from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import type { AgentAuthentication, AgentProvider } from '../../../shared/types/agent'
@@ -13,12 +14,17 @@ const CLAUDE_STATUS = z.object({
 export async function checkNativeAuthentication(
   executable: string,
   provider: AgentProvider,
+  node: string,
 ): Promise<AgentAuthentication> {
   try {
     const args = provider === 'claude' ? ['auth', 'status', '--json'] : ['login', 'status']
     const result = await execute(executable, args, {
       timeout: 8000,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: undefined,
+        PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH ?? ''}`,
+      },
     })
     if (provider === 'claude') {
       const status = CLAUDE_STATUS.parse(JSON.parse(result.stdout))

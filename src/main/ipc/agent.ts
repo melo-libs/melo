@@ -376,7 +376,13 @@ export function setupAgentIPC(): void {
           break
         case 'check-sign-in': {
           const executable = await environment.requireProvider(command.provider)
-          result = { authentication: await checkNativeAuthentication(executable, command.provider) }
+          result = {
+            authentication: await checkNativeAuthentication(
+              executable,
+              command.provider,
+              await environment.requireNode(),
+            ),
+          }
           break
         }
         case 'setup':
