@@ -259,7 +259,6 @@ describe('the update window and Settings → About', () => {
       expect([...doc.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
         language === 'en' ? 'Later' : '稍后',
         language === 'en' ? 'Restart and update' : '重启并更新',
-        language === 'en' ? 'Skip this version' : '忽略此版本',
       ])
     },
   )
@@ -447,21 +446,25 @@ describe('the update window and Settings → About', () => {
     expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeCloseUpdateWindow, undefined)
     expect(invoke).not.toHaveBeenCalledWith(IpcChannels.InvokeDownloadUpdate, undefined)
   })
-  it.each(['downloading', 'ready'] as const)('keeps skipping available when %s', async (phase) => {
-    initial = Promise.resolve({
-      success: true,
-      data: state({
+  it.each(['downloading', 'ready'] as const)('removes skipping when %s', async (phase) => {
+    initial = Promise.resolve({ success: true, data: state({ release }) })
+    await mount('en', UpdatesRoot)
+    expect(doc.querySelector('.updates-ignore')).not.toBeNull()
+    await emit(
+      state({
+        revision: 2,
         release,
         ...(phase === 'ready'
           ? { ready }
           : { download: { status: 'downloading', version: release.version, percent: 42 } }),
       }),
-    })
-    await mount('en', UpdatesRoot)
-    await act(async () => doc.querySelector<HTMLButtonElement>('.updates-ignore')!.click())
-    expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeIgnoreUpdate, {
-      version: release.version,
-    })
+    )
+    expect(doc.querySelector('.updates-ignore')).toBeNull()
+    expect(doc.querySelector('.updates-primary-actions')?.textContent).toContain(
+      phase === 'ready' ? en.updates.openInstaller : en.updates.backgroundDownload,
+    )
+    await act(async () => doc.querySelector<HTMLButtonElement>('.updates-dismiss')!.click())
+    expect(invoke).not.toHaveBeenCalledWith(IpcChannels.InvokeIgnoreUpdate, expect.anything())
     expect(invoke).toHaveBeenCalledWith(IpcChannels.InvokeCloseUpdateWindow, undefined)
   })
   it('renders headings and emphasis while leaving remote links and images inactive', async () => {

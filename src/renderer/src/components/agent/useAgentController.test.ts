@@ -619,3 +619,115 @@ it('snapshots the active tab on every send while chat stays open, independently 
     flushSync(() => root.unmount())
   }
 })
+
+it.each([
+  { access: 'native', runtimeAvailable: true, account: 'signed-in', connected: true },
+  { access: 'native', runtimeAvailable: true, account: 'signed-out', connected: false },
+  { access: 'native', runtimeAvailable: true, account: 'error', connected: false },
+  { access: 'native', runtimeAvailable: false, account: 'unknown', connected: false },
+  { access: 'api', runtimeAvailable: true, account: 'unknown', connected: true },
+] as const)(
+  'keeps cold startup unresolved until the required facts are known: $access/$account/$runtimeAvailable',
+  async ({ access, runtimeAvailable, account, connected }) => {
+    const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
+    vi.stubGlobal('window', window)
+    vi.stubGlobal('document', window.document)
+    const { createRoot } = await import('react-dom/client')
+    const { flushSync } = await import('react-dom')
+    const root = createRoot(window.document.getElementById('root')!)
+    const setup: AgentSetup = {
+      configuration: {
+        provider: 'claude',
+        access,
+        baseUrl: 'https://fixture.example',
+        model: 'fixture',
+        hasApiKey: access === 'api',
+        native: { model: 'fixture' },
+      },
+      runtimeAvailable,
+      installing: false,
+    }
+    const view: AgentView = {
+      conversation: {
+        id: 'cold',
+        workspaceRoot: '/notes',
+        title: '',
+        provider: 'claude',
+        updatedAt: 1,
+      },
+      messages: [],
+      status: 'idle',
+      allowChanges: false,
+      permission: null,
+      error: null,
+    }
+    appStore.set(agentAccountsAtom, { claude: { status: 'unknown' }, codex: { status: 'unknown' } })
+    appStore.set(agentWindowAtom, {
+      open: true,
+      collapsed: false,
+      context: {},
+      anchor: null,
+      draft: '',
+    })
+    let finishCurrent!: () => void
+    let finishSetup!: () => void
+    vi.mocked(agentCommand).mockImplementation(async (command) => {
+      if (command.action === 'current')
+        return new Promise((resolve) => {
+          finishCurrent = () => {
+            appStore.set(agentViewAtom, view)
+            resolve({ view })
+          }
+        })
+      if (command.action === 'setup')
+        return new Promise((resolve) => {
+          finishSetup = () => {
+            appStore.set(agentSetupAtom, setup)
+            resolve({ setup })
+          }
+        })
+      return {}
+    })
+    let controller!: ReturnType<typeof useAgentController>
+    const snapshots: Array<{ checking: boolean; connected: boolean }> = []
+    const navigate = vi.fn()
+    function Panel() {
+      controller = useAgentController(navigate)
+      snapshots.push({ checking: controller.connectionChecking, connected: controller.connected })
+      return null
+    }
+    try {
+      flushSync(() =>
+        root.render(createElement(Provider, { store: appStore }, createElement(Panel))),
+      )
+      expect(snapshots.every((state) => state.checking && !state.connected)).toBe(true)
+      flushSync(() => finishCurrent())
+      await vi.waitFor(() => expect(finishSetup).toBeTypeOf('function'))
+      expect(controller.connectionChecking).toBe(true)
+      flushSync(() => finishSetup())
+      await vi.waitFor(() => expect(controller.loading).toBe(false))
+      if (access === 'native' && runtimeAvailable) {
+        expect(controller.connectionChecking).toBe(true)
+        flushSync(() =>
+          appStore.set(agentAccountsAtom, {
+            claude:
+              account === 'error' ? { status: 'error', message: 'fixture' } : { status: account },
+            codex: { status: 'unknown' },
+          }),
+        )
+      }
+      await vi.waitFor(() => expect(controller.connectionChecking).toBe(false))
+      expect(controller.connected).toBe(connected)
+      // Reopening with known data must not introduce another initialization screen.
+      flushSync(() =>
+        root.render(
+          createElement(Provider, { store: appStore }, createElement(Panel, { key: 'reopen' })),
+        ),
+      )
+      expect(controller.connectionChecking).toBe(false)
+      expect(controller.connected).toBe(connected)
+    } finally {
+      flushSync(() => root.unmount())
+    }
+  },
+)

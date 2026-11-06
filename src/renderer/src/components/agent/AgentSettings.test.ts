@@ -4,6 +4,7 @@ import { Provider, atom, useAtomValue } from 'jotai'
 import { parseHTML } from 'linkedom'
 import { afterEach, expect, it, vi } from 'vitest'
 import type {
+  AgentCommand,
   AgentAuthentication,
   AgentCommandResult,
   AgentProvider,
@@ -84,6 +85,7 @@ async function render(configuration = setup) {
   const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
   vi.stubGlobal('window', window)
   vi.stubGlobal('document', window.document)
+  window.HTMLElement.prototype.scrollIntoView = vi.fn()
   const { createRoot } = await import('react-dom/client')
   const { flushSync } = await import('react-dom')
   const root = createRoot(window.document.getElementById('root')!)
@@ -113,6 +115,26 @@ async function render(configuration = setup) {
 const reply = (status: AgentAuthentication['status']): AgentCommandResult => ({
   authentication: { status },
 })
+
+function acceptApiConfiguration(
+  command: Extract<AgentCommand, { action: 'configure' }>,
+): AgentCommandResult {
+  const current = appStore.get(agentSetupAtom)!
+  const setup = {
+    ...current,
+    configuration: {
+      provider: command.provider,
+      access: 'api' as const,
+      baseUrl: command.baseUrl,
+      model: command.model,
+      apiService: command.apiService,
+      hasApiKey: true,
+      apiVerified: true,
+    },
+  }
+  appStore.set(agentSetupAtom, setup)
+  return { setup }
+}
 
 it('queries both cards independently without changing the selected provider', async () => {
   const finish = new Map<AgentProvider, (result: AgentCommandResult) => void>()
@@ -262,7 +284,7 @@ it('refreshes only the account that returns from a Melo-initiated login', async 
 it('switches to a native account immediately and preserves the saved API profile', async () => {
   vi.mocked(agentCommand).mockImplementation(async (command) => {
     if (command.action === 'check-sign-in') return reply('signed-in')
-    if (command.action === 'configure') {
+    if (command.action === 'set-access') {
       const current = appStore.get(agentSetupAtom)!
       appStore.set(agentSetupAtom, {
         ...current,
@@ -289,12 +311,9 @@ it('switches to a native account immediately and preserves the saved API profile
     )
     await vi.waitFor(() =>
       expect(agentCommand).toHaveBeenCalledWith({
-        action: 'configure',
+        action: 'set-access',
         provider: 'codex',
         access: 'native',
-        apiService: 'custom',
-        baseUrl: 'https://api.example.com',
-        model: 'saved-model',
       }),
     )
     expect(window.document.querySelector('.agent-auth')).not.toBeNull()
@@ -332,7 +351,7 @@ it('keeps connection tabs and API fields responsive while serializing the latest
   const saves: Array<() => void> = []
   vi.mocked(agentCommand).mockImplementation(async (command) => {
     if (command.action === 'check-sign-in') return reply('signed-in')
-    if (command.action === 'configure')
+    if (command.action === 'set-access')
       return new Promise((resolve) => saves.push(() => resolve({})))
     return {}
   })
@@ -378,7 +397,7 @@ it('keeps connection tabs and API fields responsive while serializing the latest
       vi
         .mocked(agentCommand)
         .mock.calls.flatMap(([command]) =>
-          command.action === 'configure' ? [command.access] : [],
+          command.action === 'set-access' ? [command.access] : [],
         ),
     ).toEqual(['native', 'api'])
     saves[1]()
@@ -425,7 +444,11 @@ it('restores the last saved connection mode and reports a failed switch', async 
 })
 it('tests an API connection before persisting it, and stays in settings with confirmation', async () => {
   vi.mocked(agentCommand).mockImplementation(async (command) =>
-    command.action === 'check-sign-in' ? reply('signed-out') : {},
+    command.action === 'check-sign-in'
+      ? reply('signed-out')
+      : command.action === 'configure'
+        ? acceptApiConfiguration(command)
+        : {},
   )
   const { window, flushSync, root } = await render({
     ...setup,
@@ -453,7 +476,7 @@ it('tests an API connection before persisting it, and stays in settings with con
         .mocked(agentCommand)
         .mock.calls.filter(([command]) => command.action !== 'check-sign-in')
         .map(([command]) => command.action),
-    ).toEqual(['test-connection', 'configure'])
+    ).toEqual(['configure'])
     expect(window.document.querySelector('.agent-settings')).not.toBeNull()
   } finally {
     flushSync(() => root.unmount())
@@ -638,7 +661,7 @@ it.each(['signed-out', 'checking', 'error'] as const)(
 it('activates a newly signed-in account only after choosing to use it', async () => {
   vi.mocked(agentCommand).mockImplementation(async (command) => {
     if (command.action === 'check-sign-in') return reply('signed-out')
-    if (command.action === 'configure') {
+    if (command.action === 'set-access') {
       const current = appStore.get(agentSetupAtom)!
       appStore.set(agentSetupAtom, {
         ...current,
@@ -732,6 +755,231 @@ it.each([
       window.document.querySelector('.agent-tool-card[aria-pressed="true"] .agent-tool-status')
         ?.textContent,
     ).toBe('agent.apiUnconfigured')
+  } finally {
+    flushSync(() => root.unmount())
+  }
+})
+
+it('keeps rejected DeepSeek keys unsaved, marks the connection failed and reveals the error at the key field, and clears it on retry', async () => {
+  let rejectKey = true
+  vi.mocked(agentCommand).mockImplementation(async (command) => {
+    if (command.action === 'check-sign-in') return reply('signed-out')
+    if ((command.action === 'configure' || command.action === 'test-connection') && rejectKey)
+      throw new Error('AGENT_API_AUTH_FAILED')
+    return command.action === 'configure' ? acceptApiConfiguration(command) : {}
+  })
+  const { window, flushSync, root } = await render({
+    ...setup,
+    configuration: {
+      provider: 'claude',
+      access: 'api',
+      apiService: 'deepseek',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      model: 'deepseek-flash',
+      hasApiKey: true,
+    },
+  })
+  const submit = () =>
+    flushSync(() =>
+      window.document
+        .querySelector('form')!
+        .dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })),
+    )
+  try {
+    submit()
+    await vi.waitFor(() =>
+      expect(window.document.querySelector('[role="alert"]')?.textContent).toBe(
+        'AGENT_API_AUTH_FAILED',
+      ),
+    )
+    const error = window.document.querySelector('[role="alert"]')!
+    expect(error.className).toBe('agent-key-error')
+    expect(
+      error.previousElementSibling
+        ?.querySelector('input[type="password"]')
+        ?.getAttribute('aria-invalid'),
+    ).toBe('true')
+    expect(
+      window.document
+        .querySelector('.agent-tool-card[aria-pressed="true"] .agent-tool-status')
+        ?.getAttribute('data-state'),
+    ).toBe('api-error')
+    expect(error.parentElement!.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(window.document.querySelector('.agent-test-success')).toBeNull()
+    expect(
+      window.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled,
+    ).toBe(false)
+    rejectKey = false
+    submit()
+    await vi.waitFor(() =>
+      expect(window.document.querySelector('.agent-test-success')).not.toBeNull(),
+    )
+    expect(window.document.querySelector('[role="alert"]')).toBeNull()
+    expect(
+      window.document
+        .querySelector('.agent-tool-card[aria-pressed="true"] .agent-tool-status')
+        ?.getAttribute('data-state'),
+    ).toBe('api-connected')
+    expect(
+      window.document.querySelector('input[type="password"]')?.hasAttribute('aria-invalid'),
+    ).toBe(false)
+    rejectKey = true
+    submit()
+    await vi.waitFor(() => expect(window.document.querySelector('[role="alert"]')).not.toBeNull())
+    expect(window.document.querySelector('.agent-test-success')).toBeNull()
+  } finally {
+    flushSync(() => root.unmount())
+  }
+})
+
+it.each([true, false])(
+  'restores saved API verification when reopening settings: %s',
+  async (apiVerified) => {
+    vi.mocked(agentCommand).mockResolvedValue(reply('signed-out'))
+    const { window, flushSync, root } = await render({
+      ...setup,
+      configuration: {
+        ...setup.configuration,
+        access: 'api',
+        baseUrl: 'https://api.example.com',
+        model: 'saved-model',
+        hasApiKey: true,
+        apiVerified,
+      },
+    })
+    try {
+      expect(
+        window.document
+          .querySelector('.agent-tool-card[aria-pressed="true"] .agent-tool-status')
+          ?.getAttribute('data-state'),
+      ).toBe(apiVerified ? 'api-connected' : 'api-configured')
+      expect(agentCommand).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'configure' }),
+      )
+    } finally {
+      flushSync(() => root.unmount())
+    }
+  },
+)
+
+it('waits for runtime inspection before querying local accounts', async () => {
+  const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
+  vi.stubGlobal('window', window)
+  vi.stubGlobal('document', window.document)
+  const { createRoot } = await import('react-dom/client')
+  const { flushSync } = await import('react-dom')
+  const root = createRoot(window.document.getElementById('root')!)
+  function Panel() {
+    useAgentAccounts(true)
+    return null
+  }
+  vi.mocked(agentCommand).mockResolvedValue(reply('signed-out'))
+  const missing = { status: 'missing' as const, source: null, transferred: 0, total: 0 }
+  try {
+    appStore.set(agentSetupAtom, null)
+    flushSync(() => root.render(createElement(Provider, { store: appStore }, createElement(Panel))))
+    expect(agentCommand).not.toHaveBeenCalled()
+    flushSync(() =>
+      appStore.set(agentSetupAtom, {
+        ...setup,
+        runtimeAvailable: false,
+        components: { claude: missing, codex: missing },
+      }),
+    )
+    expect(agentCommand).not.toHaveBeenCalled()
+    flushSync(() =>
+      appStore.set(agentSetupAtom, {
+        ...setup,
+        components: { claude: missing, codex: { ...missing, status: 'ready', source: 'local' } },
+      }),
+    )
+    await vi.waitFor(() =>
+      expect(agentCommand).toHaveBeenCalledWith({ action: 'check-sign-in', provider: 'codex' }),
+    )
+    expect(agentCommand).not.toHaveBeenCalledWith({ action: 'check-sign-in', provider: 'claude' })
+  } finally {
+    flushSync(() => root.unmount())
+  }
+})
+
+it.each([true, false])(
+  'uses read-only testing for an unchanged verified API profile (runtime ready=%s)',
+  async (runtimeAvailable) => {
+    let finish!: (result: AgentCommandResult) => void
+    vi.mocked(agentCommand).mockImplementation(async (command) =>
+      command.action === 'test-connection'
+        ? new Promise((resolve) => {
+            finish = resolve
+          })
+        : {},
+    )
+    const saved: AgentSetup = {
+      ...setup,
+      runtimeAvailable,
+      configuration: {
+        ...setup.configuration,
+        access: 'api',
+        baseUrl: 'https://api.example.com',
+        model: 'fixture-model',
+        hasApiKey: true,
+        apiVerified: true,
+      },
+    }
+    const { window, flushSync, root } = await render(saved)
+    try {
+      const button = window.document.querySelector<HTMLButtonElement>('button[type="submit"]')!
+      expect(button.textContent).toBe('agent.testConnection')
+      flushSync(() =>
+        window.document
+          .querySelector('form')!
+          .dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })),
+      )
+      expect(button.textContent).toBe('agent.testingConnection')
+      expect(button.disabled).toBe(true)
+      finish({})
+      await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('agent.connectionTestPassed'))
+      expect(button.textContent).toBe('agent.testConnection')
+      expect(agentCommand).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'configure' }),
+      )
+      expect(agentCommand).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'install' }))
+      expect(appStore.get(agentSetupAtom)).toEqual(saved)
+    } finally {
+      flushSync(() => root.unmount())
+    }
+  },
+)
+
+it('keeps a persistence failure distinct from a rejected API key', async () => {
+  vi.mocked(agentCommand).mockRejectedValue(new Error('AGENT_SECURE_STORAGE_UNAVAILABLE'))
+  const { window, flushSync, root } = await render({
+    ...setup,
+    configuration: {
+      ...setup.configuration,
+      access: 'api',
+      baseUrl: 'https://fixture.example',
+      model: 'fixture',
+      hasApiKey: true,
+    },
+  })
+  try {
+    expect(window.document.querySelector('button[type="submit"]')!.textContent).toBe(
+      'agent.saveApiConnection',
+    )
+    flushSync(() =>
+      window.document
+        .querySelector('form')!
+        .dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })),
+    )
+    await vi.waitFor(() =>
+      expect(window.document.querySelector('[role="alert"]')?.textContent).toBe(
+        'AGENT_SECURE_STORAGE_UNAVAILABLE',
+      ),
+    )
+    expect(
+      window.document.querySelector('input[type="password"]')?.hasAttribute('aria-invalid'),
+    ).toBe(false)
+    expect(window.document.querySelector('.agent-test-success')).toBeNull()
   } finally {
     flushSync(() => root.unmount())
   }

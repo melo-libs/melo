@@ -17,6 +17,7 @@ import {
 } from './agent'
 import type {
   AgentComponents,
+  AgentConfiguration,
   AgentView,
   AgentHistoryMessage,
   AgentSetup,
@@ -666,3 +667,87 @@ it('shows background preparation and a completion notice without switching the s
     disconnect()
   }
 })
+
+it('refreshes saved verification before reporting a rejected API draft', async () => {
+  const saved: AgentSetup = {
+    configuration: {
+      provider: 'claude',
+      access: 'api',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      model: 'deepseek-flash',
+      hasApiKey: true,
+      apiVerified: true,
+    },
+    runtimeAvailable: true,
+    installing: false,
+  }
+  appStore.set(agentSetupAtom, saved)
+  const refreshed = { ...saved, configuration: { ...saved.configuration, apiVerified: false } }
+  vi.stubGlobal('window', {
+    api: {
+      invoke: vi.fn(async () => ({
+        success: false,
+        error: 'AGENT_API_AUTH_FAILED',
+        data: { setup: refreshed },
+      })),
+    },
+  })
+  await expect(
+    agentCommand({
+      action: 'configure',
+      provider: 'claude',
+      access: 'api',
+      baseUrl: saved.configuration.baseUrl,
+      model: saved.configuration.model,
+    }),
+  ).rejects.toThrow('AGENT_API_AUTH_FAILED')
+  expect(appStore.get(agentSetupAtom)?.configuration.apiVerified).toBe(false)
+})
+
+it.each([true, false])(
+  'applies runtime credential rejection while settings are closed (matching profile=%s)',
+  (matches) => {
+    const configuration: AgentConfiguration = {
+      provider: 'claude',
+      access: 'api',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      model: 'deepseek-flash',
+      apiService: 'deepseek',
+      hasApiKey: true,
+      apiVerified: true,
+    }
+    const setup: AgentSetup = {
+      configuration,
+      runtimeAvailable: true,
+      installing: false,
+      connectionProfiles: {
+        claude: { access: 'api', apiConfigured: true, apiVerified: true },
+        codex: { access: 'native', apiConfigured: false },
+      },
+    }
+    appStore.set(agentSetupAtom, setup)
+    let invalidate!: (
+      profile: Pick<AgentConfiguration, 'provider' | 'baseUrl' | 'model' | 'apiService'>,
+    ) => void
+    vi.stubGlobal('window', {
+      api: {
+        on: (channel: IpcChannels, listener: typeof invalidate) => {
+          if (channel === IpcChannels.OnAgentApiVerificationInvalidated) invalidate = listener
+          return vi.fn()
+        },
+      },
+    })
+    const disconnect = connectAgent()
+    try {
+      expect(appStore.get(agentWindowAtom).open).toBe(false)
+      invalidate({ ...configuration, model: matches ? configuration.model : 'different-model' })
+      const current = appStore.get(agentSetupAtom)!
+      expect(current.configuration.apiVerified).toBe(!matches)
+      expect(current.connectionProfiles?.claude.apiVerified).toBe(!matches)
+      expect(current.configuration.hasApiKey).toBe(true)
+      expect(current.configuration.access).toBe('api')
+    } finally {
+      disconnect()
+    }
+  },
+)

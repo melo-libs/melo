@@ -26,6 +26,7 @@ async function inspectLayout(url) {
     for (const scenario of [
       { name: 'zh-light', language: 'zh-CN', theme: 'light', available: true },
       { name: 'zh-ready', language: 'zh-CN', theme: 'light' },
+      { name: 'en-ready-narrow', language: 'en', theme: 'light', narrow: true },
       { name: 'en-light', language: 'en', theme: 'light', available: true },
       { name: 'zh-dark', language: 'zh-CN', theme: 'dark' },
       { name: 'en-dark', language: 'en', theme: 'dark' },
@@ -163,12 +164,28 @@ async function inspectLayout(url) {
             ?.getBoundingClientRect()
             .toJSON(),
           actions: box('.updates-primary-actions'),
+          status: document.querySelector('.updates-ready')?.getBoundingClientRect().toJSON(),
           content: box('.updates-content'),
           height: window.innerHeight,
         }
       })
       assert.equal(layout.overflow, false, scenario.name)
       assert(layout.footer.bottom <= layout.height, `${scenario.name}: footer is clipped`)
+      if (layout.status) {
+        assert(
+          layout.status.right <= layout.actions.left,
+          `${scenario.name}: status overlaps buttons`,
+        )
+        const center = (rect) => rect.y + rect.height / 2
+        assert(
+          Math.abs(center(layout.status) - center(layout.actions)) < 2,
+          `${scenario.name}: ready status and buttons must share a row`,
+        )
+      }
+      if (scenario.downloading || (!scenario.available && !scenario.manual)) {
+        assert.equal(await page.locator('.updates-ignore').count(), 0, scenario.name)
+        assert.equal(await page.locator('.updates-secondary-actions').count(), 0, scenario.name)
+      }
       if (layout.ignore)
         assert(layout.ignore.right < layout.actions.left, `${scenario.name}: actions overlap`)
       assert(layout.content.height >= 100, `${scenario.name}: notes have too little room`)

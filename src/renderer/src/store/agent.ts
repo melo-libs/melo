@@ -1,3 +1,4 @@
+import { canReuseAgentApiKey } from '@shared/agentApi'
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import type {
@@ -229,9 +230,14 @@ export async function agentCommand(command: AgentCommand): Promise<AgentCommandR
       ? ++catalogGenerations[catalogProvider]
       : catalogGenerations[catalogProvider]
     : undefined
-  const generation = ['setup', 'select-provider', 'configure', 'install', 'native-option'].includes(
-    command.action,
-  )
+  const generation = [
+    'setup',
+    'select-provider',
+    'set-access',
+    'configure',
+    'install',
+    'native-option',
+  ].includes(command.action)
     ? ++setupGeneration
     : setupGeneration
   const historyRequest =
@@ -241,7 +247,11 @@ export async function agentCommand(command: AgentCommand): Promise<AgentCommandR
       ? ++historyGeneration
       : historyGeneration
   const response = await window.api.invoke(IpcChannels.AgentCommand, command)
-  if (!response.success || !response.data) throw new Error(response.error ?? 'Agent request failed')
+  if (!response.success || !response.data) {
+    if (response.data?.setup && generation === setupGeneration)
+      appStore.set(agentSetupAtom, response.data.setup)
+    throw new Error(response.error ?? 'Agent request failed')
+  }
   if (command.action === 'clear-history') appStore.set(agentFilingsAtom, new Map())
   if (response.data.view) appStore.set(cacheFilingsAtom, response.data.view.messages)
   if (response.data.history) appStore.set(cacheFilingsAtom, response.data.history.messages)
@@ -374,6 +384,32 @@ export function connectAgent(): () => void {
       runtimeAvailable: components[current.configuration.provider].status === 'ready',
     })
   })
+  const offVerification = window.api.on(
+    IpcChannels.OnAgentApiVerificationInvalidated,
+    (profile) => {
+      const current = appStore.get(agentSetupAtom)
+      if (!current) return
+      const selected = current.configuration
+      const matches =
+        selected.provider === profile.provider &&
+        selected.model === profile.model &&
+        canReuseAgentApiKey(profile.provider, selected, profile)
+      if (selected.provider === profile.provider && !matches) return
+      appStore.set(agentSetupAtom, {
+        ...current,
+        configuration: matches ? { ...selected, apiVerified: false } : selected,
+        ...(current.connectionProfiles && {
+          connectionProfiles: {
+            ...current.connectionProfiles,
+            [profile.provider]: {
+              ...current.connectionProfiles[profile.provider],
+              apiVerified: false,
+            },
+          },
+        }),
+      })
+    },
+  )
   const offView = window.api.on(IpcChannels.OnAgentView, (view) => {
     appStore.set(cacheFilingsAtom, view.messages)
     if (view.conversation.workspaceRoot !== appStore.get(workspacePathAtom)) return
@@ -402,6 +438,7 @@ export function connectAgent(): () => void {
   })
   return () => {
     offComponents()
+    offVerification()
     offView()
     offDocument()
     for (const controller of requests.values()) controller.abort()

@@ -54,18 +54,12 @@ const COMMAND = z.discriminatedUnion('action', [
     apiKey: z.string().max(4096).optional(),
     refresh: z.boolean().optional(),
   }),
-  z.object({
-    action: z.literal('test-connection'),
-    provider,
-    apiService: z.enum(AGENT_API_SERVICES).optional(),
-    baseUrl: z.string().max(2048),
-    model: z.string().max(256),
-    apiKey: z.string().max(4096).optional(),
-  }),
+  z.object({ action: z.literal('test-connection'), provider }),
+  z.object({ action: z.literal('set-access'), provider, access: z.enum(['native', 'api']) }),
   z.object({
     action: z.literal('configure'),
     provider,
-    access: z.enum(['native', 'api']),
+    access: z.literal('api'),
     apiService: z.enum(AGENT_API_SERVICES).optional(),
     baseUrl: z.string().max(2048),
     model: z.string().max(256),
@@ -166,6 +160,17 @@ function createController() {
       nativePreferences: (provider, signal) => nativeModels.resolve(provider, signal),
       configuration: (p) => settings.get(p),
       apiKey: (p) => settings.key(p),
+      onApiAuthenticationFailed: (configuration, apiKey) => {
+        if (settings.invalidateApiVerification({ ...configuration, apiKey })) {
+          const { provider, baseUrl, model, apiService } = configuration
+          getMainWindow()?.webContents.send(IpcChannels.OnAgentApiVerificationInvalidated, {
+            provider,
+            baseUrl,
+            model,
+            apiService,
+          })
+        }
+      },
       tools: (request) => startWorkspaceTools((signal) => workspace.operations(request, signal)),
     }),
     (view) => getMainWindow()?.webContents.send(IpcChannels.OnAgentView, view),
@@ -205,6 +210,7 @@ async function setup(p?: AgentProvider): Promise<AgentSetup> {
     const profile = settings.get(provider)
     return {
       access: profile.access,
+      apiVerified: profile.apiVerified,
       apiConfigured: !!(profile.hasApiKey && profile.baseUrl.trim() && profile.model.trim()),
     }
   }
@@ -342,8 +348,7 @@ export function setupAgentIPC(): void {
             setup: await setup(service.open(command.conversationId).conversation.provider),
           }
           break
-        case 'api-models':
-        case 'test-connection': {
+        case 'api-models': {
           const saved = settings.get(command.provider)
           const key =
             command.apiKey?.trim() ||
@@ -351,11 +356,9 @@ export function setupAgentIPC(): void {
               ? settings.key(command.provider)
               : undefined)
           if (!key) throw new Error('AGENT_API_KEY_REQUIRED')
-          if (command.action === 'api-models')
-            result = {
-              apiCatalog: await apiModels.load({ ...command, apiKey: key }, command.refresh),
-            }
-          else await testAgentApi({ ...command, apiKey: key })
+          result = {
+            apiCatalog: await apiModels.load({ ...command, apiKey: key }, command.refresh),
+          }
           break
         }
         case 'native-options':
@@ -410,31 +413,53 @@ export function setupAgentIPC(): void {
           ])
           break
         }
-        case 'configure': {
-          let configuration = { ...command, apiKey: command.apiKey?.trim() }
-          if (command.access === 'api') {
-            const saved = settings.get(command.provider)
-            const key =
-              configuration.apiKey ||
-              (canReuseAgentApiKey(command.provider, saved, command)
-                ? settings.key(command.provider)
-                : undefined)
-            if (!key) throw new Error('AGENT_API_KEY_REQUIRED')
-            const validated = validateAgentApi({ ...configuration, apiKey: key })
-            configuration = {
-              ...configuration,
-              apiService: validated.apiService,
-              baseUrl: validated.baseUrl,
-              model: validated.model,
-            }
-          }
+        case 'set-access': {
           await service.suspend('configuration')
           try {
-            settings.save(configuration)
+            settings.setAccess(command.provider, command.access)
           } finally {
             service.resume('configuration')
           }
-          result = { setup: await setup() }
+          result = { setup: await setup(command.provider) }
+          break
+        }
+        case 'test-connection':
+        case 'configure': {
+          const saved = settings.get(command.provider)
+          const input = command.action === 'test-connection' ? saved : command
+          const key =
+            command.action === 'test-connection'
+              ? settings.key(command.provider)
+              : command.apiKey?.trim() ||
+                (canReuseAgentApiKey(command.provider, saved, command)
+                  ? settings.key(command.provider)
+                  : undefined)
+          if (!key) throw new Error('AGENT_API_KEY_REQUIRED')
+          const validated = validateAgentApi({ ...input, provider: command.provider, apiKey: key })
+          try {
+            await testAgentApi(validated)
+          } catch (error) {
+            if (error instanceof Error && error.message === 'AGENT_API_AUTH_FAILED') {
+              settings.invalidateApiVerification(validated)
+              return {
+                success: false,
+                error: error.message,
+                data: { setup: await setup(command.provider) },
+              }
+            }
+            throw error
+          }
+          if (command.action === 'test-connection') {
+            result = {}
+            break
+          }
+          await service.suspend('configuration')
+          try {
+            settings.saveVerifiedApi(validated)
+          } finally {
+            service.resume('configuration')
+          }
+          result = { setup: await setup(command.provider) }
           break
         }
         case 'current':

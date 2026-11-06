@@ -14,10 +14,11 @@ export function useAgentAccounts(enabled: boolean) {
   const loginProvider = useRef<AgentProvider | null>(null)
   const check = useCallback(
     async (provider: AgentProvider) => {
-      if (!enabled || pending.current.has(provider)) return
+      if (!enabled || pending.current.has(provider) || !available.current) return
       if (
-        available.current?.components &&
-        available.current.components[provider].status !== 'ready'
+        !(available.current.components
+          ? available.current.components[provider].status === 'ready'
+          : available.current.runtimeAvailable)
       )
         return
       const request = generation.current
@@ -53,18 +54,18 @@ export function useAgentAccounts(enabled: boolean) {
     }
   }, [])
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !setup) return
     if (
-      (!setup?.components || setup.components.claude.status === 'ready') &&
+      (setup.components ? setup.components.claude.status === 'ready' : setup.runtimeAvailable) &&
       (accounts.claude.status === 'unknown' || accounts.claude.status === 'checking')
     )
       void check('claude')
     if (
-      (!setup?.components || setup.components.codex.status === 'ready') &&
+      (setup.components ? setup.components.codex.status === 'ready' : setup.runtimeAvailable) &&
       (accounts.codex.status === 'unknown' || accounts.codex.status === 'checking')
     )
       void check('codex')
-  }, [enabled, accounts.claude.status, accounts.codex.status, check, setup?.components])
+  }, [enabled, accounts.claude.status, accounts.codex.status, check, setup])
   useEffect(() => {
     if (!enabled) return
     const onFocus = () => {

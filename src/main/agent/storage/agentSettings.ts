@@ -20,6 +20,7 @@ const PROFILE = z.object({
   baseUrl: z.string(),
   model: z.string(),
   encryptedKey: z.string().optional(),
+  apiVerified: z.boolean().optional(),
   apiService: z.enum(AGENT_API_SERVICES).optional(),
   native: z
     .object({
@@ -63,44 +64,61 @@ export class AgentSettings {
     const next = { ...this.value, provider }
     this.persist(next)
   }
+  setAccess(provider: AgentProvider, access: 'native' | 'api'): void {
+    const profile = this.value[provider]
+    if (access === 'api' && !(profile.encryptedKey && profile.baseUrl && profile.model))
+      throw new Error('AGENT_API_KEY_REQUIRED')
+    this.persist({ ...this.value, provider, [provider]: { ...profile, access } })
+  }
   key(provider: AgentProvider): string | undefined {
     const encryptedKey = this.value[provider].encryptedKey
     return encryptedKey ? safeStorage.decryptString(Buffer.from(encryptedKey, 'base64')) : undefined
   }
-  save(value: {
+  saveVerifiedApi(value: {
     provider: AgentProvider
-    access: 'native' | 'api'
     baseUrl: string
     model: string
-    apiKey?: string
+    apiKey: string
     apiService?: AgentApiServiceId
   }): void {
+    if (
+      !safeStorage.isEncryptionAvailable() ||
+      (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
+    )
+      throw new Error('Secure credential storage is unavailable')
     const saved = this.value[value.provider]
-    const apiService = savedAgentApiService(value.provider, value.baseUrl, value.apiService)
-    let encryptedKey = canReuseAgentApiKey(value.provider, saved, value)
-      ? saved.encryptedKey
-      : undefined
-    if (value.apiKey) {
-      if (
-        !safeStorage.isEncryptionAvailable() ||
-        (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
-      )
-        throw new Error('Secure credential storage is unavailable')
-      encryptedKey = safeStorage.encryptString(value.apiKey).toString('base64')
-    }
-    const next = {
+    this.persist({
       ...this.value,
       provider: value.provider,
       [value.provider]: {
         native: saved.native,
-        access: value.access,
-        apiService,
+        access: 'api',
+        apiService: savedAgentApiService(value.provider, value.baseUrl, value.apiService),
         baseUrl: value.baseUrl,
         model: value.model,
-        encryptedKey,
+        encryptedKey: safeStorage.encryptString(value.apiKey).toString('base64'),
+        apiVerified: true,
       },
+    })
+  }
+  invalidateApiVerification(value: {
+    provider: AgentProvider
+    baseUrl: string
+    model: string
+    apiService?: AgentApiServiceId
+    apiKey: string
+  }): boolean {
+    const saved = this.value[value.provider]
+    if (
+      saved.apiVerified &&
+      saved.model === value.model &&
+      canReuseAgentApiKey(value.provider, saved, value) &&
+      this.key(value.provider) === value.apiKey
+    ) {
+      this.persist({ ...this.value, [value.provider]: { ...saved, apiVerified: false } })
+      return true
     }
-    this.persist(next)
+    return false
   }
   private persist(next: z.infer<typeof CONFIG>): void {
     const temporary = `${this.file}.${randomUUID()}.tmp`

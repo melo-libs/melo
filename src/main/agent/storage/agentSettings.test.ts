@@ -17,16 +17,14 @@ it('keeps separate encrypted API profiles while changing the selected harness', 
   const directory = mkdtempSync(path.join(os.tmpdir(), 'melo-agent-settings-'))
   try {
     const settings = new AgentSettings(directory)
-    settings.save({
+    settings.saveVerifiedApi({
       provider: 'claude',
-      access: 'api',
       baseUrl: 'https://claude.example',
       model: 'claude',
       apiKey: 'test-claude-secret',
     })
-    settings.save({
+    settings.saveVerifiedApi({
       provider: 'codex',
-      access: 'api',
       baseUrl: 'https://codex.example/v1',
       model: 'codex',
       apiKey: 'test-codex-secret',
@@ -44,48 +42,24 @@ it('keeps separate encrypted API profiles while changing the selected harness', 
   }
 })
 
-it('retains a key across access changes, but never rebinds it to a different origin', () => {
+it('switches access without changing saved credentials, verification or native preferences', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'melo-agent-settings-'))
   try {
     const settings = new AgentSettings(directory)
-    const profile = {
-      provider: 'claude' as const,
+    expect(() => settings.setAccess('claude', 'api')).toThrow('AGENT_API_KEY_REQUIRED')
+    settings.saveNative('claude', { model: 'native-model' })
+    settings.saveVerifiedApi({
+      provider: 'claude',
       baseUrl: 'https://api.deepseek.com/anthropic',
       model: 'deepseek-flash',
-    }
-    settings.save({ ...profile, access: 'api', apiKey: 'fixture-key' })
-    settings.save({ ...profile, access: 'native' })
+      apiKey: 'fixture-key',
+    })
+    const profile = settings.get('claude')
+    settings.setAccess('claude', 'native')
+    expect(settings.get('claude')).toEqual({ ...profile, access: 'native' })
+    settings.setAccess('claude', 'api')
+    expect(new AgentSettings(directory).get('claude')).toEqual(profile)
     expect(settings.key('claude')).toBe('fixture-key')
-    settings.save({ ...profile, access: 'api' })
-    expect(settings.key('claude')).toBe('fixture-key')
-    settings.save({ ...profile, access: 'native', baseUrl: 'https://another.example/anthropic' })
-    expect(settings.get('claude').hasApiKey).toBe(false)
-    expect(settings.key('claude')).toBeUndefined()
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
-})
-
-it('never reuses a key for a different path or billing product, even on the same host', () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), 'melo-agent-settings-'))
-  try {
-    const settings = new AgentSettings(directory)
-    const profile = {
-      provider: 'claude' as const,
-      access: 'api' as const,
-      baseUrl: 'https://open.bigmodel.cn/api/anthropic',
-      model: 'glm-5.3',
-    }
-    settings.save({ ...profile, apiService: 'zhipu', apiKey: 'ordinary-key' })
-    settings.save({ ...profile, apiService: 'zhipu-coding' })
-    expect(settings.key('claude')).toBeUndefined()
-    settings.save({ ...profile, apiService: 'zhipu-coding', apiKey: 'coding-key' })
-    settings.save({ ...profile, apiService: 'zhipu-coding', access: 'native' })
-    const restored = new AgentSettings(directory)
-    expect(restored.get().apiService).toBe('zhipu-coding')
-    expect(restored.key('claude')).toBe('coding-key')
-    restored.save({ ...profile, apiService: 'custom', baseUrl: 'https://open.bigmodel.cn/other' })
-    expect(restored.key('claude')).toBeUndefined()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -95,9 +69,8 @@ it('keeps legacy custom keys custom when a new service happens to share their ad
   const directory = mkdtempSync(path.join(os.tmpdir(), 'melo-agent-settings-'))
   try {
     const settings = new AgentSettings(directory)
-    settings.save({
+    settings.saveVerifiedApi({
       provider: 'claude',
-      access: 'api',
       baseUrl: 'https://open.bigmodel.cn/api/anthropic',
       model: 'glm-5.3',
       apiKey: 'legacy-key',
@@ -105,18 +78,51 @@ it('keeps legacy custom keys custom when a new service happens to share their ad
     const file = path.join(directory, 'settings.json')
     const legacy = JSON.parse(readFileSync(file, 'utf8'))
     delete legacy.claude.apiService
+    delete legacy.claude.apiVerified
     writeFileSync(file, JSON.stringify(legacy))
     const restored = new AgentSettings(directory)
     expect(restored.get().apiService).toBe('custom')
     expect(restored.key('claude')).toBe('legacy-key')
-    restored.save({
-      provider: 'claude',
-      access: 'api',
-      apiService: 'zhipu',
-      baseUrl: 'https://open.bigmodel.cn/api/anthropic',
-      model: 'glm-5.3',
-    })
-    expect(restored.key('claude')).toBeUndefined()
+    expect(restored.get().apiVerified).toBeUndefined()
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('persists verification only for the validated profile and preserves it across access changes', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'melo-agent-settings-'))
+  try {
+    const settings = new AgentSettings(directory)
+    const profile = {
+      provider: 'claude' as const,
+      access: 'api' as const,
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      model: 'deepseek-flash',
+      apiService: 'deepseek' as const,
+    }
+    settings.saveVerifiedApi({ ...profile, apiKey: 'fixture-key' })
+    expect(new AgentSettings(directory).get('claude').apiVerified).toBe(true)
+    expect(settings.invalidateApiVerification({ ...profile, apiKey: 'wrong-replacement' })).toBe(
+      false,
+    )
+    expect(settings.get('claude').apiVerified).toBe(true)
+    expect(settings.invalidateApiVerification({ ...profile, apiKey: 'fixture-key' })).toBe(true)
+    expect(new AgentSettings(directory).get('claude').apiVerified).toBe(false)
+    settings.saveVerifiedApi({ ...profile, apiKey: 'fixture-key' })
+
+    settings.setAccess('claude', 'native')
+    settings.setAccess('claude', 'api')
+    expect(settings.get('claude').apiVerified).toBe(true)
+    settings.saveVerifiedApi({ ...profile, model: 'another-model', apiKey: 'replacement-key' })
+    const restored = new AgentSettings(directory)
+    expect(restored.get('claude').apiVerified).toBe(true)
+    expect(restored.get('claude').model).toBe('another-model')
+    expect(restored.key('claude')).toBe('replacement-key')
+    restored.invalidateApiVerification({ ...profile, apiKey: 'fixture-key' })
+    expect(restored.get('claude').apiVerified).toBe(true)
+    restored.saveVerifiedApi({ ...profile, apiKey: 'new-key' })
+    expect(restored.invalidateApiVerification({ ...profile, apiKey: 'fixture-key' })).toBe(false)
+    expect(new AgentSettings(directory).get('claude').apiVerified).toBe(true)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

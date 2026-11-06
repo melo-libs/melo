@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.3](https://github.com/melo-libs/melo/compare/v2.1.2...v2.1.3) (2026-11-07)
+
+- API connections now distinguish saved credentials from verified connections, with clear feedback next to rejected keys.
+- New API settings are verified before saving. A rejected replacement key preserves the previous working configuration.
+- Unchanged verified API settings offer a connection test without replacing credentials or interrupting the active connection.
+- Model discovery and API connection checks now follow system proxy settings.
+- Removed the connection setup flash when first opening the AI conversation window and refined the update dialog layout.
+
 ## [2.1.2](https://github.com/melo-libs/melo/compare/v2.1.1...v2.1.2) (2026-11-06)
 
 - Fixed existing Claude Code and Codex installations being treated as missing when their versions differed from the default download versions.

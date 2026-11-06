@@ -84,12 +84,9 @@ it.each([true, false])(
       } else {
         await vi.waitFor(() => expect(onLogin).toHaveBeenCalledWith('codex'))
         expect(agentCommand).toHaveBeenCalledWith({
-          action: 'configure',
+          action: 'set-access',
           provider: 'codex',
           access: 'native',
-          baseUrl: config.baseUrl,
-          model: config.model,
-          apiService: config.apiService,
         })
       }
     } finally {
@@ -167,3 +164,42 @@ it.each([false, true])(
     }
   },
 )
+
+it('keeps initial checks neutral and only adds a hint when they take longer', async () => {
+  const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
+  vi.stubGlobal('window', window)
+  vi.stubGlobal('document', window.document)
+  const { createRoot } = await import('react-dom/client')
+  const { flushSync } = await import('react-dom')
+  const root = createRoot(window.document.getElementById('root')!)
+  const props = {
+    setup: null,
+    checking: true,
+    accounts: { claude: { status: 'unknown' as const }, codex: { status: 'unknown' as const } },
+    busy: false,
+    onProvider: vi.fn(),
+    onLogin: vi.fn(),
+    onCheck: vi.fn(),
+    onSettings: vi.fn(),
+  }
+  vi.useFakeTimers()
+  try {
+    flushSync(() => root.render(createElement(AgentWelcome, props)))
+    expect(window.document.querySelector('.agent-welcome-logo')).not.toBeNull()
+    expect(window.document.querySelector('.agent-connect-options')).toBeNull()
+    expect(window.document.querySelector('button')).toBeNull()
+    expect(window.document.querySelector('p')?.style.visibility).toBe('hidden')
+    flushSync(() => vi.advanceTimersByTime(1000))
+    expect(window.document.querySelector('p')?.textContent).toBe('agent.preparingConnection')
+    expect(window.document.querySelector('p')?.style.visibility).toBe('visible')
+    flushSync(() => root.render(createElement(AgentWelcome, { ...props, setup, checking: false })))
+    expect(window.document.querySelector('.agent-connect-options')).not.toBeNull()
+    expect(
+      window.document.querySelector('[role="status"][aria-label="agent.preparingConnection"]'),
+    ).toBeNull()
+    expect(agentCommand).not.toHaveBeenCalled()
+  } finally {
+    flushSync(() => root.unmount())
+    vi.useRealTimers()
+  }
+})

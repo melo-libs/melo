@@ -232,6 +232,7 @@ it.each(['native', 'api'] as const)(
     vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
     vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
     const close = vi.fn(async () => {})
+    const onApiAuthenticationFailed = vi.fn()
     const start = vi.spyOn(AcpConnection, 'start').mockResolvedValue({
       createSession: async () => ({ sessionId: 'fixture' }),
       setConfigOption: async () => [],
@@ -245,6 +246,7 @@ it.each(['native', 'api'] as const)(
     let runtime: Awaited<ReturnType<ReturnType<typeof createRuntimeFactory>>> | undefined
     try {
       const factory = createRuntimeFactory({
+        onApiAuthenticationFailed,
         environment,
         codexLauncher: '',
         configuration: () => ({
@@ -283,6 +285,17 @@ it.each(['native', 'api'] as const)(
       await expect(runtime.prompt('Hello')).rejects.toThrow(
         access === 'native' ? 'AGENT_SIGN_IN_REQUIRED' : 'AGENT_API_AUTH_FAILED',
       )
+      if (access === 'api')
+        expect(onApiAuthenticationFailed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            provider: 'claude',
+            access: 'api',
+            baseUrl: 'https://api.deepseek.com/anthropic',
+            model: 'deepseek-flash',
+          }),
+          'fixture-key',
+        )
+      else expect(onApiAuthenticationFailed).not.toHaveBeenCalled()
     } finally {
       await runtime?.close()
       start.mockRestore()
@@ -295,11 +308,15 @@ it('redacts credentials and maps authentication errors during background prepara
   const environment = new RuntimeEnvironment('unused')
   vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
   vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
+  const onApiAuthenticationFailed = vi.fn()
   const start = vi
     .spyOn(AcpConnection, 'start')
     .mockRejectedValueOnce(new Error('Invalid fixture-key credential'))
+    .mockRejectedValueOnce(new Error('AGENT_API_NETWORK_ERROR'))
+    .mockRejectedValueOnce(new Error('AGENT_API_PAYMENT_REQUIRED'))
     .mockRejectedValueOnce(RequestError.authRequired())
   const factory = createRuntimeFactory({
+    onApiAuthenticationFailed,
     environment,
     codexLauncher: '',
     configuration: () => ({
@@ -321,7 +338,15 @@ it('redacts credentials and maps authentication errors during background prepara
   }
   try {
     await expect(factory.prepare!(conversation)).rejects.toThrow('Invalid [redacted] credential')
+    await expect(factory.prepare!(conversation)).rejects.toThrow('AGENT_API_NETWORK_ERROR')
+    await expect(factory.prepare!(conversation)).rejects.toThrow('AGENT_API_PAYMENT_REQUIRED')
+    expect(onApiAuthenticationFailed).not.toHaveBeenCalled()
     await expect(factory.prepare!(conversation)).rejects.toThrow('AGENT_API_AUTH_FAILED')
+    expect(onApiAuthenticationFailed).toHaveBeenCalledTimes(1)
+    expect(onApiAuthenticationFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'fixture', baseUrl: 'http://127.0.0.1' }),
+      'fixture-key',
+    )
   } finally {
     await factory.close!()
     start.mockRestore()
