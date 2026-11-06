@@ -26,10 +26,15 @@ vi.mock('./runtimeManifest.json', () => ({
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
   for (const fn of cleanup.splice(0)) await fn()
 })
 async function fixture(broken = false, cancelPreparing = false, coldStart = false) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'melo-component-'))
+  const localBin = path.join(root, 'bin')
+  await mkdir(localBin)
+  vi.spyOn(os, 'homedir').mockReturnValue(path.join(root, 'home'))
+  vi.stubEnv('PATH', `${localBin}${path.delimiter}/usr/bin${path.delimiter}/bin`)
   const source = path.join(root, 'source/package')
   await mkdir(source, { recursive: true })
   await writeFile(
@@ -74,8 +79,34 @@ async function fixture(broken = false, cancelPreparing = false, coldStart = fals
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await rm(root, { recursive: true, force: true })
   })
-  return { manager, states, root, requests: () => requests }
+  return { manager, states, root, localBin, requests: () => requests }
 }
+it('reuses local tools with different versions and after independent upgrades', async () => {
+  const { manager, localBin, requests } = await fixture()
+  for (const [provider, version] of [
+    ['claude', '2.1.220'],
+    ['codex', '0.166.0'],
+  ] as const) {
+    const executable = path.join(localBin, provider)
+    await writeFile(executable, `#!/bin/sh\necho ${version}\n`, { mode: 0o755 })
+    expect((await manager.inspect())[provider]).toMatchObject({ status: 'ready', source: 'local' })
+    expect(await manager.requireProvider(provider)).toBe(executable)
+    await writeFile(executable, '#!/bin/sh\necho 100.0.0\n')
+    expect(await manager.requireProvider(provider)).toBe(executable)
+    await manager.install(provider)
+  }
+  expect(requests()).toBe(0)
+})
+it('reuses an existing managed tool after its version changes', async () => {
+  const { manager, requests } = await fixture()
+  await manager.install('claude')
+  const executable = await manager.requireProvider('claude')
+  await writeFile(executable, '#!/bin/sh\necho 100.0.0\n')
+  expect((await manager.inspect()).claude.status).toBe('ready')
+  expect(await manager.requireProvider('claude')).toBe(executable)
+  await manager.install('claude')
+  expect(requests()).toBe(1)
+})
 it('coalesces installs and verifies and activates each tool independently', async () => {
   const { manager, states, root, requests } = await fixture()
   const credentials = path.join(root, 'account.json')

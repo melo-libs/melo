@@ -1,4 +1,5 @@
 import type { McpServer } from '@agentclientprotocol/sdk'
+import path from 'node:path'
 import type { AgentConfiguration } from '../../../shared/types/agent'
 import { AcpConnection, type AcpConnectionOptions } from './acpConnection'
 import { claudeApiConfiguration } from './claudeAccess'
@@ -97,6 +98,7 @@ export async function startHarnessConnection(
     }
   }
   if (configuration.provider === 'claude') {
+    env.PATH = `${path.dirname(node)}${path.delimiter}${env.PATH ?? ''}`
     env.CLAUDE_CODE_EXECUTABLE = executable
     if (options.scratchDirectory) {
       env.CLAUDE_CODE_TMPDIR = options.scratchDirectory

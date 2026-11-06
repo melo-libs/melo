@@ -64,24 +64,30 @@ export class RuntimeEnvironment {
   }
   private async validExecutable(
     executable: string,
-    version: string,
+    version?: string,
     options: { timeout?: number; signal?: AbortSignal } = {},
   ): Promise<boolean> {
     try {
       const { stdout } = await execute(executable, ['--version'], {
         timeout: 5000,
         ...options,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: undefined,
+          PATH: this.node
+            ? `${path.dirname(this.node)}${path.delimiter}${process.env.PATH ?? ''}`
+            : process.env.PATH,
+        },
       })
-      return stdout.match(/\b\d+\.\d+\.\d+\b/)?.[0] === version
+      // An exact version is required only when installing a newly downloaded artifact.
+      return version === undefined || stdout.match(/\b\d+\.\d+\.\d+\b/)?.[0] === version
     } catch {
       return false
     }
   }
   async requireProvider(provider: AgentProvider): Promise<string> {
     const existing = this.executables.get(provider)
-    if (existing && (await this.validExecutable(existing, this.artifacts()[provider].version)))
-      return existing
+    if (existing && (await this.validExecutable(existing))) return existing
     this.executables.delete(provider)
     const found = await this.findProvider(provider)
     if (!found) throw new Error('AGENT_RUNTIME_REQUIRED')
@@ -94,7 +100,7 @@ export class RuntimeEnvironment {
     this.executables.delete(provider)
     const artifact = this.artifacts()[provider]
     const managed = path.join(this.destination(provider), artifact.executable)
-    if (await this.validExecutable(managed, artifact.version, options)) {
+    if (await this.validExecutable(managed, undefined, options)) {
       this.executables.set(provider, managed)
       return { executable: managed, source: 'managed' }
     }
@@ -111,7 +117,7 @@ export class RuntimeEnvironment {
     for (const directory of new Set(dirs)) {
       options.signal?.throwIfAborted()
       const executable = path.join(directory, provider)
-      if (await this.validExecutable(executable, artifact.version, { signal: options.signal })) {
+      if (await this.validExecutable(executable, undefined, { signal: options.signal })) {
         this.executables.set(provider, executable)
         return { executable, source: 'local' }
       }

@@ -6,9 +6,6 @@ vi.mock('node:child_process', async () => {
   const { promisify } = await import('node:util')
   return { execFile: Object.assign(vi.fn(), { [promisify.custom]: execute }) }
 })
-vi.mock('./runtimeEnvironment', () => ({
-  adapterEntry: (provider: string) => `/fixture/${provider}.js`,
-}))
 afterEach(() => vi.resetAllMocks())
 
 it.each(['claude', 'codex'] as const)('uses only the %s CLI status command', async (provider) => {
@@ -16,26 +13,31 @@ it.each(['claude', 'codex'] as const)('uses only the %s CLI status command', asy
     stdout: provider === 'claude' ? '{"loggedIn":true}' : 'Logged in using ChatGPT',
     stderr: '',
   })
-  expect((await checkNativeAuthentication('/fixture/node', provider)).status).toBe('signed-in')
+  expect((await checkNativeAuthentication('/fixture/cli', provider, '/fixture/node')).status).toBe(
+    'signed-in',
+  )
   expect(execute.mock.calls[0][1]).toEqual(
     provider === 'claude' ? ['auth', 'status', '--json'] : ['login', 'status'],
   )
   expect(execute).toHaveBeenCalledTimes(1)
+  expect(execute.mock.calls[0][2].env.PATH.split(':')[0]).toBe('/fixture')
 })
 it.each(['claude', 'codex'] as const)(
   'recognizes an explicit signed-out %s response',
   async (provider) => {
     execute.mockRejectedValue({ code: 1, stdout: '{"loggedIn":false}', stderr: 'Not logged in' })
-    expect((await checkNativeAuthentication('/fixture/node', provider)).status).toBe('signed-out')
+    expect(
+      (await checkNativeAuthentication('/fixture/cli', provider, '/fixture/node')).status,
+    ).toBe('signed-out')
   },
 )
 it.each([{ code: 'ETIMEDOUT' }, { code: null, killed: true }])(
   'reports a timeout instead of unknown or signed-out',
   async (error) => {
     execute.mockRejectedValue(error)
-    await expect(checkNativeAuthentication('/fixture/node', 'codex')).rejects.toThrow(
-      'AGENT_AUTH_CHECK_TIMEOUT',
-    )
+    await expect(
+      checkNativeAuthentication('/fixture/cli', 'codex', '/fixture/node'),
+    ).rejects.toThrow('AGENT_AUTH_CHECK_TIMEOUT')
   },
 )
 it.each(['claude', 'codex'] as const)(
@@ -46,16 +48,16 @@ it.each(['claude', 'codex'] as const)(
       stdout: 'private account details',
       stderr: 'config failure: private credential',
     })
-    await expect(checkNativeAuthentication('/fixture/node', provider)).rejects.toThrow(
-      /^AGENT_AUTH_CHECK_FAILED$/,
-    )
+    await expect(
+      checkNativeAuthentication('/fixture/cli', provider, '/fixture/node'),
+    ).rejects.toThrow(/^AGENT_AUTH_CHECK_FAILED$/)
   },
 )
 it('reports malformed Claude status as a check failure', async () => {
   execute.mockResolvedValue({ stdout: 'not json', stderr: '' })
-  await expect(checkNativeAuthentication('/fixture/node', 'claude')).rejects.toThrow(
-    'AGENT_AUTH_CHECK_FAILED',
-  )
+  await expect(
+    checkNativeAuthentication('/fixture/cli', 'claude', '/fixture/node'),
+  ).rejects.toThrow('AGENT_AUTH_CHECK_FAILED')
 })
 
 it('returns only a validated email from Claude status, without retaining other account fields', async () => {
@@ -63,7 +65,7 @@ it('returns only a validated email from Claude status, without retaining other a
     stdout: JSON.stringify({ loggedIn: true, email: 'test@example.com', token: 'do-not-return' }),
     stderr: '',
   })
-  expect(await checkNativeAuthentication('/fixture/node', 'claude')).toEqual({
+  expect(await checkNativeAuthentication('/fixture/cli', 'claude', '/fixture/node')).toEqual({
     status: 'signed-in',
     email: 'test@example.com',
   })
@@ -73,7 +75,7 @@ it('reports the Codex sign-in method without returning the displayed key', async
     stdout: '',
     stderr: 'Logged in using an API key - private-key-fixture',
   })
-  expect(await checkNativeAuthentication('/fixture/node', 'codex')).toEqual({
+  expect(await checkNativeAuthentication('/fixture/cli', 'codex', '/fixture/node')).toEqual({
     status: 'signed-in',
     method: 'api-key',
   })

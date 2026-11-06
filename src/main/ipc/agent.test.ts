@@ -160,5 +160,5 @@ it('returns configuration without probing accounts and checks only on the dedica
   const refresh = await invoke({ action: 'check-sign-in', provider: 'claude' })
   expect(refresh.data.authentication).toEqual({ status: 'signed-in' })
   expect(checkNativeAuthentication).toHaveBeenCalledTimes(1)
-  expect(checkNativeAuthentication).toHaveBeenCalledWith('/fixture/cli', 'claude')
+  expect(checkNativeAuthentication).toHaveBeenCalledWith('/fixture/cli', 'claude', '/fixture/node')
 })
