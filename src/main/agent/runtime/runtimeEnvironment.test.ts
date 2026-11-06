@@ -28,11 +28,19 @@ afterEach(async () => {
   vi.restoreAllMocks()
   for (const fn of cleanup.splice(0)) await fn()
 })
-async function fixture(broken = false, cancelPreparing = false) {
+async function fixture(broken = false, cancelPreparing = false, coldStart = false) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'melo-component-'))
   const source = path.join(root, 'source/package')
   await mkdir(source, { recursive: true })
-  await writeFile(path.join(source, 'cli'), '#!/bin/sh\necho 99.0.0\n', { mode: 0o755 })
+  await writeFile(
+    path.join(source, 'cli'),
+    '#!/bin/sh\n' +
+      (coldStart
+        ? 'marker="$(dirname "$0")/started"\nif [ ! -f "$marker" ]; then sleep 6; touch "$marker"; fi\n'
+        : '') +
+      'echo 99.0.0\n',
+    { mode: 0o755 },
+  )
   await writeFile(path.join(source, 'payload'), Buffer.alloc(1024, 1))
   const file = path.join(root, 'fixture.tgz')
   execFileSync('tar', ['-czf', file, '-C', path.dirname(source), 'package'])
@@ -93,6 +101,11 @@ it('does not activate a corrupted download or discard another installed version'
   expect(states.at(-1)!.claude.status).toBe('error')
   expect(await readFile(path.join(old, 'cli'), 'utf8')).toBe('previous')
 })
+it('allows a cold first launch to take longer than a routine version probe', async () => {
+  const { manager } = await fixture(false, false, true)
+  await manager.install('claude')
+  expect((await manager.inspect()).claude.status).toBe('ready')
+}, 15_000)
 it('reinstalls if a previously selected executable disappears', async () => {
   const { manager, requests } = await fixture()
   await manager.install('claude')

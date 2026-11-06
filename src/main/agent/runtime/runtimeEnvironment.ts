@@ -62,10 +62,15 @@ export class RuntimeEnvironment {
     this.components = { ...this.components, [provider]: { ...this.components[provider], ...value } }
     this.publish(this.components)
   }
-  private async validExecutable(executable: string, version: string): Promise<boolean> {
+  private async validExecutable(
+    executable: string,
+    version: string,
+    options: { timeout?: number; signal?: AbortSignal } = {},
+  ): Promise<boolean> {
     try {
       const { stdout } = await execute(executable, ['--version'], {
         timeout: 5000,
+        ...options,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
       })
       return stdout.match(/\b\d+\.\d+\.\d+\b/)?.[0] === version
@@ -300,7 +305,8 @@ export class RuntimeEnvironment {
       const resolved = await realpath(executable)
       if (
         !resolved.startsWith((await realpath(staging)) + path.sep) ||
-        !(await this.validExecutable(executable, artifact.version))
+        // First launch may include macOS verification or Rosetta translation.
+        !(await this.validExecutable(executable, artifact.version, { timeout: 60_000, signal }))
       )
         throw new Error('AGENT_RUNTIME_INSTALL_FAILED')
       signal.throwIfAborted()
