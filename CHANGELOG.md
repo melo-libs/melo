@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.1.2](https://github.com/melo-libs/melo/compare/v2.1.1...v2.1.2) (2026-11-06)
+
+- Fixed existing Claude Code and Codex installations being treated as missing when their versions differed from the default download versions.
+- Fixed Node PATH resolution for tool discovery, sign-in checks, and Claude sessions when launching Melo from Finder.
+
 ## [2.1.1](https://github.com/melo-libs/melo/compare/v2.1.0...v2.1.1) (2026-11-06)
 
 - Download native AI tools on first connection, with progress, cancellation, retry, background downloads, and reuse of compatible local installations.
