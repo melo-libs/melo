@@ -5,7 +5,7 @@ import type { Editor } from '@tiptap/react'
 import { CellSelection, cellAround } from '@tiptap/pm/tables'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
-import { setCellAttr } from './tableUtils'
+import { setColumnAlignment } from './tableUtils'
 import { Icon, type IconName } from '../../Icon'
 
 // ---------------------------------------------------------------------------
@@ -68,17 +68,17 @@ function useCellActions(editor: Editor) {
       {
         icon: 'alignLeft',
         label: t('table.alignLeft'),
-        action: () => setCellAttr('align', 'left')(editor.state, editor.view.dispatch),
+        action: () => setColumnAlignment('left')(editor.state, editor.view.dispatch),
       },
       {
         icon: 'alignCenter',
         label: t('table.alignCenter'),
-        action: () => setCellAttr('align', 'center')(editor.state, editor.view.dispatch),
+        action: () => setColumnAlignment('center')(editor.state, editor.view.dispatch),
       },
       {
         icon: 'alignRight',
         label: t('table.alignRight'),
-        action: () => setCellAttr('align', 'right')(editor.state, editor.view.dispatch),
+        action: () => setColumnAlignment('right')(editor.state, editor.view.dispatch),
       },
     ]
   }, [editor, t])

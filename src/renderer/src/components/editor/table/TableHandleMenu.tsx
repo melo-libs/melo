@@ -11,7 +11,7 @@ import {
   isValidPosition,
   selectCellsByCoords,
   getIndexCoordinates,
-  setCellAttr,
+  setColumnAlignment,
 } from './tableUtils'
 import { Icon, type IconName } from '../../Icon'
 
@@ -262,7 +262,7 @@ function useTableActions(
         label: t('table.alignLeft'),
         action: () => {
           selectRowOrColumn()
-          setCellAttr('align', 'left')(editor.state, editor.view.dispatch)
+          setColumnAlignment('left')(editor.state, editor.view.dispatch)
         },
       },
       {
@@ -270,7 +270,7 @@ function useTableActions(
         label: t('table.alignCenter'),
         action: () => {
           selectRowOrColumn()
-          setCellAttr('align', 'center')(editor.state, editor.view.dispatch)
+          setColumnAlignment('center')(editor.state, editor.view.dispatch)
         },
       },
       {
@@ -278,7 +278,7 @@ function useTableActions(
         label: t('table.alignRight'),
         action: () => {
           selectRowOrColumn()
-          setCellAttr('align', 'right')(editor.state, editor.view.dispatch)
+          setColumnAlignment('right')(editor.state, editor.view.dispatch)
         },
       },
     ]
