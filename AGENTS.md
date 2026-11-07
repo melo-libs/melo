@@ -12,7 +12,7 @@ terms; keep acronyms such as MCP, HTTP, and PDF unchanged.
 
 - **Runtime**: Electron 31 (electron-vite for build tooling)
 - **Frontend**: React 18, TypeScript 5.5
-- **Editor**: Tiptap 3.25 (ProseMirror-based rich text editor)
+- **Editor**: Tiptap 3.33 (ProseMirror-based rich text editor)
 - **State**: Jotai (atomic state management)
 - **UI**: Radix UI primitives, shared Melo UI components, Sass
 - **Build**: Vite 5, pnpm

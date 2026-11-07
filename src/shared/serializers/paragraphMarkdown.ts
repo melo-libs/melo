@@ -1,4 +1,5 @@
 import { Paragraph } from '@tiptap/extension-paragraph'
+import { ORDERED_LIST_MARKER_PATTERN } from '@tiptap/extension-list/ordered-list'
 import type { JSONContent } from '@tiptap/core'
 
 /* ============================================================
@@ -13,6 +14,7 @@ import type { JSONContent } from '@tiptap/core'
    ============================================================ */
 
 const EMPTY_PARAGRAPH_MARKDOWN = '&nbsp;'
+const ORDERED_LIST_PREFIX = new RegExp(`^(\\s{0,3})(${ORDERED_LIST_MARKER_PATTERN})([.)])(\\s)`)
 
 /** Escape a line-leading block token so the line stays paragraph text.
  *  Backslash before the construct's first significant character is the
@@ -27,8 +29,8 @@ export function escapeLeadingBlockTokens(line: string): string {
       .replace(/^(\s{0,3})((?:-{3,}|_{3,})\s*$|={1,}\s*$)/, '$1\\$2')
       // bullet: - x / + x
       .replace(/^(\s{0,3})([-+])(\s)/, '$1\\$2$3')
-      // ordered: 1. x / 1) x
-      .replace(/^(\s{0,3})(\d{1,9})([.)])(\s)/, '$1$2\\$3$4')
+      // Match the parser's numeric, alphabetic and Roman list markers.
+      .replace(ORDERED_LIST_PREFIX, '$1$2\\$3$4')
       // fence: ``` / ~~~
       .replace(/^(\s{0,3})(`{3,}|~{3,})/, '$1\\$2')
       // table row: | a |
