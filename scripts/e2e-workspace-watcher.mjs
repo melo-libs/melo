@@ -177,6 +177,22 @@ async function run() {
   const originalBlocks = await prose.locator(':scope > *').count()
   const beforeBlankClick = await prose.innerText()
   const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await prose.locator(':scope > p').last().click()
+  await page.keyboard.press(modifier === 'Meta' ? 'Meta+ArrowRight' : 'End')
+  await page.keyboard.press('Enter')
+  await waitUntil(
+    'Enter should split a paragraph and place the caret in the new paragraph',
+    async () =>
+      (await prose.locator(':scope > *').count()) === originalBlocks + 1 &&
+      (await prose.locator(':scope > p:last-child').textContent()) === '',
+  )
+  await page.keyboard.press(`${modifier}+Z`)
+  await waitUntil(
+    'paragraph splitting should undo',
+    async () =>
+      (await prose.locator(':scope > *').count()) === originalBlocks &&
+      (await prose.innerText()) === beforeBlankClick,
+  )
   for (const target of ['ed-page', 'ed-scroll', 'ed-page']) {
     const point = await page.evaluate((target) => {
       const editor = document.querySelector('.ProseMirror').getBoundingClientRect()

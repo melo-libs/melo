@@ -76,7 +76,7 @@ const BlockMathStd = BlockMath.extend({
 /**
  * Editor extension set.
  *
- * StarterKit (3.25) bundles and enables, by default: document/paragraph/
+ * StarterKit bundles and enables, by default: document/paragraph/
  * text, the bold/italic/strike/code/**underline** marks, link, headings,
  * blockquote, bullet/ordered lists + list item, horizontal rule, history.
  * So `toggleUnderline` / `toggleBold` / link etc. are available without
