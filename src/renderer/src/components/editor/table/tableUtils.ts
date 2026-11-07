@@ -1,8 +1,8 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model'
-import type { EditorState, Transaction } from '@tiptap/pm/state'
+import type { Command, EditorState, Transaction } from '@tiptap/pm/state'
 import { TextSelection } from '@tiptap/pm/state'
-import { CellSelection, TableMap } from '@tiptap/pm/tables'
+import { CellSelection, TableMap, cellAround } from '@tiptap/pm/tables'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -425,22 +425,33 @@ export function rectEq(a: DOMRect | null, b: DOMRect | null): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 }
 
-/**
- * Command to set a cell attribute on all cells in a CellSelection.
- */
-export function setCellAttr(name: string, value: unknown) {
-  return (state: EditorState, dispatch?: (tr: Transaction) => void): boolean => {
+/** GFM stores alignment per column, so every row must agree before saving. */
+export function setColumnAlignment(alignment: 'left' | 'center' | 'right'): Command {
+  return (state, dispatch) => {
     const { selection } = state
-    if (!(selection instanceof CellSelection)) return false
+    const $cell =
+      selection instanceof CellSelection ? selection.$anchorCell : cellAround(selection.$from)
+    if (!$cell) return false
+
+    const table = $cell.node(-1)
+    const start = $cell.start(-1)
+    const map = TableMap.get(table)
+    const rect =
+      selection instanceof CellSelection
+        ? map.rectBetween(selection.$anchorCell.pos - start, selection.$headCell.pos - start)
+        : map.findCell($cell.pos - start)
+
+    if (!dispatch) return true
 
     const tr = state.tr
-    selection.forEachCell((node, pos) => {
-      if (node.attrs[name] !== value) {
-        tr.setNodeMarkup(pos, null, { ...node.attrs, [name]: value })
+    for (const offset of map.cellsInRect({ ...rect, top: 0, bottom: map.height })) {
+      const node = table.nodeAt(offset)!
+      if (node.attrs.align !== alignment) {
+        tr.setNodeMarkup(start + offset, null, { ...node.attrs, align: alignment })
       }
-    })
+    }
 
-    if (tr.docChanged && dispatch) dispatch(tr)
+    if (tr.docChanged) dispatch(tr)
     return true
   }
 }

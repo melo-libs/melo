@@ -19,6 +19,7 @@ const browseScreenshotPath = process.env.MELO_E2E_BROWSE_SCREENSHOT
 const clipScreenshotPath = process.env.MELO_E2E_CLIP_SCREENSHOT
 const smartScreenshotPath = process.env.MELO_E2E_SMART_SCREENSHOT
 const outlineScreenshotPath = process.env.MELO_E2E_OUTLINE_SCREENSHOT
+const tableScreenshotPath = process.env.MELO_E2E_TABLE_SCREENSHOT
 const smartBuilderScreenshotPath = process.env.MELO_E2E_SMART_BUILDER_SCREENSHOT
 const logs = []
 let app
@@ -68,6 +69,13 @@ function seedWorkspace() {
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="3" fill="#356ef6"/></svg>',
   )
   fs.writeFileSync(path.join(workspace, 'delete-me.md'), note('Delete Me', 'Remove externally.'))
+  fs.writeFileSync(
+    path.join(workspace, 'table-alignment.md'),
+    note(
+      'Table alignment',
+      '| Item | Status |\n| :--- | ---: |\n| First | One |\n| Second | Two |',
+    ),
+  )
   fs.mkdirSync(path.join(workspace, '00 Parent', '00 Child', '00 Target', '00 Deep'), {
     recursive: true,
   })
@@ -279,6 +287,58 @@ async function run() {
       (await prose.locator(':scope > *').count()) === originalBlocks + 1 &&
       (await prose.locator(':scope > p:last-child').innerHTML()) === 'Blank-click continuation.',
   )
+
+  const tableFile = path.join(workspace, 'table-alignment.md')
+  const tableAlignments = () =>
+    prose
+      .locator('tr')
+      .evaluateAll((rows) =>
+        rows.map((row) =>
+          Array.from(row.querySelectorAll('th p, td p'), (p) => getComputedStyle(p).textAlign),
+        ),
+      )
+  const expectedAlignments = (alignment) => Array.from({ length: 3 }, () => [alignment, 'right'])
+  for (const alignment of ['center', 'right', 'left']) {
+    await treeRow(page, 'table-alignment').first().click()
+    const row = alignment === 'right' ? 0 : 1
+    await prose.locator('tr').nth(row).locator('th, td').first().click()
+    await page.getByRole('button', { name: 'Cell options', exact: true }).click()
+    await page.getByRole('menuitem', { name: `Align ${alignment}`, exact: true }).click()
+    await waitUntil(
+      `the whole column should align ${alignment}`,
+      async () =>
+        JSON.stringify(await tableAlignments()) === JSON.stringify(expectedAlignments(alignment)),
+    )
+    if (alignment === 'center') {
+      await prose.locator('td').first().click()
+      await page.keyboard.press(`${modifier}+Z`)
+      assert.deepEqual(await tableAlignments(), expectedAlignments('left'))
+      await page.keyboard.press(`${modifier}+Shift+Z`)
+      assert.deepEqual(await tableAlignments(), expectedAlignments('center'))
+      if (tableScreenshotPath) await page.screenshot({ path: tableScreenshotPath })
+    }
+    await page.keyboard.press(`${modifier}+S`)
+    await waitUntil('alignment should persist in the Markdown delimiter row', () => {
+      const separator = fs
+        .readFileSync(tableFile, 'utf8')
+        .split('\n')
+        .find((line) => /^\|\s*:?-{3,}:?\s*\|/u.test(line))
+      return alignment === 'center'
+        ? /^\|\s*:-+:\s*\|/u.test(separator ?? '')
+        : alignment === 'right'
+          ? /^\|\s*-+:\s*\|/u.test(separator ?? '')
+          : /^\|\s*:-+\s*\|/u.test(separator ?? '')
+    })
+    await treeRow(page, 'captured').first().click()
+    await prose.locator('h1', { hasText: 'Captured' }).waitFor()
+    await treeRow(page, 'table-alignment').first().click()
+    await waitUntil(
+      'alignment should survive reopening the document',
+      async () =>
+        JSON.stringify(await tableAlignments()) === JSON.stringify(expectedAlignments(alignment)),
+    )
+  }
+  await treeRow(page, 'captured').first().click()
   await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
   await smartResults.waitFor({ state: 'visible' })
   await waitUntil('returning to Smart Folders should preserve the visible outline', async () =>
@@ -675,7 +735,7 @@ async function run() {
       {
         ok: true,
         folders: LARGE_FOLDER_COUNT,
-        seededFiles: LARGE_FOLDER_COUNT * 3 + 2,
+        seededFiles: LARGE_FOLDER_COUNT * 3 + 3,
         elapsedMs: Date.now() - startedAt,
         mainProcessRssMb: Math.round(rssKb / 1024),
         moveRowsMounted: mountedAtTop,
