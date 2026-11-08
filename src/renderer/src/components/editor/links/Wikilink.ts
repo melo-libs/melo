@@ -30,6 +30,10 @@ export const Wikilink = Node.create({
   atom: true,
   selectable: true,
 
+  renderText({ node }) {
+    return (node.attrs.label as string | null) || (node.attrs.target as string)
+  },
+
   addAttributes() {
     return {
       target: { default: '' },
@@ -60,7 +64,7 @@ export const Wikilink = Node.create({
       mergeAttributes({
         class: 'wikilink',
         'data-note': node.attrs.target,
-        'data-label': label,
+        'data-label': node.attrs.label ?? '',
         tabindex: '0',
       }),
       ['span', { class: 'wl-bracket' }, '⟦'],

@@ -28,6 +28,7 @@ import { Backlinks } from './links/Backlinks'
 import { MathEditor } from './MathEditor'
 import type { SharePayload } from './ShareCard'
 import { SlashMenu } from './SlashMenu'
+import { canCopyEditorSelection, copySelectionAsMarkdown } from './EditorClipboard'
 import { TableHandle } from './table/TableHandle'
 import { TableExtendButtons } from './table/TableExtendButtons'
 import { TableSelectionOverlay } from './table/TableSelectionOverlay'
@@ -106,6 +107,35 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
     content: '',
     autofocus: 'start',
   })
+
+  useEffect(() => {
+    if (!editor) return
+    const available = () => Boolean(activeTabId && canCopyEditorSelection(editor))
+    const sync = () =>
+      window.api.send(window.api.channels.CopyMarkdownAvailable, {
+        available: document.hasFocus() && available(),
+      })
+    const off = window.api.on(window.api.channels.OnCopyAsMarkdown, () => {
+      if (available()) void copySelectionAsMarkdown(editor)
+    })
+    editor.on('selectionUpdate', sync)
+    document.addEventListener('focusin', sync)
+    document.addEventListener('focusout', sync)
+    document.addEventListener('selectionchange', sync)
+    window.addEventListener('focus', sync)
+    window.addEventListener('blur', sync)
+    sync()
+    return () => {
+      off()
+      editor.off('selectionUpdate', sync)
+      document.removeEventListener('focusin', sync)
+      document.removeEventListener('focusout', sync)
+      document.removeEventListener('selectionchange', sync)
+      window.removeEventListener('focus', sync)
+      window.removeEventListener('blur', sync)
+      window.api.send(window.api.channels.CopyMarkdownAvailable, { available: false })
+    }
+  }, [editor, activeTabId])
 
   useEffect(() => {
     if (!editor) return

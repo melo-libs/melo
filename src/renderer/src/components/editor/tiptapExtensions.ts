@@ -18,6 +18,10 @@ import { ParagraphMarkdown } from '@shared/serializers/paragraphMarkdown'
 import { Wikilink } from './links/Wikilink'
 import { SmoothCaret } from './SmoothCaret'
 import { BlockShortcuts } from './BlockShortcuts'
+import { EditorClipboard } from './EditorClipboard'
+import { originalClipboardImageSrc } from './clipboardImages'
+import { appStore } from '../../store/appStore'
+import { workspacePathAtom } from '../../store/workspace'
 
 // Clicking a formula opens the equation editor (see MathEditor).
 function emitMathEdit(node: unknown, pos: number, block: boolean) {
@@ -52,6 +56,12 @@ function imageBlockDecos(doc: PMNode): DecorationSet {
 // would collide with our `$$` block shortcut. The content must be non-empty and
 // not space-padded, so prose like "$5 to $10" never turns into a formula.
 const InlineMathStd = InlineMath.extend({
+  renderText: ({ node }) => `$${node.attrs.latex as string}$`,
+  renderHTML: ({ node, HTMLAttributes }) => [
+    'span',
+    { ...HTMLAttributes, 'data-type': 'inline-math' },
+    `$${node.attrs.latex as string}$`,
+  ],
   addInputRules() {
     return [
       new InputRule({
@@ -68,6 +78,12 @@ const InlineMathStd = InlineMath.extend({
 // Block math is entered via `$$` on an empty line (MathShortcut) or `/equation`,
 // so drop the extension's $$$…$$$ rule — one convention, no surprises.
 const BlockMathStd = BlockMath.extend({
+  renderText: ({ node }) => `$$${node.attrs.latex as string}$$`,
+  renderHTML: ({ node, HTMLAttributes }) => [
+    'div',
+    { ...HTMLAttributes, 'data-type': 'block-math' },
+    `$$${node.attrs.latex as string}$$`,
+  ],
   addInputRules() {
     return []
   },
@@ -130,6 +146,7 @@ export const editorExtensions: AnyExtension[] = [
   // — the attrs were silently dropped on save, so the UI was lying.
   Highlight,
   Image.extend({
+    renderText: ({ node }) => (node.attrs.alt as string | null) ?? '',
     addAttributes() {
       const parent = this.parent?.() ?? {}
       return {
@@ -137,7 +154,10 @@ export const editorExtensions: AnyExtension[] = [
         src: {
           default: (parent as Record<string, { default?: unknown }>).src?.default ?? null,
           parseHTML: (el: HTMLElement) => {
-            const raw = el.getAttribute('src') ?? ''
+            const raw =
+              originalClipboardImageSrc(el, appStore.get(workspacePathAtom) ?? '') ||
+              el.getAttribute('src') ||
+              ''
             return raw.startsWith('app://') ? raw.slice(6) : raw
           },
           renderHTML: (attrs: Record<string, unknown>) => {
@@ -204,7 +224,7 @@ export const editorExtensions: AnyExtension[] = [
         }),
       ]
     },
-  }).configure({ inline: true }),
+  }).configure({ inline: true, allowBase64: true }),
   MeloCodeBlock.configure({ lowlight, defaultLanguage: 'plaintext' }),
   TableKit.configure({
     table: { resizable: true },
@@ -216,6 +236,7 @@ export const editorExtensions: AnyExtension[] = [
   InlineMathStd.configure({ onClick: (node, pos) => emitMathEdit(node, pos, false) }),
   Placeholder.configure({ placeholder: "Type '/' for commands…" }),
   Markdown,
+  EditorClipboard,
   MarkdownInput,
   ImagePaste,
   MathShortcut,

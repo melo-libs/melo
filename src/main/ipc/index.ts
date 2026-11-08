@@ -2,9 +2,16 @@ import { ipcMain } from 'electron'
 import { IpcChannels } from '../../shared/types/ipc'
 import { getHandler } from './handlers'
 import { setupAgentIPC } from './agent'
+import { setCopyMarkdownAvailable } from '../menu'
+import { getMainWindow } from '../windows'
 
 export function setupIPC(): void {
   setupAgentIPC()
+  ipcMain.on(IpcChannels.CopyMarkdownAvailable, (event, args: { available: boolean }) => {
+    if (event.sender === getMainWindow()?.webContents && typeof args?.available === 'boolean') {
+      setCopyMarkdownAvailable(args.available)
+    }
+  })
   // Register invoke handlers
   Object.values(IpcChannels).forEach((channel) => {
     const handler = getHandler(channel)

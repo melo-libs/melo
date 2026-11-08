@@ -1,3 +1,11 @@
+let copyVersion = 0
+
+/** A slow image fetch must not overwrite content copied after it. */
+export function clipboardWriteGuard(): () => boolean {
+  const version = ++copyVersion
+  return () => version === copyVersion
+}
+
 /**
  * Copy plain text to the system clipboard.
  *
@@ -7,10 +15,9 @@
  * dev server) and fall back to a hidden-textarea `execCommand('copy')`, which
  * works under `file://` without needing a main-process round-trip.
  *
- * TODO: once real file operations are wired up, route this through an Electron
- * IPC `clipboard.writeText` channel for a fully robust path.
  */
 export async function copyText(text: string): Promise<boolean> {
+  clipboardWriteGuard()
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text)
@@ -21,16 +28,28 @@ export async function copyText(text: string): Promise<boolean> {
   }
 
   try {
+    const focused = document.activeElement as HTMLElement | null
+    const selection = document.getSelection()
+    const ranges = selection
+      ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange())
+      : []
     const ta = document.createElement('textarea')
     ta.value = text
     ta.style.position = 'fixed'
     ta.style.opacity = '0'
     ta.style.pointerEvents = 'none'
     document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
-    return ok
+    try {
+      ta.select()
+      return document.execCommand('copy')
+    } finally {
+      ta.remove()
+      if (focused?.isConnected) focused.focus({ preventScroll: true })
+      if (selection) {
+        selection.removeAllRanges()
+        for (const range of ranges) selection.addRange(range)
+      }
+    }
   } catch {
     return false
   }

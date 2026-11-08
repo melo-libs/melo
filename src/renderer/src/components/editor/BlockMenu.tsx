@@ -77,9 +77,13 @@ export const BlockMenu = ({ editor, node, pos, anchor, onClose }: BlockMenuProps
       label: i18n.t('blocks.copyAsMarkdown'),
       icon: 'fileMd',
       run: () => {
-        void copyText(blockMarkdown(editor, node)).then((ok) => {
-          if (ok) toast(i18n.t('blocks.copied'))
-        })
+        try {
+          void copyText(blockMarkdown(editor, node)).then((ok) => {
+            toast(i18n.t(ok ? 'blocks.copied' : 'editor.copyFailed'))
+          })
+        } catch {
+          toast(i18n.t('editor.copyFailed'))
+        }
         onClose()
       },
     },

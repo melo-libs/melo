@@ -1,6 +1,7 @@
 import type { BrowserWindow, MenuItemConstructorOptions } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import createMenu from './menu'
+import createMenu, { setCopyMarkdownAvailable } from './menu'
+import { IpcChannels } from '../shared/types/ipc'
 
 const mocks = vi.hoisted(() => ({
   app: {
@@ -11,13 +12,17 @@ const mocks = vi.hoisted(() => ({
   },
   buildFromTemplate: vi.fn((template: MenuItemConstructorOptions[]) => ({ items: template })),
   setApplicationMenu: vi.fn(),
+  focusedWindow: vi.fn(),
+  getApplicationMenu: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
   app: mocks.app,
+  BrowserWindow: { getFocusedWindow: mocks.focusedWindow },
   Menu: {
     buildFromTemplate: mocks.buildFromTemplate,
     setApplicationMenu: mocks.setApplicationMenu,
+    getApplicationMenu: mocks.getApplicationMenu,
   },
 }))
 vi.mock('./api/fileOperations/fileOperations', () => ({
@@ -30,6 +35,35 @@ vi.mock('./updater', () => ({
 vi.mock('./settingsWindow', () => ({ openSettingsWindow: vi.fn() }))
 
 beforeEach(() => vi.clearAllMocks())
+
+describe('Copy as Markdown menu command', () => {
+  it('uses one native accelerator and targets only the focused main window', () => {
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow
+    createMenu(window)
+    const template = mocks.buildFromTemplate.mock.calls[0][0]
+    const edit = template.find((item) => item.label === 'Edit')!
+    const command = (edit.submenu as MenuItemConstructorOptions[]).find(
+      (item) => item.id === 'copy-as-markdown',
+    )!
+    expect(command.accelerator).toBe('CmdOrCtrl+Shift+C')
+    expect(command.enabled).toBe(false)
+    mocks.focusedWindow.mockReturnValue({})
+    command.click?.({} as never, window, {} as never)
+    expect(window.webContents.send).not.toHaveBeenCalled()
+    mocks.focusedWindow.mockReturnValue(window)
+    command.click?.({} as never, window, {} as never)
+    expect(window.webContents.send).toHaveBeenCalledWith(IpcChannels.OnCopyAsMarkdown)
+  })
+
+  it('updates availability on the current menu item', () => {
+    const item = { enabled: false }
+    mocks.getApplicationMenu.mockReturnValue({ getMenuItemById: () => item })
+    setCopyMarkdownAvailable(true)
+    expect(item.enabled).toBe(true)
+    setCopyMarkdownAvailable(false)
+    expect(item.enabled).toBe(false)
+  })
+})
 
 describe.runIf(process.platform === 'darwin')('macOS application menu branding', () => {
   it.each([

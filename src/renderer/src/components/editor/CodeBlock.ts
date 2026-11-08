@@ -5,6 +5,7 @@ import { toast } from '../Toaster'
 import i18n from '../../i18n'
 import { appStore } from '../../store/appStore'
 import { settingsAtom } from '../../store/settings'
+import { copyText } from '../../lib/clipboard'
 
 /* ============================================================
    MeloCodeBlock — CodeBlockLowlight plus the ergonomics a code
@@ -167,10 +168,9 @@ export const MeloCodeBlock = CodeBlockLowlight.extend({
       copy.addEventListener('click', () => {
         const pos = getPos()
         const current = pos != null ? editor.state.doc.nodeAt(pos) : null
-        navigator.clipboard
-          .writeText(current?.textContent ?? '')
-          .then(() => toast(i18n.t('editor.codeCopied')))
-          .catch(() => toast(i18n.t('editor.copyFailed')))
+        void copyText(current?.textContent ?? '').then((ok) =>
+          toast(i18n.t(ok ? 'editor.codeCopied' : 'editor.copyFailed')),
+        )
       })
 
       // Language chip — display only; clicking hands off to the React

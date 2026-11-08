@@ -1,13 +1,8 @@
-import {
-  Extension,
-  InputRule,
-  wrappingInputRule,
-  type Editor,
-  type JSONContent,
-} from '@tiptap/core'
+import { Extension, InputRule, wrappingInputRule, type Editor } from '@tiptap/core'
 import { Slice, type NodeType } from '@tiptap/pm/model'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { safeExternalUrl } from '../../lib/url'
+import { hasProseMirrorSlice } from './clipboard'
 
 /* ============================================================
    Markdown typing support beyond the built-in input rules:
@@ -188,44 +183,6 @@ function markdownSlice(editor: Editor, text: string): Slice | null {
   }
 }
 
-/** Serialize a copied Slice to markdown, or null to let the core fall
- *  back to plain textBetween. An inline-only fragment (selection within
- *  one textblock) is wrapped in a paragraph for the serializer; block
- *  fragments serialize as-is. */
-function sliceToMarkdown(editor: Editor, slice: Slice): string | null {
-  try {
-    const manager = editor.storage.markdown?.manager
-    if (!manager) return null
-    let content = slice.content.toJSON() as JSONContent[] | null
-    if (!content?.length) return null
-    const inlineOnly = slice.content.firstChild?.isInline ?? false
-    if (!inlineOnly) {
-      // Consecutive empty paragraphs serialize as &nbsp; placeholders —
-      // our own file round-trip convention, meaningless to other apps.
-      // Clipboard markdown follows standard semantics instead: blank
-      // runs collapse, trailing blanks go.
-      const isEmptyParagraph = (n: JSONContent) => n.type === 'paragraph' && !n.content?.length
-      content = content.filter(
-        (n, i, arr) => !(isEmptyParagraph(n) && (i === 0 || isEmptyParagraph(arr[i - 1]))),
-      )
-      while (content.length && isEmptyParagraph(content[content.length - 1])) content.pop()
-      if (!content.length) return null
-      // A partial table selection (CellSelection) copies bare tableRow
-      // nodes; the serializer only knows whole tables — wrap them back.
-      if (content.every((n) => n.type === 'tableRow')) {
-        content = [{ type: 'table', content }]
-      }
-    }
-    const json = inlineOnly
-      ? { type: 'doc', content: [{ type: 'paragraph', content }] }
-      : { type: 'doc', content }
-    const md = manager.serialize(json)
-    return md ? md.replace(/\n+$/, '') : null
-  } catch {
-    return null
-  }
-}
-
 export const MarkdownInput = Extension.create({
   name: 'markdownInput',
   // Above the default 100 so our Enter handler runs before StarterKit's
@@ -305,13 +262,6 @@ export const MarkdownInput = Extension.create({
           // the core already routes here only when appropriate (no HTML
           // flavor on the clipboard), handles code blocks literally before
           // us, and sets `plain` on Shift+⌘V so literal paste is native.
-          // Copy/cut: the text/plain clipboard slot carries markdown while
-          // the core keeps writing text/html — one copy serves both rich
-          // targets (Word, Notion) and plain ones (code editors, chat).
-          // The core falls back to textBetween on a falsy return.
-          clipboardTextSerializer: (slice) => {
-            return sliceToMarkdown(editor, slice) as string
-          },
           // Drag-drop of external text still goes through the core's text
           // path — parse it as markdown there too. (Paste never reaches
           // this: handlePaste below intercepts it first.)
@@ -335,6 +285,7 @@ export const MarkdownInput = Extension.create({
             if (!data) return false
             const html = data.getData('text/html')
             const text = data.getData('text/plain')
+            if (hasProseMirrorSlice(html)) return false
             if (!text) return false
             if (html && shouldUseRichClipboardHtml(html, text)) return false
             if (view.state.selection.$from.parent.type.spec.code) return false

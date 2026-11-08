@@ -58,6 +58,11 @@ export enum IpcChannels {
   OnFileOpened = 'on-file-opened',
   OnWorkspaceChanged = 'on-workspace-changed',
   OnSave = 'on-save',
+  OnCopyAsMarkdown = 'on-copy-as-markdown',
+  CopyMarkdownAvailable = 'copy-markdown-available',
+  InvokeReadClipboardImage = 'invoke-read-clipboard-image',
+  InvokeWriteClipboard = 'invoke-write-clipboard',
+  InvokeGetClipboardStamp = 'invoke-get-clipboard-stamp',
   OnLanguageChanged = 'on-language-changed',
   OnSettingsChanged = 'on-settings-changed',
   OnUpdateState = 'on-update-state',
@@ -217,6 +222,17 @@ export type WorkspaceChangedEvent =
 
 // Channel-specific type definitions
 export interface IpcChannelDefinitions {
+  [IpcChannels.OnCopyAsMarkdown]: { args: undefined; response: void }
+  [IpcChannels.CopyMarkdownAvailable]: { args: { available: boolean }; response: void }
+  [IpcChannels.InvokeReadClipboardImage]: {
+    args: { src: string; workspaceRoot: string }
+    response: IpcResponse<{ data: Uint8Array; mimeType: string }>
+  }
+  [IpcChannels.InvokeWriteClipboard]: {
+    args: { text: string; html: string; image?: Uint8Array; expectedStamp: string }
+    response: IpcResponse<boolean>
+  }
+  [IpcChannels.InvokeGetClipboardStamp]: { args: undefined; response: IpcResponse<string> }
   [IpcChannels.AgentCommand]: { args: AgentCommand; response: IpcResponse<AgentCommandResult> }
   [IpcChannels.OnAgentComponents]: { args: AgentComponents; response: void }
   [IpcChannels.OnAgentView]: { args: AgentView; response: void }
@@ -405,6 +421,7 @@ export interface IpcChannelDefinitions {
     args: {
       imageBuffer: Uint8Array
       mimeType: string
+      workspaceRoot: string
     }
     response: IpcResponse<{
       filePath: string

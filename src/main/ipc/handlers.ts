@@ -82,6 +82,7 @@ import { openSettingsWindow } from '../settingsWindow'
 import { getMainWindow } from '../windows'
 import { updateManager } from '../updater'
 import { closeUpdateWindow } from '../updateWindow'
+import { clipboardStamp, readClipboardImage, writeEditorClipboard } from '../libs/editorClipboard'
 
 const LAST_DIRECTORY_KEY = 'lastDirectory'
 const CODE_GUIDE_VERSION_KEY = 'codeGuideVersion'
@@ -110,6 +111,35 @@ onSmartViewsChanged((workspaceRoot) => {
 })
 
 export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
+  [IpcChannels.InvokeGetClipboardStamp]: async (event) => {
+    if (event.sender !== getMainWindow()?.webContents)
+      return { success: false, error: 'Not the editor window' }
+    return { success: true, data: clipboardStamp() }
+  },
+  [IpcChannels.InvokeReadClipboardImage]: async (event, args) => {
+    if (event.sender !== getMainWindow()?.webContents)
+      return { success: false, error: 'Not the editor window' }
+    try {
+      return {
+        success: true,
+        data: await readClipboardImage(args, preferences.get(LAST_DIRECTORY_KEY) as string | null),
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Could not load the image',
+      }
+    }
+  },
+  [IpcChannels.InvokeWriteClipboard]: async (event, args) => {
+    if (event.sender !== getMainWindow()?.webContents)
+      return { success: false, error: 'Not the editor window' }
+    try {
+      return { success: true, data: writeEditorClipboard(args) }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not copy' }
+    }
+  },
   [IpcChannels.InvokeSaveFile]: async (_event, args) => {
     try {
       const { content, filePath } = args
@@ -692,10 +722,12 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeSavePastedImage]: async (_, args) => {
     try {
-      const { imageBuffer, mimeType } = args
+      const { imageBuffer, mimeType, workspaceRoot } = args
 
       // Get rootDir from preferences (lastDirectory)
       const rootDir = preferences.get(LAST_DIRECTORY_KEY) as string | null
+      if (!rootDir || workspaceRoot !== rootDir)
+        return { success: false, error: 'Workspace changed while importing images' }
 
       const result = await savePastedImage(imageBuffer, mimeType, rootDir)
       return { success: true, data: result }
