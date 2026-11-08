@@ -726,7 +726,7 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
       // Get rootDir from preferences (lastDirectory)
       const rootDir = preferences.get(LAST_DIRECTORY_KEY) as string | null
-      if (!rootDir || workspaceRoot !== rootDir)
+      if (!rootDir || path.resolve(workspaceRoot) !== path.resolve(rootDir))
         return { success: false, error: 'Workspace changed while importing images' }
 
       const result = await savePastedImage(imageBuffer, mimeType, rootDir)

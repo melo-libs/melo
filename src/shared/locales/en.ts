@@ -698,7 +698,11 @@ export const en = {
     downloadToWorkspace: 'Download to workspace',
     copyImage: 'Copy image',
     imageCopied: 'Image copied',
-    copiedWithoutCutting: 'Selection changed — copied without cutting',
+    imagesCopiedAsReferences: 'Copied. Some images were kept as references.',
+    imagesCutAsReferences: 'Cut. Some images were kept as references.',
+    imageUnavailable: 'Image not imported',
+    imagesPartiallyImported:
+      'Pasted. Some images could not be saved and were replaced with placeholders.',
     copyAddress: 'Copy address',
     deleteImage: 'Delete image',
     addressCopied: 'Address copied',

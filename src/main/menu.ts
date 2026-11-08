@@ -8,8 +8,10 @@ import { openSettingsWindow } from './settingsWindow'
 
 const PRODUCT_NAME = 'Melo'
 const COPY_MARKDOWN_MENU_ID = 'copy-as-markdown'
+let copyMarkdownAvailable = false
 
 export function setCopyMarkdownAvailable(available: boolean): void {
+  copyMarkdownAvailable = available
   const item = Menu.getApplicationMenu()?.getMenuItemById(COPY_MARKDOWN_MENU_ID)
   if (item) item.enabled = available
 }
@@ -126,7 +128,7 @@ export default function createMenu(
           id: COPY_MARKDOWN_MENU_ID,
           label: m.copyAsMarkdown,
           accelerator: 'CmdOrCtrl+Shift+C',
-          enabled: false,
+          enabled: copyMarkdownAvailable,
           click: () => {
             if (BrowserWindow.getFocusedWindow() === mainWindow) {
               mainWindow.webContents.send(IpcChannels.OnCopyAsMarkdown)

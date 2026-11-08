@@ -286,6 +286,9 @@ export const MarkdownInput = Extension.create({
             const html = data.getData('text/html')
             const text = data.getData('text/plain')
             if (hasProseMirrorSlice(html)) return false
+            // ImagePaste chooses between rich HTML and an alternative bitmap.
+            // Its text fallback must not be consumed here as Markdown first.
+            if (Array.from(data.files).some((file) => file.type.startsWith('image/'))) return false
             if (!text) return false
             if (html && shouldUseRichClipboardHtml(html, text)) return false
             if (view.state.selection.$from.parent.type.spec.code) return false

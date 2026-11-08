@@ -34,7 +34,10 @@ vi.mock('./updater', () => ({
 }))
 vi.mock('./settingsWindow', () => ({ openSettingsWindow: vi.fn() }))
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  setCopyMarkdownAvailable(false)
+  vi.clearAllMocks()
+})
 
 describe('Copy as Markdown menu command', () => {
   it('uses one native accelerator and targets only the focused main window', () => {
@@ -53,6 +56,16 @@ describe('Copy as Markdown menu command', () => {
     mocks.focusedWindow.mockReturnValue(window)
     command.click?.({} as never, window, {} as never)
     expect(window.webContents.send).toHaveBeenCalledWith(IpcChannels.OnCopyAsMarkdown)
+  })
+
+  it('retains selection availability when rebuilding the menu for a locale change', () => {
+    setCopyMarkdownAvailable(true)
+    createMenu({} as BrowserWindow, 'zh-CN')
+    const template = mocks.buildFromTemplate.mock.calls[0][0]
+    const command = template
+      .flatMap((item) => (Array.isArray(item.submenu) ? item.submenu : []))
+      .find((item) => item.id === 'copy-as-markdown')!
+    expect(command.enabled).toBe(true)
   })
 
   it('updates availability on the current menu item', () => {

@@ -7,6 +7,21 @@ export function hasProseMirrorSlice(html: string): boolean {
   return /<[a-z][^>]*\sdata-pm-slice\s*=/i.test(html)
 }
 
+/** A bitmap can be an alternative rendering of an entire HTML table or selection. */
+export function shouldPreferClipboardHtml(html: string, slice: Slice): boolean {
+  if (!html) return false
+  if (hasProseMirrorSlice(html)) return true
+  let images = 0
+  let otherContent = false
+  slice.content.descendants((node) => {
+    if (node.type.name === 'image') images++
+    else if (node.isText) otherContent ||= Boolean(node.text?.trim())
+    else if (node.type.name !== 'paragraph' && node.type.name !== 'hardBreak') otherContent = true
+    return !otherContent
+  })
+  return otherContent || images > 1
+}
+
 export function isSingleImageSlice(slice: Slice): boolean {
   let images = 0
   let otherContent = false

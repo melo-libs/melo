@@ -4,18 +4,26 @@ import path from 'node:path'
 import { z } from 'zod'
 import mime from 'mime-types'
 import { createHash } from 'node:crypto'
+import {
+  CLIPBOARD_COPY_ID_ATTRIBUTE,
+  MAX_CLIPBOARD_HTML_LENGTH,
+  MAX_CLIPBOARD_IMAGE_BYTES,
+  MAX_CLIPBOARD_TEXT_LENGTH,
+} from '../../shared/clipboard'
 
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 const sourceSchema = z.object({
   src: z.string().min(1).max(32768),
   workspaceRoot: z.string().min(1),
 })
-const clipboardSchema = z.object({
-  text: z.string().max(2 * 1024 * 1024),
-  html: z.string().max(32 * 1024 * 1024),
+const clipboardContent = {
+  text: z.string().max(MAX_CLIPBOARD_TEXT_LENGTH),
+  html: z.string().max(MAX_CLIPBOARD_HTML_LENGTH),
   image: z.instanceof(Uint8Array).optional(),
-  expectedStamp: z.string().regex(/^[a-f\d]{64}$/),
-})
+}
+const clipboardSchema = z.union([
+  z.object({ ...clipboardContent, expectedStamp: z.string().regex(/^[a-f\d]{64}$/) }),
+  z.object({ ...clipboardContent, expectedCopyId: z.uuid() }),
+])
 
 /** Compare clipboard contents across an asynchronous image load, even outside Melo. */
 export function clipboardStamp(): string {
@@ -53,7 +61,7 @@ export async function readClipboardImage(input: unknown, workspaceRoot: string |
     if (url.username || url.password) throw new Error('Image URL must not contain credentials')
     const response = await net.fetch(url.href, { signal: AbortSignal.timeout(15000) })
     if (!response.ok || !response.body) throw new Error('Could not load the image')
-    if (Number(response.headers.get('content-length')) > MAX_IMAGE_BYTES) {
+    if (Number(response.headers.get('content-length')) > MAX_CLIPBOARD_IMAGE_BYTES) {
       await response.body.cancel()
       throw new Error('Image is too large to copy')
     }
@@ -65,7 +73,7 @@ export async function readClipboardImage(input: unknown, workspaceRoot: string |
         const { value, done } = await reader.read()
         if (done) break
         size += value.byteLength
-        if (size > MAX_IMAGE_BYTES) throw new Error('Image is too large to copy')
+        if (size > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
         chunks.push(value)
       }
     } finally {
@@ -88,7 +96,7 @@ export async function readClipboardImage(input: unknown, workspaceRoot: string |
   const file = await fs.realpath(path.resolve(root, src))
   if (!file.startsWith(root + path.sep)) throw new Error('Image is outside the workspace')
   const stat = await fs.stat(file)
-  if (stat.size > MAX_IMAGE_BYTES) throw new Error('Image is too large to copy')
+  if (stat.size > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
   return {
     data: await fs.readFile(file),
     mimeType: mime.lookup(file) || 'application/octet-stream',
@@ -96,9 +104,17 @@ export async function readClipboardImage(input: unknown, workspaceRoot: string |
 }
 
 export function writeEditorClipboard(input: unknown): boolean {
-  const { text, html, image: bytes, expectedStamp } = clipboardSchema.parse(input)
-  if (expectedStamp !== clipboardStamp()) return false
-  if (bytes && bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('Image is too large to copy')
+  const payload = clipboardSchema.parse(input)
+  const { text, html, image: bytes } = payload
+  // Native copy may commit after the renderer's first IPC. Match the copy's
+  // unique HTML marker rather than taking a stamp of the previous clipboard.
+  const current =
+    'expectedCopyId' in payload
+      ? clipboard.readHTML().includes(`${CLIPBOARD_COPY_ID_ATTRIBUTE}="${payload.expectedCopyId}"`)
+      : payload.expectedStamp === clipboardStamp()
+  if (!current) return false
+  if (bytes && bytes.byteLength > MAX_CLIPBOARD_IMAGE_BYTES)
+    throw new Error('Image is too large to copy')
   const image = bytes ? nativeImage.createFromBuffer(Buffer.from(bytes)) : undefined
   if (image?.isEmpty()) throw new Error('Could not decode the image')
   clipboard.write({ text, html, ...(image ? { image } : {}) })

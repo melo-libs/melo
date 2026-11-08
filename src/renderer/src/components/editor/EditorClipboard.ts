@@ -1,4 +1,5 @@
 import { Extension, type Editor } from '@tiptap/core'
+import { CLIPBOARD_COPY_ID_ATTRIBUTE } from '@shared/clipboard'
 import { Plugin, TextSelection } from '@tiptap/pm/state'
 import { Fragment, Slice } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
@@ -47,13 +48,13 @@ export async function copyImageNode(editor: Editor, pos: number): Promise<void> 
   const slice = new Slice(Fragment.from(node), 0, 0)
   const { dom } = editor.view.serializeForClipboard(slice)
   try {
-    const copied = await writeImageClipboard(
+    const result = await writeImageClipboard(
       dom,
       sliceToPlainText(slice),
       appStore.get(workspacePathAtom) ?? '',
-      true,
+      { type: 'image' },
     )
-    if (copied) toast(i18n.t('editor.imageCopied'))
+    if (result.copied) toast(i18n.t('editor.imageCopied'))
   } catch {
     toast(i18n.t('editor.copyFailed'))
   }
@@ -64,9 +65,9 @@ export const EditorClipboard = Extension.create({
   priority: 1100,
   addProseMirrorPlugins() {
     const copyImages = (view: EditorView, event: ClipboardEvent, cut: boolean): boolean => {
-      if (view.state.selection.empty || (cut && !view.editable)) return false
-      const snapshot = view.state
-      const slice = snapshot.selection.content()
+      if (view.state.selection.empty || (cut && !view.editable) || !event.clipboardData)
+        return false
+      const slice = view.state.selection.content()
       let containsImage = false
       slice.content.descendants((node) => {
         if (node.type.name === 'image') containsImage = true
@@ -74,25 +75,31 @@ export const EditorClipboard = Extension.create({
       })
       if (!containsImage) return false
       const { dom, text } = view.serializeForClipboard(slice)
+      const copyId = crypto.randomUUID()
+      dom.firstElementChild!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
+      // Copy the full Slice immediately; image embedding is an optional upgrade.
+      // A failed image must never leave yesterday's text on the clipboard.
+      event.clipboardData.setData('text/plain', text)
+      event.clipboardData.setData('text/html', dom.innerHTML)
       event.preventDefault()
       const single = isSingleImageSlice(slice)
-      void writeImageClipboard(dom, text, appStore.get(workspacePathAtom) ?? '', single)
-        .then((copied) => {
-          if (copied && cut) {
-            if (
-              !view.editable ||
-              view.state.doc !== snapshot.doc ||
-              !view.state.selection.eq(snapshot.selection)
-            ) {
-              toast(i18n.t('editor.copiedWithoutCutting'))
-              return
-            }
-            view.dispatch(
-              view.state.tr.deleteSelection().scrollIntoView().setMeta('uiEvent', 'cut'),
-            )
-          }
+      const workspace = appStore.get(workspacePathAtom) ?? ''
+      // Match native cut timing once the full Slice is on clipboardData. Waiting
+      // for optional image embedding turns an immediate cut/paste into a copy.
+      if (cut)
+        view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta('uiEvent', 'cut'))
+      const fallbackMessage = cut
+        ? 'editor.imagesCutAsReferences'
+        : 'editor.imagesCopiedAsReferences'
+      void writeImageClipboard(dom, text, workspace, {
+        type: 'selection',
+        singleImage: single,
+        copyId,
+      })
+        .then(({ fallbackImages }) => {
+          if (fallbackImages) toast(i18n.t(fallbackMessage))
         })
-        .catch(() => toast(i18n.t('editor.copyFailed')))
+        .catch(() => toast(i18n.t(fallbackMessage)))
       return true
     }
     return [

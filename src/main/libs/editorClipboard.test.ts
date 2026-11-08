@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   formats: vi.fn(),
   readBuffer: vi.fn(),
   text: vi.fn(),
+  html: vi.fn(),
   read: vi.fn(),
 }))
 vi.mock('electron', () => ({
@@ -19,6 +20,7 @@ vi.mock('electron', () => ({
     availableFormats: mocks.formats,
     readBuffer: mocks.readBuffer,
     readText: mocks.text,
+    readHTML: mocks.html,
     read: mocks.read,
   },
   nativeImage: { createFromBuffer: mocks.decode },
@@ -116,6 +118,19 @@ describe('editor image clipboard boundary', () => {
       }),
     ).toThrow('decode')
     expect(() => writeEditorClipboard({ text: 1, html: '' })).toThrow()
+    expect(mocks.write).not.toHaveBeenCalled()
+  })
+
+  it('enhances only the native copy carrying the matching operation marker', () => {
+    const expectedCopyId = '0e0975e0-8b24-4c90-9188-46cc079f9067'
+    const payload = { text: 'New copy', html: '<p>Enhanced</p>', expectedCopyId }
+    mocks.html.mockReturnValue('<p>Previous clipboard</p>')
+    expect(writeEditorClipboard(payload)).toBe(false)
+    mocks.html.mockReturnValue(`<p data-melo-copy-id="${expectedCopyId}">New copy</p>`)
+    expect(writeEditorClipboard(payload)).toBe(true)
+    mocks.write.mockClear()
+    mocks.html.mockReturnValue('<p data-melo-copy-id="another-operation">New copy</p>')
+    expect(writeEditorClipboard(payload)).toBe(false)
     expect(mocks.write).not.toHaveBeenCalled()
   })
 

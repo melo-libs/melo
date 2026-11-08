@@ -8,6 +8,7 @@ import { editorExtensions } from './tiptapExtensions'
 import {
   hasProseMirrorSlice,
   isSingleImageSlice,
+  shouldPreferClipboardHtml,
   sliceToMarkdown,
   sliceToPlainText,
 } from './clipboard'
@@ -18,6 +19,29 @@ const slice = (markdown: string) =>
   new Slice(schema.nodeFromJSON(manager.parse(markdown)).content, 0, 0)
 
 describe('clipboard representations', () => {
+  it.each([
+    ['text with an image', 'Before ![Image](https://example.com/image.png) after', true],
+    ['a table', '| A | B |\n| --- | --- |\n| One | Two |', true],
+    ['text without an image', 'Selected text', true],
+    ['a list containing only an image', '- ![Image](https://example.com/image.png)', true],
+    [
+      'multiple images',
+      '![First](https://example.com/a.png) ![Second](https://example.com/b.png)',
+      true,
+    ],
+    ['a single image', '![Image](https://example.com/image.png)', false],
+    ['empty markup', '', false],
+  ] as const)('selects the appropriate format for %s', (_label, markdown, expected) => {
+    expect(shouldPreferClipboardHtml('<div>Clipboard HTML</div>', slice(markdown))).toBe(expected)
+  })
+
+  it('keeps native image slices but does not prefer a text-derived slice without HTML', () => {
+    const image = slice('![Image](.assets/image.png)')
+    expect(shouldPreferClipboardHtml('<p data-pm-slice="1 1 []"><img></p>', image)).toBe(true)
+    expect(shouldPreferClipboardHtml('', slice('Text'))).toBe(false)
+    expect(shouldPreferClipboardHtml('<p><br></p>', new Slice(Fragment.empty, 0, 0))).toBe(false)
+  })
+
   it('keeps literal punctuation without adding file-format escaping', () => {
     const doc = schema.node('doc', null, [
       schema.node('paragraph', null, schema.text('1. text # *literal* \\path')),

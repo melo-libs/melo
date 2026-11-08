@@ -1,3 +1,4 @@
+import type { ClipboardWriteCondition } from '../clipboard'
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 import type {
@@ -229,7 +230,7 @@ export interface IpcChannelDefinitions {
     response: IpcResponse<{ data: Uint8Array; mimeType: string }>
   }
   [IpcChannels.InvokeWriteClipboard]: {
-    args: { text: string; html: string; image?: Uint8Array; expectedStamp: string }
+    args: { text: string; html: string; image?: Uint8Array } & ClipboardWriteCondition
     response: IpcResponse<boolean>
   }
   [IpcChannels.InvokeGetClipboardStamp]: { args: undefined; response: IpcResponse<string> }

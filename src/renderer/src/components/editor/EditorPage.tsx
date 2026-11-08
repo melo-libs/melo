@@ -111,10 +111,15 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
   useEffect(() => {
     if (!editor) return
     const available = () => Boolean(activeTabId && canCopyEditorSelection(editor))
-    const sync = () =>
+    let previous: boolean | undefined
+    const sync = () => {
+      const next = document.hasFocus() && available()
+      if (next === previous) return
+      previous = next
       window.api.send(window.api.channels.CopyMarkdownAvailable, {
-        available: document.hasFocus() && available(),
+        available: next,
       })
+    }
     const off = window.api.on(window.api.channels.OnCopyAsMarkdown, () => {
       if (available()) void copySelectionAsMarkdown(editor)
     })

@@ -48,6 +48,8 @@ jobs:
         if: matrix.arch == 'x64'
       - run: node scripts/e2e-workspace-watcher.mjs
         if: matrix.arch == 'x64'
+      - name: Clipboard regression
+        run: node scripts/e2e-editor-clipboard.mjs
       - name: Package unsigned macOS app
         run: pnpm exec electron-builder --mac --${{ matrix.arch }} --dir --publish never
         env:

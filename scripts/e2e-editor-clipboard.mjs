@@ -15,7 +15,21 @@ const logs = []
 let app
 let imageBuffer
 const pendingImages = new Set()
-const imageServer = createServer((_request, response) => {
+let missingImageRequests = 0
+const imageServer = createServer((request, response) => {
+  // DOMSerializer can load <img> in a detached document outside page.route.
+  // Delay only main-process fetches, never those incidental display requests.
+  if (request.headers['sec-fetch-dest'] === 'image') {
+    response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' })
+    response.end(imageBuffer)
+    return
+  }
+  if (request.url === '/missing.png') {
+    missingImageRequests++
+    response.writeHead(404)
+    response.end()
+    return
+  }
   pendingImages.add(response)
   response.on('close', () => pendingImages.delete(response))
 })
@@ -101,7 +115,7 @@ try {
     })
     if (native) nativeMenuClicks++
   }
-  const copy = async (cut = false) => {
+  const copy = async (cut = false, enhanced = false) => {
     await page.locator('.ProseMirror').evaluate((element) => element.editor.view.focus())
     await app.evaluate(({ clipboard, BrowserWindow }, cut) => {
       clipboard.writeText('clipboard-sentinel')
@@ -114,6 +128,11 @@ try {
       'native copy should replace the clipboard',
       async () => (await readClipboard()).text !== 'clipboard-sentinel',
     )
+    if (enhanced) {
+      await waitUntil('image enhancement should finish', async () =>
+        (await readClipboard()).html.includes('data:image/'),
+      )
+    }
     return readClipboard()
   }
   const paste = () =>
@@ -200,6 +219,25 @@ try {
       ({ Menu }) => Menu.getApplicationMenu().getMenuItemById('copy-as-markdown').enabled,
     ),
   )
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.clipboardAvailabilityMessages = 0
+    globalThis.clipboardAvailabilityListener = () => globalThis.clipboardAvailabilityMessages++
+    ipcMain.on('copy-markdown-available', globalThis.clipboardAvailabilityListener)
+  })
+  await page.locator('.ProseMirror').evaluate((element) => {
+    for (let index = 0; index < 20; index++) {
+      element.editor.commands.setTextSelection({ from: 1, to: index % 2 ? 3 : 4 })
+      document.dispatchEvent(new Event('selectionchange'))
+    }
+    element.editor.commands.selectAll()
+  })
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.equal(await app.evaluate(() => globalThis.clipboardAvailabilityMessages), 0)
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeListener('copy-markdown-available', globalThis.clipboardAvailabilityListener)
+    delete globalThis.clipboardAvailabilityMessages
+    delete globalThis.clipboardAvailabilityListener
+  })
   await copyMarkdown()
   await waitUntil('explicit Markdown copy should preserve escaping', async () =>
     (await readClipboard()).text.includes('1\\. literal'),
@@ -283,11 +321,14 @@ try {
     content: [paragraph({ type: 'image', attrs: { src: '.assets/red.png', alt: 'Red pixel' } })],
   }
   const expectedImage = await setDocument(imageDoc)
-  assert((await copy()).image, 'select-all containing only one image should include native pixels')
+  assert(
+    (await copy(false, true)).image,
+    'select-all containing only one image should include native pixels',
+  )
   await page
     .locator('.ProseMirror')
     .evaluate((element) => element.editor.commands.setNodeSelection(1))
-  const imageCopy = await copy()
+  const imageCopy = await copy(false, true)
   assert(imageCopy.image, 'single-image copy must include native bitmap data')
   assert(imageCopy.html.includes('data:image/png;base64,'))
   assert.equal(imageCopy.text, 'Red pixel')
@@ -316,7 +357,7 @@ try {
     content: [paragraph(text('Before image')), ...imageDoc.content, paragraph(text('After image'))],
   }
   const mixedExpected = await setDocument(mixed)
-  const mixedCopy = await copy()
+  const mixedCopy = await copy(false, true)
   assert(mixedCopy.html.includes('data:image/png;base64,'))
   assert(mixedCopy.text.includes('Red pixel'))
   await setDocument({ type: 'doc', content: [paragraph()] })
@@ -379,6 +420,172 @@ try {
     undefined,
     'clipboard HTML event handlers must remain inert',
   )
+
+  const externalImageUrl = `http://127.0.0.1:${imageServer.address().port}/external.png`
+  const externalTableHtml =
+    '<table><tbody><tr><th>A</th><th>B</th></tr><tr><td>One</td><td>Two</td></tr></tbody></table>'
+  const writeHtmlAndBitmap = (html, text = '') =>
+    app.evaluate(
+      ({ clipboard, nativeImage }, { html, text, bytes }) => {
+        clipboard.write({ html, text, image: nativeImage.createFromBuffer(Buffer.from(bytes)) })
+      },
+      { html, text, bytes: png },
+    )
+
+  await setDocument({ type: 'doc', content: [paragraph()] })
+  await writeHtmlAndBitmap(
+    `<p>Before external image</p><p><img src="${externalImageUrl}" alt="External"></p><p>After external image</p>`,
+    'Before external image\nAfter external image',
+  )
+  await paste()
+  await waitUntil('HTML and bitmap paste should keep the surrounding text', async () =>
+    JSON.stringify(await currentDocument()).includes('After external image'),
+  )
+  const externalMixed = await currentDocument()
+  assert.equal(externalMixed.content[0].content[0].text, 'Before external image')
+  assert.equal(externalMixed.content[1].content[0].attrs.src, externalImageUrl)
+  assert.equal(externalMixed.content[2].content[0].text, 'After external image')
+
+  await setDocument({ type: 'doc', content: [paragraph()] })
+  await writeHtmlAndBitmap(externalTableHtml, 'A\tB\nOne\tTwo')
+  await paste()
+  await waitUntil(
+    'table HTML should win over its bitmap preview',
+    async () => (await currentDocument()).content[0].type === 'table',
+  )
+  const externalTable = JSON.stringify(await currentDocument())
+  assert(externalTable.includes('One') && externalTable.includes('Two'))
+  assert(!externalTable.includes('"type":"image"'))
+
+  await setDocument({ type: 'doc', content: [paragraph()] })
+  await writeHtmlAndBitmap(
+    '<p># literal heading</p><p>1. literal item</p>',
+    '# literal heading\n1. literal item',
+  )
+  await paste()
+  await waitUntil(
+    'HTML text should not be reinterpreted as Markdown when a bitmap is also present',
+    async () => JSON.stringify(await currentDocument()).includes('# literal heading'),
+  )
+  const externalLiteral = await currentDocument()
+  assert.deepEqual(
+    externalLiteral.content.map((node) => node.type),
+    ['paragraph', 'paragraph'],
+  )
+  assert.equal(externalLiteral.content[1].content[0].text, '1. literal item')
+
+  for (const html of [`<p><img src="${externalImageUrl}" alt="Only image"></p>`, '<p><br></p>']) {
+    await setDocument({ type: 'doc', content: [paragraph()] })
+    await writeHtmlAndBitmap(html, 'Image alt fallback')
+    await paste()
+    await waitUntil('a single image or empty HTML should still import its bitmap', async () =>
+      JSON.stringify(await currentDocument()).includes('.assets/'),
+    )
+    const standalone = await currentDocument()
+    assert.equal(standalone.content[0].content[0].type, 'image')
+    assert(fs.existsSync(path.join(workspace, standalone.content[0].content[0].attrs.src)))
+    assert(!JSON.stringify(standalone).includes(externalImageUrl))
+  }
+
+  await setDocument({ type: 'doc', content: [paragraph(text('Drop target'))] })
+  await page.locator('.ProseMirror').evaluate(
+    (element, { html, bytes }) => {
+      const data = new DataTransfer()
+      data.items.add(new File([new Uint8Array(bytes)], 'preview.png', { type: 'image/png' }))
+      data.setData('text/html', html)
+      const rect = element.getBoundingClientRect()
+      element.dispatchEvent(
+        new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+          clientX: rect.left + 10,
+          clientY: rect.top + 10,
+        }),
+      )
+    },
+    { html: externalTableHtml, bytes: png },
+  )
+  await waitUntil('a mixed HTML and bitmap drop should retain the table', async () =>
+    (await currentDocument()).content.some((node) => node.type === 'table'),
+  )
+  const tableDrop = JSON.stringify(await currentDocument())
+  assert(tableDrop.includes('Drop target') && tableDrop.includes('One'))
+  assert(!tableDrop.includes('"type":"image"'))
+
+  const normalizedSave = await page.evaluate(
+    async ({ bytes, workspace }) =>
+      window.api.invoke('invoke-save-pasted-image', {
+        imageBuffer: new Uint8Array(bytes),
+        mimeType: 'image/png',
+        workspaceRoot: `${workspace}/`,
+      }),
+    { bytes: png, workspace },
+  )
+  assert(normalizedSave.success, 'equivalent workspace paths should save successfully')
+  assert(fs.existsSync(path.join(workspace, normalizedSave.data.filePath)))
+
+  const formats = [
+    [
+      'vector.svg',
+      Buffer.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>',
+      ),
+      'image/svg+xml',
+    ],
+    [
+      'animated.gif',
+      Buffer.from(
+        'R0lGODlhAQABAIAAAAAAAP///yH5BAAAAAAALAAAAAABAAEAAAIBRAAh+QQAAAAAACwAAAAAAQABAAACAkwAOw==',
+        'base64',
+      ),
+      'image/gif',
+    ],
+    [
+      'photo.jpg',
+      Buffer.from(
+        await app.evaluate(
+          ({ nativeImage }, bytes) =>
+            Array.from(nativeImage.createFromBuffer(Buffer.from(bytes)).toJPEG(80)),
+          png,
+        ),
+      ),
+      'image/jpeg',
+    ],
+  ]
+  for (const [filename, bytes, mime] of formats) {
+    fs.writeFileSync(path.join(workspace, '.assets', filename), bytes)
+    await setDocument({
+      type: 'doc',
+      content: [
+        paragraph(text('Original image bytes')),
+        paragraph({
+          type: 'image',
+          attrs: { src: `.assets/${filename}` },
+        }),
+      ],
+    })
+    const result = await copy(false, true)
+    assert(result.html.includes(`data:${mime};base64,${bytes.toString('base64')}`), filename)
+    assert(!result.image, 'mixed HTML does not need a native bitmap')
+  }
+
+  await setDocument({ type: 'doc', content: [paragraph()] })
+  await page.locator('.ProseMirror').evaluate(
+    (element, valid) => {
+      element.editor.view.pasteHTML(
+        `<p>Before failed image <img src="data:image/png;base64,%%%" alt="Broken"> between <img src="${valid}" alt="Good"> after</p>`,
+      )
+    },
+    `data:image/png;base64,${imageBuffer.toString('base64')}`,
+  )
+  await page.locator('.toast', { hasText: 'replaced with placeholders' }).waitFor()
+  const partialImport = JSON.stringify(await currentDocument())
+  assert(partialImport.includes('Before failed image'))
+  assert(partialImport.includes('Image not imported: Broken'))
+  assert(partialImport.includes('between') && partialImport.includes('after'))
+  assert(partialImport.includes('.assets/'))
+  assert(!partialImport.includes('data:image/'))
 
   const readOnlyTarget = await setDocument({
     type: 'doc',
@@ -443,7 +650,7 @@ try {
   await waitUntil('encoded image should display', () =>
     page.locator('.ProseMirror img[src]').evaluate((image) => image.naturalWidth > 0),
   )
-  assert((await copy()).image, 'a displayed URL-encoded image should also copy')
+  assert((await copy(false, true)).image, 'a displayed URL-encoded image should also copy')
 
   await setDocument({
     type: 'doc',
@@ -467,9 +674,9 @@ try {
     .locator('.ProseMirror')
     .evaluate((element) => element.editor.commands.setNodeSelection(1))
   await new Promise((resolve) => setTimeout(resolve, 600))
-  await copy(true)
+  await copy(true, true)
   await waitUntil(
-    'image cut must delete only after a successful clipboard write',
+    'image cut should remove its source selection',
     async () => !JSON.stringify(await currentDocument()).includes('.assets/red.png'),
   )
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Z' : 'Control+Z')
@@ -478,20 +685,49 @@ try {
     async () => JSON.stringify(await currentDocument()) === JSON.stringify(expectedImage),
   )
 
+  const padded = Buffer.concat([imageBuffer, Buffer.alloc(13 * 1024 * 1024)])
+  fs.writeFileSync(path.join(workspace, '.assets', 'large-a.png'), padded)
+  fs.writeFileSync(path.join(workspace, '.assets', 'large-b.png'), padded)
+  fs.writeFileSync(path.join(workspace, '.assets', 'oversize.png'), Buffer.alloc(21 * 1024 * 1024))
+  await setDocument({
+    type: 'doc',
+    content: [
+      paragraph(text('Text survives the HTML budget')),
+      ...['large-a.png', 'large-b.png', 'oversize.png'].map((name) =>
+        paragraph({ type: 'image', attrs: { src: `.assets/${name}` } }),
+      ),
+    ],
+  })
+  await copy()
+  await page.locator('.toast', { hasText: 'Some images were kept as references' }).last().waitFor()
+  const budgetCopy = await readClipboard()
+  assert(budgetCopy.text.includes('Text survives the HTML budget'))
+  assert(budgetCopy.html.includes('data:image/png;base64,'))
+  assert(budgetCopy.html.includes('.assets/large-b.png'))
+  assert(budgetCopy.html.includes('.assets/oversize.png'))
+  assert(budgetCopy.html.length <= 32 * 1024 * 1024)
+
   const missingImage = await setDocument({
     type: 'doc',
-    content: [paragraph({ type: 'image', attrs: { src: '.assets/missing.png' } })],
+    content: [
+      paragraph(text('Text around a broken image')),
+      paragraph({ type: 'image', attrs: { src: '.assets/missing.png', alt: 'Missing' } }),
+      paragraph(text('Still copied')),
+    ],
   })
-  await page
-    .locator('.ProseMirror')
-    .evaluate((element) => element.editor.commands.setNodeSelection(1))
-  await app.evaluate(({ clipboard, BrowserWindow }) => {
-    clipboard.writeText('failed-copy-sentinel')
-    BrowserWindow.getAllWindows()[0].webContents.cut()
-  })
-  await page.locator('.toast', { hasText: 'Could not copy' }).waitFor()
-  assert.equal((await readClipboard()).text, 'failed-copy-sentinel')
-  assert.deepEqual(await currentDocument(), missingImage)
+  await copy(true)
+  await page.locator('.toast', { hasText: 'Cut. Some images were kept as references' }).waitFor()
+  const partialCut = await readClipboard()
+  assert(partialCut.text.includes('Text around a broken image'))
+  assert(partialCut.text.includes('Still copied'))
+  assert(partialCut.html.includes('.assets/missing.png'))
+  assert(!JSON.stringify(await currentDocument()).includes('Text around a broken image'))
+  await setDocument({ type: 'doc', content: [paragraph()] })
+  await paste()
+  await waitUntil(
+    'fallback image references should round-trip inside Melo',
+    async () => JSON.stringify(await currentDocument()) === JSON.stringify(missingImage),
+  )
 
   const remoteImage = (name) => ({
     type: 'doc',
@@ -505,12 +741,46 @@ try {
       }),
     ],
   })
+  const mixedRemote = remoteImage('missing')
+  mixedRemote.content.unshift(paragraph(text('Copy without downloading remote images')))
+  await setDocument(mixedRemote)
+  const remoteCopy = await copy()
+  assert(remoteCopy.text.includes('Copy without downloading remote images'))
+  assert(remoteCopy.html.includes('/missing.png'))
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.equal(
+    missingImageRequests,
+    0,
+    'mixed remote images should keep their URL without fetching',
+  )
+
+  await setDocument(remoteImage('missing'))
+  await copy()
+  await page.locator('.toast', { hasText: 'Some images were kept as references' }).last().waitFor()
+  await waitUntil('failed image reader should return', () => missingImageRequests > 0)
+  assert.equal((await readClipboard()).text, 'Slow image')
+  assert((await readClipboard()).html.includes('/missing.png'))
+  assert(missingImageRequests > 0, 'single-image failure fixture should reach the reader')
+
   await setDocument(remoteImage('switch-window'))
   await app.evaluate(({ clipboard, BrowserWindow }) => {
     clipboard.writeText('switch-window-sentinel')
     BrowserWindow.getAllWindows()[0].webContents.copy()
   })
   await waitUntil('switch-window copy should start loading', () => pendingImages.size > 0)
+  assert.equal((await readClipboard()).text, 'Slow image')
+  await page.evaluate(() => {
+    const target = document.createElement('textarea')
+    target.id = 'immediate-paste'
+    document.body.append(target)
+    target.focus()
+  })
+  await paste()
+  await waitUntil(
+    'immediate paste should receive the new copy before image loading',
+    async () => (await page.locator('#immediate-paste').inputValue()) === 'Slow image',
+  )
+  await page.locator('#immediate-paste').evaluate((target) => target.remove())
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
   releaseImages()
   await waitUntil(
@@ -544,6 +814,45 @@ try {
     await readClipboard(),
     latestCopy,
     'a slow image copy must not overwrite a newer copy',
+  )
+
+  const quickCutDoc = remoteImage('quick-cut')
+  quickCutDoc.content.push(paragraph(text('Destination')))
+  await setDocument(quickCutDoc)
+  await page
+    .locator('.ProseMirror')
+    .evaluate((element) => element.editor.commands.setNodeSelection(1))
+  await copy(true)
+  await waitUntil('quick cut image enhancement should be pending', () => pendingImages.size > 0)
+  assert(
+    !JSON.stringify(await currentDocument()).includes('quick-cut.png'),
+    'the source must already be removed before image IO finishes',
+  )
+  await page.locator('.ProseMirror').evaluate((element) => element.editor.commands.focus('end'))
+  await paste()
+  await waitUntil('immediate cut/paste should move the image to the destination', async () => {
+    const doc = await currentDocument()
+    return doc.content[doc.content.length - 1].content?.some((node) => node.type === 'image')
+  })
+  const quickCutResult = await currentDocument()
+  assert.equal(JSON.stringify(quickCutResult).split('quick-cut.png').length - 1, 1)
+  releaseImages()
+  await waitUntil('quick cut enhancement should finish', async () => (await readClipboard()).image)
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.deepEqual(
+    await currentDocument(),
+    quickCutResult,
+    'late image enhancement must not change or duplicate moved content',
+  )
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Z' : 'Control+Z')
+  await waitUntil(
+    'undo should remove the pasted image',
+    async () => !JSON.stringify(await currentDocument()).includes('quick-cut.png'),
+  )
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+Z' : 'Control+Shift+Z')
+  await waitUntil(
+    'redo should restore the moved image once',
+    async () => JSON.stringify(await currentDocument()) === JSON.stringify(quickCutResult),
   )
 
   await setDocument(remoteImage('changed-selection'))
@@ -601,7 +910,14 @@ try {
           'foreign image asset import',
           'raw code copy',
           'cut/undo',
-          'failed image cut',
+          'failed image cut with intact clipboard references',
+          'HTML and bitmap paste/drop format priority',
+          'immediate image cut/paste and undo/redo',
+          'immediate paste before image enhancement',
+          'remote image failure and mixed URL preservation',
+          'original GIF/SVG/JPEG bytes in HTML',
+          'partial external image import',
+          'aggregate HTML and individual image limits',
           'asynchronous copy/cut races',
           'read-only image import lock',
           'HTML image drop and undo',
