@@ -11,6 +11,7 @@ describe('document hrefs versus typed web addresses', () => {
     '/notes/a.md',
     'file:///notes/a.md',
     'C:\\notes\\a.md',
+    'example.com/image.png',
   ])('keeps stored %s as a local reference', (href) => {
     expect(classifyDocumentHref(href)).toEqual({ kind: 'local', href })
     expect(normalizeLinkInput(href, href)).toBe(href)
@@ -20,6 +21,30 @@ describe('document hrefs versus typed web addresses', () => {
     expect(normalizeLinkInput('example.com/path')).toBe('https://example.com/path')
     expect(classifyDocumentHref('example.com')).toEqual({ kind: 'local', href: 'example.com' })
     expect(normalizeLinkInput('notes/next.md')).toBe('notes/next.md')
+  })
+  it.each([
+    'example.com/docs/guide.pdf',
+    'example.com/image.png',
+    'example.com/readme.md',
+    'docs.example.co.uk/guide.pdf?download=1#page=2',
+    'xn--fsqu00a.xn--0zwm56d/guide.pdf',
+  ])('completes new website input before checking its file extension: %s', (href) => {
+    expect(normalizeLinkInput(href)).toBe(`https://${href}`)
+  })
+  it('completes Unicode domains with document paths', () => {
+    expect(normalizeLinkInput('例子.测试/guide.pdf')).toBe(
+      'https://xn--fsqu00a.xn--0zwm56d/guide.pdf',
+    )
+  })
+  it.each([
+    '.assets/image.png',
+    'notes.v2/image.png',
+    'notes/guide.pdf',
+    './example.com/image.png',
+    '/example.com/guide.pdf',
+    'guide.pdf',
+  ])('preserves newly entered local paths: %s', (href) => {
+    expect(normalizeLinkInput(href)).toBe(href)
   })
   it('recognizes explicit external URLs and heading fragments', () => {
     expect(classifyDocumentHref('https://example.com')).toEqual({

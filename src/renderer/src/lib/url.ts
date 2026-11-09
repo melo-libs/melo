@@ -24,7 +24,13 @@ export function normalizeLinkInput(raw: string, originalHref = ''): string | nul
   if (
     href === originalHref.trim() ||
     target.kind === 'fragment' ||
-    /^(?:file:|[a-z]:[\\/]|\.{1,2}[\\/]|[\\/])/i.test(href) ||
+    /^(?:file:|[a-z]:[\\/]|\.{1,2}[\\/]|[\\/])/i.test(href)
+  )
+    return href
+  // A web resource's extension does not make its host a local directory.
+  if (/^(?:[\p{L}\p{N}-]+\.)+(?:\p{L}{2,}|xn--[a-z0-9-]+)\//iu.test(href))
+    return safeExternalUrl(href)
+  if (
     /\.(?:md|markdown|txt|pdf|png|jpe?g|gif|webp|svg)(?:[?#]|$)/i.test(href) ||
     (href.includes('/') && !href.split('/')[0].includes('.'))
   )
