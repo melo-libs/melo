@@ -4,9 +4,33 @@ import { getHandler } from './handlers'
 import { setupAgentIPC } from './agent'
 import { setCopyMarkdownAvailable } from '../menu'
 import { getMainWindow } from '../windows'
+import { writeEditorClipboard } from '../libs/editorClipboard'
+import { preferences } from '../preferences'
 
 export function setupIPC(): void {
   setupAgentIPC()
+  ipcMain.on(IpcChannels.CopyEditorClipboard, async (event, content: unknown) => {
+    if (event.sender !== getMainWindow()?.webContents) {
+      event.returnValue = { success: false, error: 'Not the editor window' }
+      return
+    }
+    try {
+      const data = await writeEditorClipboard(
+        content,
+        preferences.get('lastDirectory') as string | null,
+        (status) => {
+          if (!event.sender.isDestroyed())
+            event.sender.send(IpcChannels.OnClipboardImageCopy, status)
+        },
+      )
+      event.returnValue = { success: true, data }
+    } catch (error) {
+      event.returnValue = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Could not copy',
+      }
+    }
+  })
   ipcMain.on(IpcChannels.CopyMarkdownAvailable, (event, args: { available: boolean }) => {
     if (event.sender === getMainWindow()?.webContents && typeof args?.available === 'boolean') {
       setCopyMarkdownAvailable(args.available)

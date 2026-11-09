@@ -657,6 +657,7 @@ export const zhCN: LocaleDict = {
     downloadToWorkspace: '下载到工作区',
     copyImage: '复制图片',
     imageCopied: '图片已复制',
+    copyingImage: '正在复制图片…',
     imagesCopiedAsReferences: '已复制，部分图片保留为原始引用',
     imagesCutAsReferences: '已剪切，部分图片保留为原始引用',
     imageUnavailable: '图片未能导入',
@@ -1103,6 +1104,7 @@ export const zhCN: LocaleDict = {
     exportFailed: '图片导出失败',
     clipboardUnsupported: '剪贴板不支持图片——请用下载',
     imageCopied: '图片已复制',
+    copyingImage: '正在复制图片…',
     copyFailed: '图片复制失败',
   },
   dialogs: {

@@ -1,122 +1,186 @@
-import { clipboard, nativeImage, net } from 'electron'
-import fs from 'node:fs/promises'
+import { clipboard, net, type NativeImage } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { parseHTML } from 'linkedom'
 import { z } from 'zod'
 import mime from 'mime-types'
-import { createHash } from 'node:crypto'
 import {
   CLIPBOARD_COPY_ID_ATTRIBUTE,
+  CLIPBOARD_IMAGE_SOURCE_ATTRIBUTE,
+  CLIPBOARD_IMAGE_WORKSPACE_ATTRIBUTE,
   MAX_CLIPBOARD_HTML_LENGTH,
   MAX_CLIPBOARD_IMAGE_BYTES,
   MAX_CLIPBOARD_TEXT_LENGTH,
+  clipboardWorkspaceKey,
+  type ClipboardImageCopyStatus,
+  type EditorClipboardResult,
 } from '../../shared/clipboard'
+import { clipboardBitmap } from './clipboardBitmap'
 
-const sourceSchema = z.object({
-  src: z.string().min(1).max(32768),
-  workspaceRoot: z.string().min(1),
-})
-const clipboardContent = {
+const contentSchema = z.object({
   text: z.string().max(MAX_CLIPBOARD_TEXT_LENGTH),
   html: z.string().max(MAX_CLIPBOARD_HTML_LENGTH),
-  image: z.instanceof(Uint8Array).optional(),
-}
-const clipboardSchema = z.union([
-  z.object({ ...clipboardContent, expectedStamp: z.string().regex(/^[a-f\d]{64}$/) }),
-  z.object({ ...clipboardContent, expectedCopyId: z.uuid() }),
-])
+  workspaceRoot: z.string().min(1),
+  singleImage: z.boolean(),
+})
 
-/** Compare clipboard contents across an asynchronous image load, even outside Melo. */
-export function clipboardStamp(): string {
-  const hash = createHash('sha256')
-  for (const format of clipboard.availableFormats().sort()) {
-    // macOS normalizes standard types in availableFormats(), but readBuffer()
-    // expects native/custom names. Use the typed readers for those MIME types.
-    let bytes: Buffer
-    if (format === 'text/plain') bytes = Buffer.from(clipboard.readText())
-    else if (format === 'text/html') bytes = Buffer.from(clipboard.readHTML())
-    else if (format === 'text/rtf') bytes = Buffer.from(clipboard.readRTF())
-    else if (format.startsWith('image/')) bytes = clipboard.readImage().toPNG()
-    else bytes = clipboard.readBuffer(format)
-    hash.update(`${format.length}:${format}:${bytes.length}:`)
-    hash.update(bytes)
-  }
-  // Finder's file-list flavors can be absent from the normalized MIME list.
-  if (process.platform === 'darwin') {
-    for (const format of ['NSFilenamesPboardType', 'public.file-url']) {
-      const text = clipboard.read(format)
-      hash.update(`${format.length}:${format}:${Buffer.byteLength(text)}:`)
-      hash.update(text)
-    }
-  }
-  return hash.digest('hex')
-}
-
-export async function readClipboardImage(input: unknown, workspaceRoot: string | null) {
-  const { src: raw, workspaceRoot: requestedRoot } = sourceSchema.parse(input)
-  if (!workspaceRoot || path.resolve(workspaceRoot) !== path.resolve(requestedRoot)) {
-    throw new Error('Workspace changed while copying')
-  }
-  if (/^https?:\/\//i.test(raw)) {
-    const url = new URL(raw)
-    if (url.username || url.password) throw new Error('Image URL must not contain credentials')
-    const response = await net.fetch(url.href, { signal: AbortSignal.timeout(15000) })
-    if (!response.ok || !response.body) throw new Error('Could not load the image')
-    if (Number(response.headers.get('content-length')) > MAX_CLIPBOARD_IMAGE_BYTES) {
-      await response.body.cancel()
-      throw new Error('Image is too large to copy')
-    }
-    const chunks: Uint8Array[] = []
-    let size = 0
-    const reader = response.body.getReader()
-    try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        size += value.byteLength
-        if (size > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
-        chunks.push(value)
-      }
-    } finally {
-      await reader.cancel()
-    }
-    return {
-      data: Buffer.concat(chunks),
-      mimeType: response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream',
-    }
-  }
-  // Match the app:// image protocol: fragments are not part of the filename,
-  // while escaped reserved characters such as %23 are.
-  const src = decodeURIComponent(
-    (raw.startsWith('app://') ? raw.slice(6) : raw).replace(/#.*$/, ''),
+function workspaceImage(src: string, root: string) {
+  const relative = decodeURIComponent(
+    (src.startsWith('app://') ? src.slice(6) : src).replace(/#.*$/, ''),
   )
-  if (!workspaceRoot || path.isAbsolute(src) || /^[a-z][a-z\d+.-]*:/i.test(src)) {
+  if (path.isAbsolute(relative) || /^[a-z][a-z\d+.-]*:/i.test(relative))
     throw new Error('Image must be inside the workspace')
-  }
-  const root = await fs.realpath(workspaceRoot)
-  const file = await fs.realpath(path.resolve(root, src))
+  const file = fs.realpathSync(path.resolve(root, relative))
   if (!file.startsWith(root + path.sep)) throw new Error('Image is outside the workspace')
-  const stat = await fs.stat(file)
-  if (stat.size > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
+  return { file, bytes: fs.statSync(file).size }
+}
+
+async function downloadImage(src: string): Promise<{ bytes: Buffer; mimeType: string }> {
+  const url = new URL(src)
+  if (url.username || url.password) throw new Error('Image URL must not contain credentials')
+  const response = await net.fetch(url.href, { signal: AbortSignal.timeout(15000) })
+  if (!response.ok || !response.body) throw new Error('Could not load the image')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    if (Number(response.headers.get('content-length')) > MAX_CLIPBOARD_IMAGE_BYTES)
+      throw new Error('Image is too large to copy')
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
+      chunks.push(value)
+    }
+  } finally {
+    await reader.cancel()
+  }
   return {
-    data: await fs.readFile(file),
-    mimeType: mime.lookup(file) || 'application/octet-stream',
+    bytes: Buffer.concat(chunks),
+    mimeType:
+      response.headers.get('content-type')?.split(';')[0].toLowerCase() ||
+      mime.lookup(url.pathname) ||
+      'application/octet-stream',
   }
 }
 
-export function writeEditorClipboard(input: unknown): boolean {
-  const payload = clipboardSchema.parse(input)
-  const { text, html, image: bytes } = payload
-  // Native copy may commit after the renderer's first IPC. Match the copy's
-  // unique HTML marker rather than taking a stamp of the previous clipboard.
-  const current =
-    'expectedCopyId' in payload
-      ? clipboard.readHTML().includes(`${CLIPBOARD_COPY_ID_ATTRIBUTE}="${payload.expectedCopyId}"`)
-      : payload.expectedStamp === clipboardStamp()
-  if (!current) return false
-  if (bytes && bytes.byteLength > MAX_CLIPBOARD_IMAGE_BYTES)
-    throw new Error('Image is too large to copy')
-  const image = bytes ? nativeImage.createFromBuffer(Buffer.from(bytes)) : undefined
-  if (image?.isEmpty()) throw new Error('Could not decode the image')
-  clipboard.write({ text, html, ...(image ? { image } : {}) })
-  return true
+async function copyRemoteImage(
+  src: string,
+  copyId: string,
+  content: { text: string; html: string },
+  notify: (status: ClipboardImageCopyStatus) => void,
+): Promise<void> {
+  const current = () => clipboard.readHTML().includes(`${CLIPBOARD_COPY_ID_ATTRIBUTE}="${copyId}"`)
+  const timer = setTimeout(() => {
+    if (current()) notify('copying')
+  }, 500)
+  try {
+    const { bytes, mimeType } = await downloadImage(src)
+    if (!current()) return
+    const image = await clipboardBitmap(bytes, mimeType)
+    const { document } = parseHTML(`<html><body>${content.html}</body></html>`)
+    document.body
+      .querySelector('img')!
+      .setAttribute(
+        'src',
+        mimeType.startsWith('image/')
+          ? `data:${mimeType};base64,${bytes.toString('base64')}`
+          : image.toDataURL(),
+      )
+    const html = document.body.innerHTML
+    if (!current()) return
+    clipboard.write({
+      ...content,
+      html: html.length <= MAX_CLIPBOARD_HTML_LENGTH ? html : content.html,
+      image,
+    })
+    notify('copied')
+  } catch {
+    // The reference payload was already copied successfully; leave it intact.
+    if (current()) notify('failed')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** The synchronous IPC reply follows the one write; only remote images upgrade later. */
+export async function writeEditorClipboard(
+  input: unknown,
+  workspaceRoot: string | null,
+  notify: (status: ClipboardImageCopyStatus) => void,
+): Promise<EditorClipboardResult> {
+  const content = contentSchema.parse(input)
+  if (!workspaceRoot || path.resolve(workspaceRoot) !== path.resolve(content.workspaceRoot))
+    throw new Error('Workspace changed while copying')
+  const { document } = parseHTML(`<html><body>${content.html}</body></html>`)
+  const images = Array.from(document.body.querySelectorAll('img'))
+  const single = content.singleImage && images.length === 1
+  const src = single ? (images[0].getAttribute('src') ?? '') : ''
+  if (single && /^https?:\/\//i.test(src)) {
+    const copyId = randomUUID()
+    document.body.firstElementChild!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
+    const payload = { text: content.text, html: document.body.innerHTML }
+    clipboard.write(payload)
+    void copyRemoteImage(src, copyId, payload, notify)
+    return { fallbackImages: 0, pending: true }
+  }
+
+  const root = fs.realpathSync(workspaceRoot)
+  let htmlLength = document.body.innerHTML.length
+  let fallbackImages = 0
+  let image: NativeImage | undefined
+  for (const element of images) {
+    const source = element.getAttribute('src') ?? ''
+    if (/^https?:\/\//i.test(source)) continue
+    try {
+      if (/^data:image\//i.test(source)) {
+        if (single) {
+          const comma = source.indexOf(',')
+          if (!/^data:image\/[^;,]+;base64,/i.test(source)) throw new Error('Invalid image data')
+          const encoded = source.slice(comma + 1)
+          if (encoded.length > Math.ceil(MAX_CLIPBOARD_IMAGE_BYTES / 3) * 4)
+            throw new Error('Image is too large to copy')
+          const bytes = Buffer.from(encoded, 'base64')
+          if (bytes.length > MAX_CLIPBOARD_IMAGE_BYTES)
+            throw new Error('Image is too large to copy')
+          image = await clipboardBitmap(bytes, source.slice(5, source.indexOf(';')))
+        }
+        continue
+      }
+      const asset = workspaceImage(source, root)
+      if (asset.bytes > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
+      // Check before reading/encoding so a selection of large photos stays bounded.
+      if (htmlLength + Math.ceil(asset.bytes / 3) * 4 > MAX_CLIPBOARD_HTML_LENGTH)
+        throw new Error('Clipboard HTML is too large')
+      const bytes = fs.readFileSync(asset.file)
+      if (bytes.length > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
+      const mimeType = mime.lookup(asset.file)
+      if (!mimeType || !mimeType.startsWith('image/')) throw new Error('Unknown image format')
+      const replacement = element.cloneNode(true) as typeof element
+      replacement.setAttribute('src', `data:${mimeType};base64,${bytes.toString('base64')}`)
+      replacement.setAttribute(
+        CLIPBOARD_IMAGE_SOURCE_ATTRIBUTE,
+        source.startsWith('app://') ? source.slice(6) : source,
+      )
+      replacement.setAttribute(
+        CLIPBOARD_IMAGE_WORKSPACE_ATTRIBUTE,
+        clipboardWorkspaceKey(workspaceRoot),
+      )
+      const nextLength = htmlLength - element.outerHTML.length + replacement.outerHTML.length
+      if (nextLength > MAX_CLIPBOARD_HTML_LENGTH) throw new Error('Clipboard HTML is too large')
+      element.replaceWith(replacement)
+      htmlLength = nextLength
+      if (single) image = await clipboardBitmap(bytes, mimeType)
+    } catch {
+      fallbackImages++
+    }
+  }
+  clipboard.write({
+    text: content.text,
+    html: document.body.innerHTML,
+    ...(image ? { image } : {}),
+  })
+  return { fallbackImages, pending: false }
 }

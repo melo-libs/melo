@@ -6,6 +6,7 @@ import { CellSelection, TableMap } from '@tiptap/pm/tables'
 import { AllSelection, NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { editorExtensions } from './tiptapExtensions'
 import {
+  GENERIC_CLIPBOARD_NODES,
   hasProseMirrorSlice,
   isSingleImageSlice,
   shouldPreferClipboardHtml,
@@ -40,6 +41,13 @@ describe('clipboard representations', () => {
     expect(shouldPreferClipboardHtml('<p data-pm-slice="1 1 []"><img></p>', image)).toBe(true)
     expect(shouldPreferClipboardHtml('', slice('Text'))).toBe(false)
     expect(shouldPreferClipboardHtml('<p><br></p>', new Slice(Fragment.empty, 0, 0))).toBe(false)
+  })
+
+  it('requires every non-generic node to declare a text representation', () => {
+    const missing = Object.values(schema.nodes)
+      .filter((node) => !GENERIC_CLIPBOARD_NODES.has(node.name) && !node.spec.toText)
+      .map((node) => node.name)
+    expect(missing).toEqual([])
   })
 
   it('keeps literal punctuation without adding file-format escaping', () => {

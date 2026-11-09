@@ -13,7 +13,7 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { MeloCodeBlock, lowlight } from './CodeBlock'
 import { MathShortcut } from './MathShortcut'
 import { MarkdownInput } from './MarkdownInput'
-import { ImagePaste } from './ImagePaste'
+import { ClipboardPaste } from './ClipboardPaste'
 import { ParagraphMarkdown } from '@shared/serializers/paragraphMarkdown'
 import { Wikilink } from './links/Wikilink'
 import { SmoothCaret } from './SmoothCaret'
@@ -238,7 +238,7 @@ export const editorExtensions: AnyExtension[] = [
   Markdown,
   EditorClipboard,
   MarkdownInput,
-  ImagePaste,
+  ClipboardPaste,
   MathShortcut,
   Wikilink,
   SmoothCaret,

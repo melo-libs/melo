@@ -11,6 +11,8 @@ if (process.contextIsolated) {
   try {
     // contextBridge.exposeInMainWorld('electron', electronAPI)
     const api: IpcApi = {
+      copyEditorClipboard: (content) =>
+        ipcRenderer.sendSync(IpcChannels.CopyEditorClipboard, content),
       getPathForFile: (file) => webUtils.getPathForFile(file),
       channels: IpcChannels,
       send: <K extends IpcChannels>(channel: K, args: IpcRequestType<K>['args']): void => {

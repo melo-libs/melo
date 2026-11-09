@@ -1,4 +1,8 @@
-import type { ClipboardWriteCondition } from '../clipboard'
+import type {
+  ClipboardImageCopyStatus,
+  EditorClipboardContent,
+  EditorClipboardResult,
+} from '../clipboard'
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 import type {
@@ -61,9 +65,8 @@ export enum IpcChannels {
   OnSave = 'on-save',
   OnCopyAsMarkdown = 'on-copy-as-markdown',
   CopyMarkdownAvailable = 'copy-markdown-available',
-  InvokeReadClipboardImage = 'invoke-read-clipboard-image',
-  InvokeWriteClipboard = 'invoke-write-clipboard',
-  InvokeGetClipboardStamp = 'invoke-get-clipboard-stamp',
+  CopyEditorClipboard = 'copy-editor-clipboard',
+  OnClipboardImageCopy = 'on-clipboard-image-copy',
   OnLanguageChanged = 'on-language-changed',
   OnSettingsChanged = 'on-settings-changed',
   OnUpdateState = 'on-update-state',
@@ -225,15 +228,11 @@ export type WorkspaceChangedEvent =
 export interface IpcChannelDefinitions {
   [IpcChannels.OnCopyAsMarkdown]: { args: undefined; response: void }
   [IpcChannels.CopyMarkdownAvailable]: { args: { available: boolean }; response: void }
-  [IpcChannels.InvokeReadClipboardImage]: {
-    args: { src: string; workspaceRoot: string }
-    response: IpcResponse<{ data: Uint8Array; mimeType: string }>
+  [IpcChannels.CopyEditorClipboard]: {
+    args: EditorClipboardContent
+    response: IpcResponse<EditorClipboardResult>
   }
-  [IpcChannels.InvokeWriteClipboard]: {
-    args: { text: string; html: string; image?: Uint8Array } & ClipboardWriteCondition
-    response: IpcResponse<boolean>
-  }
-  [IpcChannels.InvokeGetClipboardStamp]: { args: undefined; response: IpcResponse<string> }
+  [IpcChannels.OnClipboardImageCopy]: { args: ClipboardImageCopyStatus; response: void }
   [IpcChannels.AgentCommand]: { args: AgentCommand; response: IpcResponse<AgentCommandResult> }
   [IpcChannels.OnAgentComponents]: { args: AgentComponents; response: void }
   [IpcChannels.OnAgentView]: { args: AgentView; response: void }
@@ -673,6 +672,7 @@ export type IpcResponseType<K extends IpcChannels> = IpcChannelDefinitions[K]['r
 
 // API interface exposed to renderer
 export interface IpcApi {
+  copyEditorClipboard(content: EditorClipboardContent): IpcResponse<EditorClipboardResult>
   getPathForFile(file: File): string
   channels: typeof IpcChannels
   send: <K extends IpcChannels>(channel: K, args: IpcChannelDefinitions[K]['args']) => void

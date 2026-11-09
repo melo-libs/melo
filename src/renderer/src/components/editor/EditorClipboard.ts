@@ -1,15 +1,14 @@
 import { Extension, type Editor } from '@tiptap/core'
-import { CLIPBOARD_COPY_ID_ATTRIBUTE } from '@shared/clipboard'
+import { IpcChannels } from '@shared/types/ipc'
 import { Plugin, TextSelection } from '@tiptap/pm/state'
 import { Fragment, Slice } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { appStore } from '../../store/appStore'
 import { workspacePathAtom } from '../../store/workspace'
-import { clipboardWriteGuard, copyText } from '../../lib/clipboard'
+import { copyText } from '../../lib/clipboard'
 import { toast } from '../Toaster'
 import i18n from '../../i18n'
 import { isSingleImageSlice, sliceToMarkdown, sliceToPlainText } from './clipboard'
-import { writeImageClipboard } from './clipboardImages'
 
 export function canCopyEditorSelection(editor: Editor): boolean {
   if (editor.state.selection.empty) return false
@@ -42,19 +41,28 @@ export async function copySelectionAsMarkdown(editor: Editor): Promise<void> {
   }
 }
 
-export async function copyImageNode(editor: Editor, pos: number): Promise<void> {
+function writeImageContent(dom: HTMLElement, text: string, singleImage: boolean) {
+  const result = window.api.copyEditorClipboard({
+    html: dom.innerHTML,
+    text,
+    singleImage,
+    workspaceRoot: appStore.get(workspacePathAtom) ?? '',
+  })
+  if (!result.success || !result.data) throw new Error(result.error || 'Could not copy')
+  return result.data
+}
+
+export function copyImageNode(editor: Editor, pos: number): void {
   const node = editor.state.doc.nodeAt(pos)
   if (node?.type.name !== 'image') return
   const slice = new Slice(Fragment.from(node), 0, 0)
   const { dom } = editor.view.serializeForClipboard(slice)
   try {
-    const result = await writeImageClipboard(
-      dom,
-      sliceToPlainText(slice),
-      appStore.get(workspacePathAtom) ?? '',
-      { type: 'image' },
-    )
-    if (result.copied) toast(i18n.t('editor.imageCopied'))
+    const result = writeImageContent(dom, sliceToPlainText(slice), true)
+    if (!result.pending)
+      toast(
+        i18n.t(result.fallbackImages ? 'editor.imagesCopiedAsReferences' : 'editor.imageCopied'),
+      )
   } catch {
     toast(i18n.t('editor.copyFailed'))
   }
@@ -65,8 +73,7 @@ export const EditorClipboard = Extension.create({
   priority: 1100,
   addProseMirrorPlugins() {
     const copyImages = (view: EditorView, event: ClipboardEvent, cut: boolean): boolean => {
-      if (view.state.selection.empty || (cut && !view.editable) || !event.clipboardData)
-        return false
+      if (view.state.selection.empty || (cut && !view.editable)) return false
       const slice = view.state.selection.content()
       let containsImage = false
       slice.content.descendants((node) => {
@@ -75,48 +82,35 @@ export const EditorClipboard = Extension.create({
       })
       if (!containsImage) return false
       const { dom, text } = view.serializeForClipboard(slice)
-      const copyId = crypto.randomUUID()
-      dom.firstElementChild!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
-      // Copy the full Slice immediately; image embedding is an optional upgrade.
-      // A failed image must never leave yesterday's text on the clipboard.
-      event.clipboardData.setData('text/plain', text)
-      event.clipboardData.setData('text/html', dom.innerHTML)
+      // Keep clipboardData empty: Chromium would otherwise commit a second
+      // payload after this event and overwrite the main-process bitmap.
       event.preventDefault()
-      const single = isSingleImageSlice(slice)
-      const workspace = appStore.get(workspacePathAtom) ?? ''
-      // Match native cut timing once the full Slice is on clipboardData. Waiting
-      // for optional image embedding turns an immediate cut/paste into a copy.
-      if (cut)
-        view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta('uiEvent', 'cut'))
-      const fallbackMessage = cut
-        ? 'editor.imagesCutAsReferences'
-        : 'editor.imagesCopiedAsReferences'
-      void writeImageClipboard(dom, text, workspace, {
-        type: 'selection',
-        singleImage: single,
-        copyId,
-      })
-        .then(({ fallbackImages }) => {
-          if (fallbackImages) toast(i18n.t(fallbackMessage))
-        })
-        .catch(() => toast(i18n.t(fallbackMessage)))
+      try {
+        const result = writeImageContent(dom, text, isSingleImageSlice(slice))
+        // The synchronous reply confirms the full payload (or its reference
+        // fallback) was written. A failed write must never delete the source.
+        if (cut)
+          view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta('uiEvent', 'cut'))
+        if (result.fallbackImages)
+          toast(i18n.t(cut ? 'editor.imagesCutAsReferences' : 'editor.imagesCopiedAsReferences'))
+      } catch {
+        toast(i18n.t('editor.copyFailed'))
+      }
       return true
     }
     return [
       new Plugin({
-        view: (view) => {
-          const invalidate = () => {
-            clipboardWriteGuard()
-          }
-          const document = view.dom.ownerDocument
-          document.addEventListener('copy', invalidate, true)
-          document.addEventListener('cut', invalidate, true)
-          return {
-            destroy: () => {
-              document.removeEventListener('copy', invalidate, true)
-              document.removeEventListener('cut', invalidate, true)
-            },
-          }
+        view: () => {
+          const off = window.api.on(IpcChannels.OnClipboardImageCopy, (status) => {
+            const message =
+              status === 'copying'
+                ? 'editor.copyingImage'
+                : status === 'copied'
+                  ? 'editor.imageCopied'
+                  : 'editor.imagesCopiedAsReferences'
+            toast(i18n.t(message))
+          })
+          return { destroy: off }
         },
         props: {
           clipboardTextSerializer: (slice, view) =>

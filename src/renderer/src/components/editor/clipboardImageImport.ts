@@ -1,12 +1,10 @@
-import { Extension } from '@tiptap/core'
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model'
-import { Plugin, PluginKey, Selection } from '@tiptap/pm/state'
+import { Selection } from '@tiptap/pm/state'
 import { dropPoint } from '@tiptap/pm/transform'
 import type { EditorView } from '@tiptap/pm/view'
 import { IpcChannels } from '@shared/types/ipc'
 import { toast } from '../Toaster'
 import i18n from '../../i18n'
-import { shouldPreferClipboardHtml } from './clipboard'
 import { appStore } from '../../store/appStore'
 import { workspacePathAtom } from '../../store/workspace'
 import { MAX_CLIPBOARD_IMAGE_BYTES } from '@shared/clipboard'
@@ -20,18 +18,6 @@ function imagePlaceholder(
 ) {
   const message = i18n.t('editor.imageUnavailable')
   return schema.text(`[${message}${label ? `: ${label}` : ''}]`, marks)
-}
-
-const imageFiles = (list: FileList | undefined | null): File[] =>
-  Array.from(list ?? []).filter((file) => file.type.startsWith('image/'))
-
-function hasEmbeddedImages(slice: Slice): boolean {
-  let found = false
-  slice.content.descendants((node) => {
-    if (node.type.name === 'image' && /^data:image\//i.test(node.attrs.src as string)) found = true
-    return !found
-  })
-  return found
 }
 
 async function saveImage(blob: Blob, workspaceRoot: string): Promise<string> {
@@ -124,7 +110,7 @@ async function importImages(
   }
 }
 
-function importFiles(view: EditorView, files: File[], dropPos?: number): void {
+export function importImageFiles(view: EditorView, files: File[], dropPos?: number): void {
   void importImages(
     view,
     async (workspace) => {
@@ -145,67 +131,6 @@ function importFiles(view: EditorView, files: File[], dropPos?: number): void {
   )
 }
 
-export const ImagePaste = Extension.create({
-  name: 'imagePaste',
-  addProseMirrorPlugins() {
-    let shiftDown = false
-    return [
-      new Plugin({
-        key: new PluginKey('imagePaste'),
-        props: {
-          handleDOMEvents: {
-            keydown: (_view, event) => {
-              shiftDown = event.shiftKey
-              return false
-            },
-            keyup: (_view, event) => {
-              shiftDown = event.shiftKey
-              return false
-            },
-            blur: () => {
-              shiftDown = false
-              return false
-            },
-          },
-          handlePaste: (view, event, slice) => {
-            if (shiftDown || view.state.selection.$from.parent.type.spec.code) return false
-            if (hasEmbeddedImages(slice)) {
-              event.preventDefault()
-              void importImages(view, (workspace) => saveEmbeddedImages(slice, workspace))
-              return true
-            }
-            // Image files can represent the whole HTML selection, not attachments.
-            // Preserve that selection; a lone external image still uses its bitmap.
-            if (shouldPreferClipboardHtml(event.clipboardData?.getData('text/html') ?? '', slice))
-              return false
-            const files = imageFiles(event.clipboardData?.files)
-            if (!files.length) return false
-            event.preventDefault()
-            importFiles(view, files)
-            return true
-          },
-          handleDrop: (view, event, slice, moved) => {
-            if (moved) return false
-            const files = imageFiles(event.dataTransfer?.files)
-            const embedded = hasEmbeddedImages(slice)
-            if (
-              !embedded &&
-              shouldPreferClipboardHtml(event.dataTransfer?.getData('text/html') ?? '', slice)
-            )
-              return false
-            if (!embedded && !files.length) return false
-            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })
-            if (!pos) return false
-            event.preventDefault()
-            if (embedded) {
-              void importImages(view, (workspace) => saveEmbeddedImages(slice, workspace), pos.pos)
-            } else {
-              importFiles(view, files, pos.pos)
-            }
-            return true
-          },
-        },
-      }),
-    ]
-  },
-})
+export function importEmbeddedImages(view: EditorView, slice: Slice, dropPos?: number): void {
+  void importImages(view, (workspace) => saveEmbeddedImages(slice, workspace), dropPos)
+}

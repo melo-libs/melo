@@ -34,6 +34,26 @@ export function isSingleImageSlice(slice: Slice): boolean {
   return images === 1 && !otherContent
 }
 
+export const GENERIC_CLIPBOARD_NODES = new Set([
+  'doc',
+  'text',
+  'paragraph',
+  'heading',
+  'blockquote',
+  'codeBlock',
+  'bulletList',
+  'orderedList',
+  'listItem',
+  'taskList',
+  'taskItem',
+  'table',
+  'tableRow',
+  'tableCell',
+  'tableHeader',
+  'horizontalRule',
+  'hardBreak',
+])
+
 /** The Slice already excludes unselected text; block structure needs its own text form. */
 export function sliceToPlainText(slice: Slice, from?: ResolvedPos): string {
   const partialStart = Boolean(from?.parent.isTextblock && from.parentOffset > 0)
@@ -54,7 +74,7 @@ export function sliceToPlainText(slice: Slice, from?: ResolvedPos): string {
     index: number,
   ): string => {
     if (node.isText) return node.text ?? ''
-    if (node.isLeaf) {
+    if (node.isLeaf || !GENERIC_CLIPBOARD_NODES.has(node.type.name)) {
       const toText = node.type.spec.toText as TextSerializer | undefined
       return toText?.({ node, pos, parent, index, range }) ?? ''
     }

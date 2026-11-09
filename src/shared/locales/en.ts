@@ -698,6 +698,7 @@ export const en = {
     downloadToWorkspace: 'Download to workspace',
     copyImage: 'Copy image',
     imageCopied: 'Image copied',
+    copyingImage: 'Copying image…',
     imagesCopiedAsReferences: 'Copied. Some images were kept as references.',
     imagesCutAsReferences: 'Cut. Some images were kept as references.',
     imageUnavailable: 'Image not imported',
@@ -1153,6 +1154,7 @@ export const en = {
     exportFailed: 'Could not export image',
     clipboardUnsupported: 'Clipboard images not supported — use Download',
     imageCopied: 'Image copied',
+    copyingImage: 'Copying image…',
     copyFailed: 'Could not copy image',
   },
   dialogs: {

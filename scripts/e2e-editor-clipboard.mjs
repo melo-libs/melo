@@ -77,6 +77,19 @@ try {
       nativeImage.createFromBitmap(Buffer.from([0, 0, 255, 255]), { width: 1, height: 1 }).toPNG(),
     ),
   )
+  await app.evaluate(({ clipboard }) => {
+    const write = clipboard.write.bind(clipboard)
+    globalThis.clipboardWrites = 0
+    globalThis.failClipboardWrite = false
+    clipboard.write = (data) => {
+      if (globalThis.failClipboardWrite) {
+        globalThis.failClipboardWrite = false
+        throw new Error('Simulated clipboard write failure')
+      }
+      globalThis.clipboardWrites++
+      return write(data)
+    }
+  })
   fs.writeFileSync(path.join(workspace, '.assets', 'red.png'), Buffer.from(png))
   imageBuffer = Buffer.from(png)
   // Keep displayed images immediate; only the main-process clipboard fetch is delayed.
@@ -116,14 +129,28 @@ try {
     if (native) nativeMenuClicks++
   }
   const copy = async (cut = false, enhanced = false) => {
-    await page.locator('.ProseMirror').evaluate((element) => element.editor.view.focus())
+    await page.locator('.ProseMirror').evaluate((element, cut) => {
+      window.clipboardCopyCompleted = false
+      document.addEventListener(
+        cut ? 'cut' : 'copy',
+        () => {
+          setTimeout(() => {
+            window.clipboardCopyCompleted = true
+          }, 0)
+        },
+        { once: true, capture: true },
+      )
+      element.editor.view.focus()
+    }, cut)
     await app.evaluate(({ clipboard, BrowserWindow }, cut) => {
       clipboard.writeText('clipboard-sentinel')
+      globalThis.clipboardWrites = 0
       const win = BrowserWindow.getAllWindows()[0]
       win.focus()
       if (cut) win.webContents.cut()
       else win.webContents.copy()
     }, cut)
+    await page.waitForFunction(() => window.clipboardCopyCompleted)
     await waitUntil(
       'native copy should replace the clipboard',
       async () => (await readClipboard()).text !== 'clipboard-sentinel',
@@ -133,7 +160,16 @@ try {
         (await readClipboard()).html.includes('data:image/'),
       )
     }
-    return readClipboard()
+    const result = await readClipboard()
+    if (enhanced) {
+      assert.equal(
+        await app.evaluate(() => globalThis.clipboardWrites),
+        1,
+        'local image copy must write the clipboard once',
+      )
+      assert(!result.html.includes('data-melo-copy-id'), 'local copies do not need a copy ID')
+    }
+    return result
   }
   const paste = () =>
     app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.paste())
@@ -474,6 +510,31 @@ try {
   )
   assert.equal(externalLiteral.content[1].content[0].text, '1. literal item')
 
+  await setDocument({ type: 'doc', content: [paragraph()] })
+  await app.evaluate(({ clipboard }) =>
+    clipboard.write({
+      text: '# literal heading\n1. literal item',
+      html: '<p># literal heading</p><p>1. literal item</p>',
+    }),
+  )
+  await paste()
+  await waitUntil(
+    'paragraph HTML should stay literal without an accompanying bitmap',
+    async () => JSON.stringify(await currentDocument()) === JSON.stringify(externalLiteral),
+  )
+
+  await setDocument({ type: 'doc', content: [paragraph(text('Replace me'))] })
+  await app.evaluate(({ clipboard }) =>
+    clipboard.write({ text: 'Actual clipboard text', html: '<p><br></p>' }),
+  )
+  await paste()
+  await waitUntil(
+    'empty HTML should not discard the usable text flavor',
+    async () =>
+      JSON.stringify(await currentDocument()) ===
+      JSON.stringify({ type: 'doc', content: [paragraph(text('Actual clipboard text'))] }),
+  )
+
   for (const html of [`<p><img src="${externalImageUrl}" alt="Only image"></p>`, '<p><br></p>']) {
     await setDocument({ type: 'doc', content: [paragraph()] })
     await writeHtmlAndBitmap(html, 'Image alt fallback')
@@ -568,6 +629,19 @@ try {
     const result = await copy(false, true)
     assert(result.html.includes(`data:${mime};base64,${bytes.toString('base64')}`), filename)
     assert(!result.image, 'mixed HTML does not need a native bitmap')
+
+    await setDocument({
+      type: 'doc',
+      content: [paragraph({ type: 'image', attrs: { src: `.assets/${filename}` } })],
+    })
+    const single = await copy(false, true)
+    assert(single.image, `${filename}: single-image copy must include a native bitmap`)
+    assert(single.html.includes(`data:${mime};base64,${bytes.toString('base64')}`), filename)
+    assert.equal(
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
+      1,
+      'the image decoder must release its hidden window',
+    )
   }
 
   await setDocument({ type: 'doc', content: [paragraph()] })
@@ -685,6 +759,20 @@ try {
     async () => JSON.stringify(await currentDocument()) === JSON.stringify(expectedImage),
   )
 
+  const failedCutSource = await setDocument(mixed)
+  await app.evaluate(({ clipboard, BrowserWindow }) => {
+    clipboard.writeText('keep-on-write-failure')
+    globalThis.failClipboardWrite = true
+    BrowserWindow.getAllWindows()[0].webContents.cut()
+  })
+  await page.locator('.toast', { hasText: 'Could not copy' }).last().waitFor()
+  assert.deepEqual(
+    await currentDocument(),
+    failedCutSource,
+    'a failed synchronous clipboard write must not delete the source',
+  )
+  assert.equal((await readClipboard()).text, 'keep-on-write-failure')
+
   const padded = Buffer.concat([imageBuffer, Buffer.alloc(13 * 1024 * 1024)])
   fs.writeFileSync(path.join(workspace, '.assets', 'large-a.png'), padded)
   fs.writeFileSync(path.join(workspace, '.assets', 'large-b.png'), padded)
@@ -787,6 +875,7 @@ try {
     'blur alone must not cancel an image copy',
     async () => (await readClipboard()).image,
   )
+  assert((await readClipboard()).html.includes('data:image/png;base64,'))
 
   await setDocument(remoteImage('external-newer-copy'))
   await app.evaluate(({ clipboard, BrowserWindow }) => {
@@ -913,7 +1002,8 @@ try {
           'failed image cut with intact clipboard references',
           'HTML and bitmap paste/drop format priority',
           'immediate image cut/paste and undo/redo',
-          'immediate paste before image enhancement',
+          'single synchronous local write and failed-write cut safety',
+          'single remote image fallback and asynchronous bitmap upgrade',
           'remote image failure and mixed URL preservation',
           'original GIF/SVG/JPEG bytes in HTML',
           'partial external image import',
@@ -931,37 +1021,43 @@ try {
     ),
   )
 } catch (error) {
+  console.error(`Preserved diagnostics: ${root}`)
   console.error(error)
   console.error(logs.join('\n'))
   if (app)
     console.error(
-      await app.evaluate(({ BrowserWindow, Menu, clipboard }) => ({
-        focusedWindow: BrowserWindow.getFocusedWindow()?.id,
-        mainWindow: BrowserWindow.getAllWindows()[0]?.id,
-        markdownEnabled: Menu.getApplicationMenu()?.getMenuItemById('copy-as-markdown')?.enabled,
-        clipboard: clipboard.readText(),
-      })),
-    )
-  if (app)
-    console.error(
-      await app.windows()[0]?.evaluate(() => ({
-        hasFocus: document.hasFocus(),
-        active: document.activeElement?.tagName,
-        selection: document.querySelector('.ProseMirror')?.editor.state.selection.toJSON(),
-      })),
+      await app
+        .evaluate(({ BrowserWindow, Menu, clipboard }) => ({
+          focusedWindow: BrowserWindow.getFocusedWindow()?.id,
+          mainWindow: BrowserWindow.getAllWindows()[0]?.id,
+          markdownEnabled: Menu.getApplicationMenu()?.getMenuItemById('copy-as-markdown')?.enabled,
+          clipboard: clipboard.readText(),
+        }))
+        .catch((error) => ({ diagnosticUnavailable: error.message })),
     )
   if (app)
     console.error(
       await app
         .windows()[0]
-        ?.evaluate(() => document.querySelector('.ProseMirror')?.editor.getJSON()),
+        ?.evaluate(() => ({
+          hasFocus: document.hasFocus(),
+          active: document.activeElement?.tagName,
+          selection: document.querySelector('.ProseMirror')?.editor.state.selection.toJSON(),
+        }))
+        .catch((error) => ({ diagnosticUnavailable: error.message })),
+    )
+  if (app)
+    console.error(
+      await app
+        .windows()[0]
+        ?.evaluate(() => document.querySelector('.ProseMirror')?.editor.getJSON())
+        .catch((error) => ({ diagnosticUnavailable: error.message })),
     )
   if (app)
     await app
       .windows()[0]
       ?.screenshot({ path: path.join(root, 'failure.png') })
       .catch(() => {})
-  console.error(`Preserved diagnostics: ${root}`)
   process.exitCode = 1
 } finally {
   if (app) {

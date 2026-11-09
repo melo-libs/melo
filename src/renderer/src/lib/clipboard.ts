@@ -1,11 +1,3 @@
-let copyVersion = 0
-
-/** A slow image fetch must not overwrite content copied after it. */
-export function clipboardWriteGuard(): () => boolean {
-  const version = ++copyVersion
-  return () => version === copyVersion
-}
-
 /**
  * Copy plain text to the system clipboard.
  *
@@ -17,7 +9,6 @@ export function clipboardWriteGuard(): () => boolean {
  *
  */
 export async function copyText(text: string): Promise<boolean> {
-  clipboardWriteGuard()
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text)
