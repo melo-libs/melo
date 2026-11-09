@@ -45,6 +45,7 @@ import {
   snapshotDisplayed,
 } from '../../store/documentSession'
 import './links/links.scss'
+import { applyPendingDocumentFragment } from '../../lib/documentLinks'
 
 export interface EditorPageProps {
   activeTabId: string | null
@@ -396,6 +397,7 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
       scrollEl?.classList.remove('ed-switching')
       if (!loadFailed) {
         editor.view.dispatch(editor.state.tr.setSelection(Selection.atStart(editor.state.doc)))
+        applyPendingDocumentFragment(activeTabId, editor.view.dom)
         // Tiptap's focus() queues an unconditional RAF that can steal input
         // from chat or tags after loading. Check focus at execution time instead.
         focusFrame = requestAnimationFrame(() => {

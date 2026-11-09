@@ -10,7 +10,9 @@ import { NodeRangeSelection } from '@tiptap/extension-node-range'
 import { IpcChannels } from '@shared/types/ipc'
 import { Icon } from '../Icon'
 import { cn } from '../../lib/cn'
-import { safeExternalUrl } from '../../lib/url'
+import { normalizeLinkInput } from '../../lib/url'
+import { classifyDocumentHref } from '@shared/documentLinks'
+import { openDocumentLink } from '../../lib/documentLinks'
 import { useMenuNavigation } from '../../hooks/useMenuNavigation'
 import { toast } from '../Toaster'
 import i18n from '../../i18n'
@@ -24,6 +26,7 @@ import { FORMAT_OPTIONS, blockName } from './overlayData'
 import { copyImageNode } from './EditorClipboard'
 import { copyText } from '../../lib/clipboard'
 import type { BlockType } from './sampleDoc'
+import { selectedLinkHref } from './links/LinkNavigation'
 
 // Widest textual trigger face (by character count — close enough at one
 // font size); the trigger reserves its width so the toolbar never resizes.
@@ -151,6 +154,7 @@ function LinkDropdown({
   })
   const [text, setText] = useState(initial.text)
   const [url, setUrl] = useState(initial.url)
+  const normalizedHref = normalizeLinkInput(url, initial.url)
   const urlRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     urlRef.current?.focus()
@@ -158,9 +162,7 @@ function LinkDropdown({
   }, [])
 
   const apply = () => {
-    // Same allowlist as open(): the raw attr ends up verbatim in the saved
-    // Markdown, so a javascript: href must never be stored either.
-    const href = safeExternalUrl(url)
+    const href = normalizedHref
     if (!href) return
     const finalText = text.trim() || href
     if (finalText === initial.text) {
@@ -192,12 +194,6 @@ function LinkDropdown({
       .setMeta('preventAutolink', true)
       .run()
     onClose()
-  }
-  const open = () => {
-    const safe = safeExternalUrl(url)
-    // window.open is intercepted by the main process and routed to the
-    // system browser (setWindowOpenHandler → shell.openExternal).
-    if (safe) window.open(safe, '_blank', 'noopener,noreferrer')
   }
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -234,10 +230,14 @@ function LinkDropdown({
       <div className="lk-actions">
         <button
           className="bubble-btn"
-          title={t('editor.openLink')}
-          disabled={!safeExternalUrl(url)}
+          title={t(
+            normalizedHref && classifyDocumentHref(normalizedHref).kind !== 'external'
+              ? 'editor.openDocument'
+              : 'editor.openLink',
+          )}
+          disabled={!normalizedHref}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={open}
+          onClick={() => normalizedHref && void openDocumentLink(normalizedHref, editor.view.dom)}
         >
           <Icon name="externalLink" size={14} />
         </button>
@@ -253,7 +253,7 @@ function LinkDropdown({
         <span className="lk-spacer" />
         <button
           className="lk-apply"
-          disabled={!safeExternalUrl(url)}
+          disabled={!normalizedHref}
           onMouseDown={(e) => e.preventDefault()}
           onClick={apply}
           title={t('editor.applyEnter')}
@@ -272,8 +272,8 @@ interface BubbleAnchor {
   bottom: number
 }
 
-/** Stable default returned by the editor-state selector when the selection is
- *  empty (toolbar hidden) — avoids the per-keystroke isActive/getAttributes
+/** Stable default returned by the editor-state selector for an empty selection
+ *  outside links — avoids the per-keystroke isActive/getAttributes
  *  work and lets the deepEqual dedupe so the menu never re-renders. */
 const BUBBLE_EMPTY_STATE = {
   bold: false,
@@ -284,6 +284,7 @@ const BUBBLE_EMPTY_STATE = {
   blockType: 'p' as BlockType,
   highlighted: false,
   link: false,
+  linkHref: null as string | null,
 }
 
 type BubbleDD = 'format' | 'link' | null
@@ -316,7 +317,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
     if (sel instanceof NodeSelection) return false
     if (sel instanceof CellSelection) return false
     return (
-      !sel.empty &&
+      (!sel.empty || Boolean(selectedLinkHref(editor.state))) &&
       !(sel instanceof NodeRangeSelection) &&
       !editor.isActive('codeBlock') &&
       !editor.isActive('image')
@@ -337,7 +338,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
     const update = () => {
       if (pressing.current) return
       if (editor.isFocused && shouldShow()) {
-        if (!visibleRef.current) {
+        if (!visibleRef.current || editor.state.selection.empty) {
           visibleRef.current = true
           place()
         }
@@ -388,13 +389,14 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
   }, [editor, shouldShow, place, setDD])
 
   // This selector runs on every transaction (every keystroke), so it must be
-  // cheap when the toolbar can't be shown. With an empty selection the menu is
-  // hidden (see shouldShow), so bail before the ~16 isActive/getAttributes
+  // cheap when the toolbar can't be shown. With an empty selection outside
+  // links, bail before the ~16 isActive/getAttributes
   // calls and return a stable default the deepEqual can dedupe.
   const s = useEditorState({
     editor,
     selector: ({ editor }) => {
-      if (editor.state.selection.empty) return BUBBLE_EMPTY_STATE
+      const linkHref = selectedLinkHref(editor.state)
+      if (editor.state.selection.empty && !linkHref) return BUBBLE_EMPTY_STATE
       return {
         bold: editor.isActive('bold'),
         italic: editor.isActive('italic'),
@@ -404,6 +406,7 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
         blockType: currentBlockType(editor),
         highlighted: editor.isActive('highlight'),
         link: editor.isActive('link'),
+        linkHref,
       }
     },
   })
@@ -624,6 +627,26 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
       >
         <Icon name="link" size={14} />
       </button>
+      {s.linkHref && (
+        <button
+          className="bubble-btn"
+          title={t(
+            classifyDocumentHref(s.linkHref).kind === 'external'
+              ? 'editor.openLink'
+              : 'editor.openDocument',
+          )}
+          aria-label={t(
+            classifyDocumentHref(s.linkHref).kind === 'external'
+              ? 'editor.openLink'
+              : 'editor.openDocument',
+          )}
+          disabled={classifyDocumentHref(s.linkHref).kind === 'unsupported'}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => void openDocumentLink(s.linkHref!, editor.view.dom)}
+        >
+          <Icon name="externalLink" size={14} />
+        </button>
+      )}
       {openDD === 'link' && (
         <LinkDropdown editor={editor} isActive={s.link} onClose={() => setDD(null)} />
       )}

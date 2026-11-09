@@ -732,3 +732,10 @@
 .lg-node.off .lg-label {
   opacity: 0.35;
 }
+.ed-prose .ProseMirror[contenteditable='true'] a[href]:not(.wikilink) {
+  cursor: text;
+}
+.ed-prose .ProseMirror.melo-link-navigation a[href]:not(.wikilink),
+.ed-prose .ProseMirror[contenteditable='false'] a[href]:not(.wikilink) {
+  cursor: pointer;
+}

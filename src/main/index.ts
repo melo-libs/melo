@@ -21,6 +21,7 @@ import { registerProtocols, stripAppReferer } from './protocols'
 import { resolveLanguage } from './language'
 import { launchFilePaths } from './launchFiles'
 import { isTextDocumentPath } from '../shared/fileKinds'
+import { classifyDocumentHref } from '../shared/documentLinks'
 import { suspendAgent, resumeAgent } from './ipc/agent'
 
 // stdout/stderr are pipes to whatever launched us (terminal, test driver).
@@ -95,7 +96,9 @@ const initializeWindow = (window: BrowserWindow) => {
 
   // External link
   window.webContents.setWindowOpenHandler(({ url }) => {
-    setImmediate(() => shell.openExternal(url))
+    const target = classifyDocumentHref(url)
+    // Local hrefs must pass workspace resolution, including non-primary clicks.
+    if (target.kind === 'external') setImmediate(() => shell.openExternal(target.url))
     return { action: 'deny' }
   })
 
