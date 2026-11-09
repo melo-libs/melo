@@ -16,6 +16,7 @@ let app
 let imageBuffer
 const pendingImages = new Set()
 let missingImageRequests = 0
+let redirectLoopRequests = 0
 const imageServer = createServer((request, response) => {
   // DOMSerializer can load <img> in a detached document outside page.route.
   // Delay only main-process fetches, never those incidental display requests.
@@ -28,6 +29,18 @@ const imageServer = createServer((request, response) => {
     missingImageRequests++
     response.writeHead(404)
     response.end()
+    return
+  }
+  if (request.url === '/redirect-image.png' || request.url === '/redirect-loop.png') {
+    const loop = request.url === '/redirect-loop.png'
+    if (loop) redirectLoopRequests++
+    response.writeHead(302, { Location: loop ? '/redirect-loop.png' : '/immediate-image.png' })
+    response.end()
+    return
+  }
+  if (request.url === '/immediate-image.png') {
+    response.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+    response.end(imageBuffer)
     return
   }
   pendingImages.add(response)
@@ -79,6 +92,7 @@ try {
   )
   await app.evaluate(({ clipboard, BrowserWindow }) => {
     globalThis.clipboardEditorWindow = BrowserWindow.getAllWindows()[0]
+    clipboard.writeText('melo-clipboard-e2e-initial')
     const write = clipboard.write.bind(clipboard)
     globalThis.clipboardWrites = 0
     globalThis.failClipboardWrite = false
@@ -160,7 +174,7 @@ try {
       await waitUntil('image enhancement should finish', async () =>
         (await readClipboard()).html.includes('data:image/'),
       )
-      if ((await readClipboard()).html.includes('data-melo-copy-id')) {
+      if (enhanced === 'background') {
         await waitUntil(
           'background image decoding should finish',
           async () => (await readClipboard()).image,
@@ -171,8 +185,12 @@ try {
     if (enhanced) {
       assert.equal(
         await app.evaluate(() => globalThis.clipboardWrites),
-        result.html.includes('data-melo-copy-id') ? 2 : 1,
+        enhanced === 'background' ? 2 : 1,
         'only background codecs need a guarded second write',
+      )
+      assert(
+        !result.html.includes('data-melo-copy-id'),
+        'completed copies must remove temporary copy IDs',
       )
     }
     return result
@@ -373,6 +391,23 @@ try {
   assert(imageCopy.image, 'single-image copy must include native bitmap data')
   assert(imageCopy.html.includes('data:image/png;base64,'))
   assert.equal(imageCopy.text, 'Red pixel')
+  const parsedOutsideClipboard = await page.evaluate((html) => {
+    const editor = document.querySelector('.ProseMirror').editor
+    editor.commands.setContent(html, { contentType: 'html' })
+    return editor.getJSON()
+  }, imageCopy.html)
+  assert(
+    parsedOutsideClipboard.content[0].content[0].attrs.src.startsWith('data:image/png;'),
+    'setContent HTML parsing must not consult workspace clipboard provenance',
+  )
+  const rowFragment = await page.evaluate((html) => {
+    const view = document.querySelector('.ProseMirror').editor.view
+    return view.someProp('transformPastedHTML', (transform) =>
+      transform(`<tr data-pm-slice="1 1 []"><td>${html}</td></tr>`, view),
+    )
+  }, imageCopy.html)
+  assert(rowFragment.includes('<tr data-pm-slice="1 1 []">'))
+  assert(rowFragment.includes('src=".assets/red.png"'), 'table fragments must restore local assets')
   await setDocument({ type: 'doc', content: [paragraph()] })
   await paste()
   await waitUntil(
@@ -639,7 +674,7 @@ try {
       type: 'doc',
       content: [paragraph({ type: 'image', attrs: { src: `.assets/${filename}` } })],
     })
-    const single = await copy(false, true)
+    const single = await copy(false, mime === 'image/jpeg' ? true : 'background')
     assert(single.image, `${filename}: single-image copy must include a native bitmap`)
     assert(single.html.includes(`data:${mime};base64,${bytes.toString('base64')}`), filename)
     assert.equal(
@@ -919,11 +954,26 @@ try {
 
   await setDocument(remoteImage('missing'))
   await copy()
-  await page.locator('.toast', { hasText: 'Some images were kept as references' }).last().waitFor()
+  await page.locator('.toast', { hasText: 'Could not copy as an image' }).last().waitFor()
   await waitUntil('failed image reader should return', () => missingImageRequests > 0)
   assert.equal((await readClipboard()).text, 'Slow image')
   assert((await readClipboard()).html.includes('/missing.png'))
   assert(missingImageRequests > 0, 'single-image failure fixture should reach the reader')
+
+  await setDocument(remoteImage('redirect-image'))
+  await copy()
+  await waitUntil(
+    'a redirected generic-binary image should produce a bitmap',
+    async () => (await readClipboard()).image,
+  )
+  assert(!(await readClipboard()).html.includes('data-melo-copy-id'))
+
+  await setDocument(remoteImage('redirect-loop'))
+  await copy()
+  await waitUntil('Chromium must bound redirect loops', () => redirectLoopRequests === 21)
+  await page.locator('.toast', { hasText: 'Could not copy as an image' }).last().waitFor()
+  assert(!(await readClipboard()).image)
+  assert((await readClipboard()).html.includes('/redirect-loop.png'))
 
   await setDocument(remoteImage('switch-window'))
   await app.evaluate(({ clipboard }) => {

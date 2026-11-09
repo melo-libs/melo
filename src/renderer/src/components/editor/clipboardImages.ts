@@ -25,3 +25,22 @@ export function originalClipboardImageSrc(
     return null
   return src
 }
+
+export function restoreClipboardImageSources(
+  html: string,
+  workspaceRoot: string,
+  document: Document,
+): string {
+  if (!workspaceRoot || !html.includes(CLIPBOARD_IMAGE_SOURCE_ATTRIBUTE)) return html
+  // A template parses a fragment without dropping top-level table rows/cells.
+  const template = document.createElement('template')
+  template.innerHTML = html
+  let changed = false
+  for (const element of template.content.querySelectorAll('img')) {
+    const src = originalClipboardImageSrc(element, workspaceRoot)
+    if (!src) continue
+    element.setAttribute('src', src)
+    changed = true
+  }
+  return changed ? template.innerHTML : html
+}

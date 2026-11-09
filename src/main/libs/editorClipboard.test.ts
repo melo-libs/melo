@@ -53,7 +53,7 @@ describe('main-process image copy', () => {
   it('embeds a local image and writes the bitmap, HTML and text exactly once', () => {
     expect(copy('<p data-pm-slice="1 1 []"><img src="app://.assets/test.png"></p>', true)).toEqual({
       fallbackImages: 0,
-      pending: false,
+      bitmap: 'ready',
     })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write).toHaveBeenCalledWith({
@@ -71,7 +71,7 @@ describe('main-process image copy', () => {
   it('preserves remote and data URLs in mixed selections without network or rasterization', () => {
     const html =
       '<p>Before<img src="https://example.com/a.png"><img src="data:image/gif;base64,AQID">After</p>'
-    expect(copy(html)).toEqual({ fallbackImages: 0, pending: false })
+    expect(copy(html)).toEqual({ fallbackImages: 0, bitmap: 'none' })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write).toHaveBeenCalledWith({ text: 'Selected text', html })
     expect(mocks.fetch).not.toHaveBeenCalled()
@@ -94,7 +94,7 @@ describe('main-process image copy', () => {
   it('keeps all text and good images when another image cannot be embedded', () => {
     expect(
       copy('<p>Before<img src=".assets/missing.png"><img src=".assets/test.png">After</p>'),
-    ).toEqual({ fallbackImages: 1, pending: false })
+    ).toEqual({ fallbackImages: 1, bitmap: 'none' })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     const html = mocks.write.mock.lastCall![0].html
     expect(html).toContain('Before')
@@ -120,7 +120,7 @@ describe('main-process image copy', () => {
       copy(
         '<p><img src="../secret.png"><img src="outside/secret.png"><img src="file:///etc/passwd"></p>',
       ),
-    ).toEqual({ fallbackImages: 3, pending: false })
+    ).toEqual({ fallbackImages: 3, bitmap: 'none' })
     expect(mocks.write.mock.lastCall![0].html).not.toContain('data:image/')
     expect(mocks.decode).not.toHaveBeenCalled()
   })
@@ -139,7 +139,7 @@ describe('main-process image copy', () => {
       copy(
         '<p><img src=".assets/large.png"><img src=".assets/large.png"><img src=".assets/oversize.png"></p>',
       ),
-    ).toEqual({ fallbackImages: 2, pending: false })
+    ).toEqual({ fallbackImages: 2, bitmap: 'none' })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     const html = mocks.write.mock.lastCall![0].html
     expect(html).toContain('data:image/png;base64,')
@@ -153,7 +153,10 @@ describe('main-process image copy', () => {
       isEmpty: () => false,
       getSize: () => ({ width: 10000, height: 10000 }),
     })
-    expect(copy('<p><img src=".assets/test.png"></p>', true).fallbackImages).toBe(1)
+    expect(copy('<p><img src=".assets/test.png"></p>', true)).toEqual({
+      fallbackImages: 0,
+      bitmap: 'unavailable',
+    })
     expect(mocks.write.mock.lastCall![0].image).toBeUndefined()
   })
 
@@ -163,7 +166,7 @@ describe('main-process image copy', () => {
     mocks.backgroundDecode.mockImplementation(() => new Promise((resolve) => (finish = resolve)))
     expect(copy('<p data-pm-slice="1 1 []"><img src=".assets/test.png"></p>', true)).toEqual({
       fallbackImages: 0,
-      pending: true,
+      bitmap: 'pending',
     })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write.mock.lastCall![0].html).toContain('data:image/png;base64,AQID')
@@ -176,6 +179,7 @@ describe('main-process image copy', () => {
     await finishAsyncCopy()
     expect(mocks.write).toHaveBeenCalledTimes(2)
     expect(mocks.write.mock.lastCall![0].image).toBe(bitmap)
+    expect(mocks.write.mock.lastCall![0].html).not.toContain('data-melo-copy-id')
     expect(mocks.notify).toHaveBeenLastCalledWith('copied')
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
@@ -201,7 +205,7 @@ describe('main-process image copy', () => {
   it('retains local embedded HTML when background decoding fails', async () => {
     mocks.decode.mockReturnValue({ isEmpty: () => true })
     mocks.backgroundDecode.mockRejectedValue(new Error('Invalid image'))
-    expect(copy('<p><img src="data:image/gif;base64,AQID"></p>', true).pending).toBe(true)
+    expect(copy('<p><img src="data:image/gif;base64,AQID"></p>', true).bitmap).toBe('pending')
     await finishAsyncCopy()
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write.mock.lastCall![0].html).toContain('data:image/gif;base64,AQID')
@@ -219,7 +223,7 @@ describe('main-process image copy', () => {
   })
 
   it('decodes an existing data URL synchronously for a single image', () => {
-    expect(copy('<p><img src="data:image/png;base64,AQID"></p>', true).pending).toBe(false)
+    expect(copy('<p><img src="data:image/png;base64,AQID"></p>', true).bitmap).toBe('ready')
     expect(mocks.write.mock.lastCall![0].image).toBeDefined()
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
@@ -235,14 +239,14 @@ describe('main-process image copy', () => {
     )
     expect(
       copy('<p data-pm-slice="1 1 []"><img src="https://example.com/a.png"></p>', true),
-    ).toEqual({ fallbackImages: 0, pending: true })
+    ).toEqual({ fallbackImages: 0, bitmap: 'pending' })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write.mock.lastCall![0].html).toContain('data-melo-copy-id')
     await vi.advanceTimersByTimeAsync(499)
     expect(mocks.notify).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(mocks.notify).toHaveBeenCalledWith('copying')
-    resolve(new Response(new Uint8Array([1, 2, 3])))
+    resolve(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }))
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.write).toHaveBeenCalledTimes(2)
     expect(mocks.write.mock.lastCall![0].image).toBeDefined()
@@ -261,7 +265,7 @@ describe('main-process image copy', () => {
     copy('<p><img src="https://example.com/a.png"></p>', true)
     await finishAsyncCopy()
     mocks.html.mockReturnValue('<p>New clipboard from another app</p>')
-    resolve(new Response(new Uint8Array([1, 2, 3])))
+    resolve(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }))
     await finishAsyncCopy()
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.decode).not.toHaveBeenCalled()
@@ -279,7 +283,7 @@ describe('main-process image copy', () => {
     copy('<p><img src="https://example.com/a.png"></p>', true)
     await finishAsyncCopy()
     copy('<p>New<img src=".assets/test.png"></p>')
-    resolve(new Response(new Uint8Array([1, 2, 3])))
+    resolve(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }))
     await finishAsyncCopy()
     expect(mocks.write).toHaveBeenCalledTimes(2)
     expect(mocks.write.mock.lastCall![0].html).toContain('New')

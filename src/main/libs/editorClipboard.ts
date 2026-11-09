@@ -1,4 +1,4 @@
-import { clipboard, net, type NativeImage } from 'electron'
+import { clipboard, type NativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -17,6 +17,7 @@ import {
   type EditorClipboardResult,
 } from '../../shared/clipboard'
 import { decodeClipboardBitmap, nativeClipboardBitmap } from './clipboardBitmap'
+import { downloadClipboardImage } from './clipboardImageDownload'
 
 const contentSchema = z.object({
   text: z.string().max(MAX_CLIPBOARD_TEXT_LENGTH),
@@ -36,36 +37,6 @@ function workspaceImage(src: string, root: string) {
   return { file, bytes: fs.statSync(file).size }
 }
 
-async function downloadImage(src: string): Promise<{ bytes: Buffer; mimeType: string }> {
-  const url = new URL(src)
-  if (url.username || url.password) throw new Error('Image URL must not contain credentials')
-  const response = await net.fetch(url.href, { signal: AbortSignal.timeout(15000) })
-  if (!response.ok || !response.body) throw new Error('Could not load the image')
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  try {
-    if (Number(response.headers.get('content-length')) > MAX_CLIPBOARD_IMAGE_BYTES)
-      throw new Error('Image is too large to copy')
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
-      chunks.push(value)
-    }
-  } finally {
-    await reader.cancel()
-  }
-  return {
-    bytes: Buffer.concat(chunks),
-    mimeType:
-      response.headers.get('content-type')?.split(';')[0].toLowerCase() ||
-      mime.lookup(url.pathname) ||
-      'application/octet-stream',
-  }
-}
-
 async function completeImageCopy(
   source: string | { bytes: Buffer; mimeType: string },
   copyId: string,
@@ -78,10 +49,14 @@ async function completeImageCopy(
     if (current()) notify('copying')
   }, 500)
   try {
-    const { bytes, mimeType } = typeof source === 'string' ? await downloadImage(source) : source
+    const { bytes, mimeType } =
+      typeof source === 'string' ? await downloadClipboardImage(source) : source
     if (!current()) return
     const image = nativeClipboardBitmap(bytes) ?? (await decodeClipboardBitmap(bytes, mimeType))
     const { document } = parseHTML(`<html><body>${content.html}</body></html>`)
+    for (const element of document.body.querySelectorAll(`[${CLIPBOARD_COPY_ID_ATTRIBUTE}]`))
+      element.removeAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE)
+    const referenceHtml = document.body.innerHTML
     document.body
       .querySelector('img')!
       .setAttribute(
@@ -94,7 +69,7 @@ async function completeImageCopy(
     if (!current()) return
     clipboard.write({
       ...content,
-      html: html.length <= MAX_CLIPBOARD_HTML_LENGTH ? html : content.html,
+      html: html.length <= MAX_CLIPBOARD_HTML_LENGTH ? html : referenceHtml,
       image,
     })
     notify('copied')
@@ -125,25 +100,12 @@ export function writeEditorClipboard(
   let htmlLength = document.body.innerHTML.length
   let fallbackImages = 0
   let image: NativeImage | null = null
+  let singleImageData: { bytes: Buffer; mimeType: string } | undefined
   for (const element of images) {
     const source = element.getAttribute('src') ?? ''
     if (/^https?:\/\//i.test(source)) continue
     try {
-      if (/^data:image\//i.test(source)) {
-        if (single) {
-          const comma = source.indexOf(',')
-          if (!/^data:image\/[^;,]+;base64,/i.test(source)) throw new Error('Invalid image data')
-          const encoded = source.slice(comma + 1)
-          if (encoded.length > Math.ceil(MAX_CLIPBOARD_IMAGE_BYTES / 3) * 4)
-            throw new Error('Image is too large to copy')
-          const bytes = Buffer.from(encoded, 'base64')
-          if (bytes.length > MAX_CLIPBOARD_IMAGE_BYTES)
-            throw new Error('Image is too large to copy')
-          image = nativeClipboardBitmap(bytes)
-          if (!image) pendingImage = { bytes, mimeType: source.slice(5, source.indexOf(';')) }
-        }
-        continue
-      }
+      if (/^data:image\//i.test(source)) continue
       const asset = workspaceImage(source, root)
       if (asset.bytes > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
       // Check before reading/encoding so a selection of large photos stays bounded.
@@ -167,16 +129,36 @@ export function writeEditorClipboard(
       if (nextLength > MAX_CLIPBOARD_HTML_LENGTH) throw new Error('Clipboard HTML is too large')
       element.replaceWith(replacement)
       htmlLength = nextLength
-      if (single) {
-        image = nativeClipboardBitmap(bytes)
-        if (!image) pendingImage = { bytes, mimeType }
-      }
+      if (single) singleImageData = { bytes, mimeType }
     } catch {
       fallbackImages++
     }
   }
+  // Embedding succeeded independently of bitmap generation. Its failure must
+  // not report that the embedded image was kept as a reference.
+  if (single && !pendingImage) {
+    try {
+      if (/^data:image\//i.test(src)) {
+        if (!/^data:image\/[^;,]+;base64,/i.test(src)) throw new Error('Invalid image data')
+        const comma = src.indexOf(',')
+        const encoded = src.slice(comma + 1)
+        if (encoded.length > Math.ceil(MAX_CLIPBOARD_IMAGE_BYTES / 3) * 4)
+          throw new Error('Image is too large to copy')
+        const bytes = Buffer.from(encoded, 'base64')
+        if (bytes.length > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
+        singleImageData = { bytes, mimeType: src.slice(5, src.indexOf(';')) }
+      }
+      if (singleImageData) {
+        image = nativeClipboardBitmap(singleImageData.bytes)
+        if (!image) pendingImage = singleImageData
+      }
+    } catch {
+      // The returned unavailable bitmap state preserves the valid text/HTML.
+      image = null
+    }
+  }
   const copyId = pendingImage ? randomUUID() : undefined
-  if (copyId) document.body.firstElementChild!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
+  if (copyId) document.body.querySelector('img')!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
   const payload = {
     text: content.text,
     html: document.body.innerHTML,
@@ -187,5 +169,8 @@ export function writeEditorClipboard(
     const source = pendingImage
     setImmediate(() => void completeImageCopy(source, copyId, payload, notify))
   }
-  return { fallbackImages, pending: Boolean(pendingImage) }
+  return {
+    fallbackImages,
+    bitmap: pendingImage ? 'pending' : image ? 'ready' : single ? 'unavailable' : 'none',
+  }
 }

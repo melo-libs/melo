@@ -59,9 +59,15 @@ export function copyImageNode(editor: Editor, pos: number): void {
   const { dom } = editor.view.serializeForClipboard(slice)
   try {
     const result = writeImageContent(dom, sliceToPlainText(slice), true)
-    if (!result.pending)
+    if (result.bitmap !== 'pending')
       toast(
-        i18n.t(result.fallbackImages ? 'editor.imagesCopiedAsReferences' : 'editor.imageCopied'),
+        i18n.t(
+          result.fallbackImages
+            ? 'editor.imagesCopiedAsReferences'
+            : result.bitmap === 'unavailable'
+              ? 'editor.imageBitmapUnavailable'
+              : 'editor.imageCopied',
+        ),
       )
   } catch {
     toast(i18n.t('editor.copyFailed'))
@@ -93,6 +99,7 @@ export const EditorClipboard = Extension.create({
           view.dispatch(view.state.tr.deleteSelection().scrollIntoView().setMeta('uiEvent', 'cut'))
         if (result.fallbackImages)
           toast(i18n.t(cut ? 'editor.imagesCutAsReferences' : 'editor.imagesCopiedAsReferences'))
+        else if (result.bitmap === 'unavailable') toast(i18n.t('editor.imageBitmapUnavailable'))
       } catch {
         toast(i18n.t('editor.copyFailed'))
       }
@@ -107,7 +114,7 @@ export const EditorClipboard = Extension.create({
                 ? 'editor.copyingImage'
                 : status === 'copied'
                   ? 'editor.imageCopied'
-                  : 'editor.imagesCopiedAsReferences'
+                  : 'editor.imageBitmapUnavailable'
             toast(i18n.t(message))
           })
           return { destroy: off }

@@ -701,6 +701,7 @@ export const en = {
     copyingImage: 'Copying image…',
     imagesCopiedAsReferences: 'Copied. Some images were kept as references.',
     imagesCutAsReferences: 'Cut. Some images were kept as references.',
+    imageBitmapUnavailable: 'Could not copy as an image. The text and rich content were copied.',
     imageUnavailable: 'Image not imported',
     imagesPartiallyImported:
       'Pasted. Some images could not be saved and were replaced with placeholders.',

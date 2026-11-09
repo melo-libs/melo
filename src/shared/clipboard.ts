@@ -16,7 +16,7 @@ export interface EditorClipboardContent {
 
 export interface EditorClipboardResult {
   fallbackImages: number
-  pending: boolean
+  bitmap: 'none' | 'ready' | 'pending' | 'unavailable'
 }
 
 export type ClipboardImageCopyStatus = 'copying' | 'copied' | 'failed'

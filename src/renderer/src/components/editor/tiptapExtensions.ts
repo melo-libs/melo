@@ -19,9 +19,6 @@ import { Wikilink } from './links/Wikilink'
 import { SmoothCaret } from './SmoothCaret'
 import { BlockShortcuts } from './BlockShortcuts'
 import { EditorClipboard } from './EditorClipboard'
-import { originalClipboardImageSrc } from './clipboardImages'
-import { appStore } from '../../store/appStore'
-import { workspacePathAtom } from '../../store/workspace'
 
 // Clicking a formula opens the equation editor (see MathEditor).
 function emitMathEdit(node: unknown, pos: number, block: boolean) {
@@ -154,10 +151,7 @@ export const editorExtensions: AnyExtension[] = [
         src: {
           default: (parent as Record<string, { default?: unknown }>).src?.default ?? null,
           parseHTML: (el: HTMLElement) => {
-            const raw =
-              originalClipboardImageSrc(el, appStore.get(workspacePathAtom) ?? '') ||
-              el.getAttribute('src') ||
-              ''
+            const raw = el.getAttribute('src') || ''
             return raw.startsWith('app://') ? raw.slice(6) : raw
           },
           renderHTML: (attrs: Record<string, unknown>) => {

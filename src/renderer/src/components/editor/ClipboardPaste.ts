@@ -1,6 +1,9 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { importEmbeddedImages, importImageFiles } from './clipboardImageImport'
+import { restoreClipboardImageSources } from './clipboardImages'
+import { appStore } from '../../store/appStore'
+import { workspacePathAtom } from '../../store/workspace'
 import {
   chooseClipboardPaste,
   insertMarkdownDrop,
@@ -18,6 +21,12 @@ export const ClipboardPaste = Extension.create({
       new Plugin({
         key: new PluginKey('clipboardPaste'),
         props: {
+          transformPastedHTML: (html, view) =>
+            restoreClipboardImageSources(
+              html,
+              appStore.get(workspacePathAtom) ?? '',
+              view.dom.ownerDocument,
+            ),
           handleDOMEvents: {
             keydown: (_view, event) => {
               shiftDown = event.shiftKey

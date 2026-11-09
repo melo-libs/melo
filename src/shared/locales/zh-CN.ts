@@ -660,6 +660,7 @@ export const zhCN: LocaleDict = {
     copyingImage: '正在复制图片…',
     imagesCopiedAsReferences: '已复制，部分图片保留为原始引用',
     imagesCutAsReferences: '已剪切，部分图片保留为原始引用',
+    imageBitmapUnavailable: '无法复制为图片，图文内容仍已复制。',
     imageUnavailable: '图片未能导入',
     imagesPartiallyImported: '已粘贴，部分图片保存失败，已保留占位说明',
     copyAddress: '复制地址',

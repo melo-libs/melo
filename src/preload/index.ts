@@ -11,6 +11,8 @@ if (process.contextIsolated) {
   try {
     // contextBridge.exposeInMainWorld('electron', electronAPI)
     const api: IpcApi = {
+      // Native cut needs a write acknowledgement before deleting its source.
+      // Only bounded local work runs synchronously; downloads/codecs run in background.
       copyEditorClipboard: (content) =>
         ipcRenderer.sendSync(IpcChannels.CopyEditorClipboard, content),
       getPathForFile: (file) => webUtils.getPathForFile(file),
