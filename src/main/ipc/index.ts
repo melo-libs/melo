@@ -9,13 +9,13 @@ import { preferences } from '../preferences'
 
 export function setupIPC(): void {
   setupAgentIPC()
-  ipcMain.on(IpcChannels.CopyEditorClipboard, async (event, content: unknown) => {
+  ipcMain.on(IpcChannels.CopyEditorClipboard, (event, content: unknown) => {
     if (event.sender !== getMainWindow()?.webContents) {
       event.returnValue = { success: false, error: 'Not the editor window' }
       return
     }
     try {
-      const data = await writeEditorClipboard(
+      const data = writeEditorClipboard(
         content,
         preferences.get('lastDirectory') as string | null,
         (status) => {

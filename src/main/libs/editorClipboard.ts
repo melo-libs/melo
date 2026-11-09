@@ -16,7 +16,7 @@ import {
   type ClipboardImageCopyStatus,
   type EditorClipboardResult,
 } from '../../shared/clipboard'
-import { clipboardBitmap } from './clipboardBitmap'
+import { decodeClipboardBitmap, nativeClipboardBitmap } from './clipboardBitmap'
 
 const contentSchema = z.object({
   text: z.string().max(MAX_CLIPBOARD_TEXT_LENGTH),
@@ -66,20 +66,21 @@ async function downloadImage(src: string): Promise<{ bytes: Buffer; mimeType: st
   }
 }
 
-async function copyRemoteImage(
-  src: string,
+async function completeImageCopy(
+  source: string | { bytes: Buffer; mimeType: string },
   copyId: string,
   content: { text: string; html: string },
   notify: (status: ClipboardImageCopyStatus) => void,
 ): Promise<void> {
   const current = () => clipboard.readHTML().includes(`${CLIPBOARD_COPY_ID_ATTRIBUTE}="${copyId}"`)
+  if (!current()) return
   const timer = setTimeout(() => {
     if (current()) notify('copying')
   }, 500)
   try {
-    const { bytes, mimeType } = await downloadImage(src)
+    const { bytes, mimeType } = typeof source === 'string' ? await downloadImage(source) : source
     if (!current()) return
-    const image = await clipboardBitmap(bytes, mimeType)
+    const image = nativeClipboardBitmap(bytes) ?? (await decodeClipboardBitmap(bytes, mimeType))
     const { document } = parseHTML(`<html><body>${content.html}</body></html>`)
     document.body
       .querySelector('img')!
@@ -105,12 +106,12 @@ async function copyRemoteImage(
   }
 }
 
-/** The synchronous IPC reply follows the one write; only remote images upgrade later. */
-export async function writeEditorClipboard(
+/** Acknowledge usable content immediately; downloads and non-native codecs finish in background. */
+export function writeEditorClipboard(
   input: unknown,
   workspaceRoot: string | null,
   notify: (status: ClipboardImageCopyStatus) => void,
-): Promise<EditorClipboardResult> {
+): EditorClipboardResult {
   const content = contentSchema.parse(input)
   if (!workspaceRoot || path.resolve(workspaceRoot) !== path.resolve(content.workspaceRoot))
     throw new Error('Workspace changed while copying')
@@ -118,19 +119,12 @@ export async function writeEditorClipboard(
   const images = Array.from(document.body.querySelectorAll('img'))
   const single = content.singleImage && images.length === 1
   const src = single ? (images[0].getAttribute('src') ?? '') : ''
-  if (single && /^https?:\/\//i.test(src)) {
-    const copyId = randomUUID()
-    document.body.firstElementChild!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
-    const payload = { text: content.text, html: document.body.innerHTML }
-    clipboard.write(payload)
-    void copyRemoteImage(src, copyId, payload, notify)
-    return { fallbackImages: 0, pending: true }
-  }
-
+  let pendingImage: string | { bytes: Buffer; mimeType: string } | undefined =
+    single && /^https?:\/\//i.test(src) ? src : undefined
   const root = fs.realpathSync(workspaceRoot)
   let htmlLength = document.body.innerHTML.length
   let fallbackImages = 0
-  let image: NativeImage | undefined
+  let image: NativeImage | null = null
   for (const element of images) {
     const source = element.getAttribute('src') ?? ''
     if (/^https?:\/\//i.test(source)) continue
@@ -145,7 +139,8 @@ export async function writeEditorClipboard(
           const bytes = Buffer.from(encoded, 'base64')
           if (bytes.length > MAX_CLIPBOARD_IMAGE_BYTES)
             throw new Error('Image is too large to copy')
-          image = await clipboardBitmap(bytes, source.slice(5, source.indexOf(';')))
+          image = nativeClipboardBitmap(bytes)
+          if (!image) pendingImage = { bytes, mimeType: source.slice(5, source.indexOf(';')) }
         }
         continue
       }
@@ -172,15 +167,25 @@ export async function writeEditorClipboard(
       if (nextLength > MAX_CLIPBOARD_HTML_LENGTH) throw new Error('Clipboard HTML is too large')
       element.replaceWith(replacement)
       htmlLength = nextLength
-      if (single) image = await clipboardBitmap(bytes, mimeType)
+      if (single) {
+        image = nativeClipboardBitmap(bytes)
+        if (!image) pendingImage = { bytes, mimeType }
+      }
     } catch {
       fallbackImages++
     }
   }
-  clipboard.write({
+  const copyId = pendingImage ? randomUUID() : undefined
+  if (copyId) document.body.firstElementChild!.setAttribute(CLIPBOARD_COPY_ID_ATTRIBUTE, copyId)
+  const payload = {
     text: content.text,
     html: document.body.innerHTML,
     ...(image ? { image } : {}),
-  })
-  return { fallbackImages, pending: false }
+  }
+  clipboard.write(payload)
+  if (pendingImage && copyId) {
+    const source = pendingImage
+    setImmediate(() => void completeImageCopy(source, copyId, payload, notify))
+  }
+  return { fallbackImages, pending: Boolean(pendingImage) }
 }

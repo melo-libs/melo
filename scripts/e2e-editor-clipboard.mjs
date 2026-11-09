@@ -77,7 +77,8 @@ try {
       nativeImage.createFromBitmap(Buffer.from([0, 0, 255, 255]), { width: 1, height: 1 }).toPNG(),
     ),
   )
-  await app.evaluate(({ clipboard }) => {
+  await app.evaluate(({ clipboard, BrowserWindow }) => {
+    globalThis.clipboardEditorWindow = BrowserWindow.getAllWindows()[0]
     const write = clipboard.write.bind(clipboard)
     globalThis.clipboardWrites = 0
     globalThis.failClipboardWrite = false
@@ -116,7 +117,7 @@ try {
   let nativeMenuClicks = 0
   const copyMarkdown = async () => {
     const native = await app.evaluate(({ BrowserWindow, Menu }) => {
-      const window = BrowserWindow.getAllWindows()[0]
+      const window = globalThis.clipboardEditorWindow
       if (BrowserWindow.getFocusedWindow() === window) {
         Menu.getApplicationMenu().getMenuItemById('copy-as-markdown').click()
         return true
@@ -142,10 +143,10 @@ try {
       )
       element.editor.view.focus()
     }, cut)
-    await app.evaluate(({ clipboard, BrowserWindow }, cut) => {
+    await app.evaluate(({ clipboard }, cut) => {
       clipboard.writeText('clipboard-sentinel')
       globalThis.clipboardWrites = 0
-      const win = BrowserWindow.getAllWindows()[0]
+      const win = globalThis.clipboardEditorWindow
       win.focus()
       if (cut) win.webContents.cut()
       else win.webContents.copy()
@@ -159,20 +160,24 @@ try {
       await waitUntil('image enhancement should finish', async () =>
         (await readClipboard()).html.includes('data:image/'),
       )
+      if ((await readClipboard()).html.includes('data-melo-copy-id')) {
+        await waitUntil(
+          'background image decoding should finish',
+          async () => (await readClipboard()).image,
+        )
+      }
     }
     const result = await readClipboard()
     if (enhanced) {
       assert.equal(
         await app.evaluate(() => globalThis.clipboardWrites),
-        1,
-        'local image copy must write the clipboard once',
+        result.html.includes('data-melo-copy-id') ? 2 : 1,
+        'only background codecs need a guarded second write',
       )
-      assert(!result.html.includes('data-melo-copy-id'), 'local copies do not need a copy ID')
     }
     return result
   }
-  const paste = () =>
-    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.paste())
+  const paste = () => app.evaluate(() => globalThis.clipboardEditorWindow.webContents.paste())
   const text = (value) => ({ type: 'text', text: value })
   const paragraph = (...content) => ({ type: 'paragraph', content })
   const source = {
@@ -644,6 +649,76 @@ try {
     )
   }
 
+  const holdNextImageDecode = () =>
+    app.evaluate(({ app }) => {
+      globalThis.clipboardDecoderWindow = null
+      globalThis.releaseClipboardDecoder = null
+      app.once('browser-window-created', (_event, window) => {
+        globalThis.clipboardDecoderWindow = window
+        const execute = window.webContents.executeJavaScript.bind(window.webContents)
+        window.webContents.executeJavaScript = (...args) =>
+          new Promise((resolve, reject) => {
+            globalThis.releaseClipboardDecoder = () => execute(...args).then(resolve, reject)
+          })
+      })
+    })
+  const localGif = {
+    type: 'doc',
+    content: [
+      paragraph({ type: 'image', attrs: { src: '.assets/animated.gif', alt: 'Local GIF' } }),
+    ],
+  }
+  await holdNextImageDecode()
+  await setDocument(localGif)
+  const pendingCut = await copy(true)
+  assert(!pendingCut.image, 'cut must return before the held bitmap decoder finishes')
+  assert(pendingCut.html.includes('data:image/gif;base64,'))
+  await waitUntil('the held codec should start in background', () =>
+    app.evaluate(() => Boolean(globalThis.releaseClipboardDecoder)),
+  )
+  assert(
+    await app.evaluate(() => !globalThis.clipboardDecoderWindow.isDestroyed()),
+    'the editor must resume before codec completion or timeout',
+  )
+  assert(
+    !JSON.stringify(await currentDocument()).includes('.assets/animated.gif'),
+    'cut must remove the source after its embedded HTML has been written',
+  )
+  await paste()
+  await waitUntil('cut content must paste immediately while the codec is held', async () =>
+    JSON.stringify(await currentDocument()).includes('.assets/animated.gif'),
+  )
+  await app.evaluate(() => {
+    globalThis.releaseClipboardDecoder()
+  })
+  await waitUntil(
+    'the released codec should provide its bitmap',
+    async () => (await readClipboard()).image,
+  )
+  await waitUntil('the completed codec should release its window', () =>
+    app.evaluate(() => globalThis.clipboardDecoderWindow.isDestroyed()),
+  )
+
+  await holdNextImageDecode()
+  await setDocument(localGif)
+  await copy()
+  await waitUntil('a second local codec should start', () =>
+    app.evaluate(() => Boolean(globalThis.releaseClipboardDecoder)),
+  )
+  await setDocument({ type: 'doc', content: [paragraph(text('New copy during GIF decoding'))] })
+  const duringDecode = await copy()
+  await app.evaluate(() => {
+    globalThis.releaseClipboardDecoder()
+  })
+  await waitUntil('the superseded codec should release its window', () =>
+    app.evaluate(() => globalThis.clipboardDecoderWindow.isDestroyed()),
+  )
+  assert.deepEqual(
+    await readClipboard(),
+    duringDecode,
+    'a local codec must not overwrite a newer copy',
+  )
+
   await setDocument({ type: 'doc', content: [paragraph()] })
   await page.locator('.ProseMirror').evaluate(
     (element, valid) => {
@@ -760,10 +835,10 @@ try {
   )
 
   const failedCutSource = await setDocument(mixed)
-  await app.evaluate(({ clipboard, BrowserWindow }) => {
+  await app.evaluate(({ clipboard }) => {
     clipboard.writeText('keep-on-write-failure')
     globalThis.failClipboardWrite = true
-    BrowserWindow.getAllWindows()[0].webContents.cut()
+    globalThis.clipboardEditorWindow.webContents.cut()
   })
   await page.locator('.toast', { hasText: 'Could not copy' }).last().waitFor()
   assert.deepEqual(
@@ -851,9 +926,9 @@ try {
   assert(missingImageRequests > 0, 'single-image failure fixture should reach the reader')
 
   await setDocument(remoteImage('switch-window'))
-  await app.evaluate(({ clipboard, BrowserWindow }) => {
+  await app.evaluate(({ clipboard }) => {
     clipboard.writeText('switch-window-sentinel')
-    BrowserWindow.getAllWindows()[0].webContents.copy()
+    globalThis.clipboardEditorWindow.webContents.copy()
   })
   await waitUntil('switch-window copy should start loading', () => pendingImages.size > 0)
   assert.equal((await readClipboard()).text, 'Slow image')
@@ -878,9 +953,9 @@ try {
   assert((await readClipboard()).html.includes('data:image/png;base64,'))
 
   await setDocument(remoteImage('external-newer-copy'))
-  await app.evaluate(({ clipboard, BrowserWindow }) => {
+  await app.evaluate(({ clipboard }) => {
     clipboard.writeText('initial-external-sentinel')
-    BrowserWindow.getAllWindows()[0].webContents.copy()
+    globalThis.clipboardEditorWindow.webContents.copy()
   })
   await waitUntil('external-newer copy should start loading', () => pendingImages.size > 0)
   // A clipboard update outside this renderer does not increment its local copy guard.
@@ -893,7 +968,7 @@ try {
   await page
     .locator('.ProseMirror')
     .evaluate((element) => element.editor.commands.setNodeSelection(1))
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.copy())
+  await app.evaluate(() => globalThis.clipboardEditorWindow.webContents.copy())
   await waitUntil('remote image copy should be fetching pixels', () => pendingImages.size > 0)
   await setDocument(literal)
   const latestCopy = await copy()
@@ -948,9 +1023,9 @@ try {
   await page
     .locator('.ProseMirror')
     .evaluate((element) => element.editor.commands.setNodeSelection(1))
-  await app.evaluate(({ clipboard, BrowserWindow }) => {
+  await app.evaluate(({ clipboard }) => {
     clipboard.writeText('slow-cut-sentinel')
-    BrowserWindow.getAllWindows()[0].webContents.cut()
+    globalThis.clipboardEditorWindow.webContents.cut()
   })
   await waitUntil('remote image cut should be fetching pixels', () => pendingImages.size > 0)
   await setDocument(literal)
@@ -1004,6 +1079,7 @@ try {
           'immediate image cut/paste and undo/redo',
           'single synchronous local write and failed-write cut safety',
           'single remote image fallback and asynchronous bitmap upgrade',
+          'stalled local codecs: responsive editor, immediate cut/paste and newer-copy protection',
           'remote image failure and mixed URL preservation',
           'original GIF/SVG/JPEG bytes in HTML',
           'partial external image import',
@@ -1029,7 +1105,7 @@ try {
       await app
         .evaluate(({ BrowserWindow, Menu, clipboard }) => ({
           focusedWindow: BrowserWindow.getFocusedWindow()?.id,
-          mainWindow: BrowserWindow.getAllWindows()[0]?.id,
+          mainWindow: globalThis.clipboardEditorWindow?.id,
           markdownEnabled: Menu.getApplicationMenu()?.getMenuItemById('copy-as-markdown')?.enabled,
           clipboard: clipboard.readText(),
         }))

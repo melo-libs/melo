@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clipboardBitmap } from './clipboardBitmap'
+import { decodeClipboardBitmap, nativeClipboardBitmap } from './clipboardBitmap'
 
 const mocks = vi.hoisted(() => ({
   native: vi.fn(),
@@ -27,8 +27,8 @@ beforeEach(() => {
 })
 
 describe('clipboard bitmap formats', () => {
-  it('keeps PNG/JPEG on the native decoder without creating a renderer', async () => {
-    expect(await clipboardBitmap(Buffer.from([1]), 'image/png')).toBe(bitmap)
+  it('keeps PNG/JPEG on the native decoder without creating a renderer', () => {
+    expect(nativeClipboardBitmap(Buffer.from([1]))).toBe(bitmap)
     expect(mocks.window).not.toHaveBeenCalled()
   })
 
@@ -36,7 +36,7 @@ describe('clipboard bitmap formats', () => {
     'uses an isolated Chromium decoder for %s',
     async (type) => {
       mocks.native.mockReturnValue({ isEmpty: () => true })
-      expect(await clipboardBitmap(Buffer.from([1, 2, 3]), type)).toBe(bitmap)
+      expect(await decodeClipboardBitmap(Buffer.from([1, 2, 3]), type)).toBe(bitmap)
       expect(mocks.window).toHaveBeenCalledWith({
         show: false,
         webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true },
@@ -53,7 +53,9 @@ describe('clipboard bitmap formats', () => {
   it('destroys the decoder after corrupt images fail', async () => {
     mocks.native.mockReturnValue({ isEmpty: () => true })
     mocks.decode.mockRejectedValue(new Error('Invalid image'))
-    await expect(clipboardBitmap(Buffer.from([1]), 'image/gif')).rejects.toThrow('Invalid image')
+    await expect(decodeClipboardBitmap(Buffer.from([1]), 'image/gif')).rejects.toThrow(
+      'Invalid image',
+    )
     expect(mocks.destroy).toHaveBeenCalledOnce()
   })
 
@@ -62,7 +64,7 @@ describe('clipboard bitmap formats', () => {
     try {
       mocks.native.mockReturnValue({ isEmpty: () => true })
       mocks.decode.mockReturnValue(new Promise(() => {}))
-      const rejected = expect(clipboardBitmap(Buffer.from([1]), 'image/gif')).rejects.toThrow(
+      const rejected = expect(decodeClipboardBitmap(Buffer.from([1]), 'image/gif')).rejects.toThrow(
         'Image decoding timed out',
       )
       await vi.advanceTimersByTimeAsync(15000)
@@ -73,12 +75,12 @@ describe('clipboard bitmap formats', () => {
     }
   })
 
-  it('rejects excessive pixel counts without launching another decoder', async () => {
+  it('rejects excessive pixel counts without launching another decoder', () => {
     mocks.native.mockReturnValue({
       isEmpty: () => false,
       getSize: () => ({ width: 10000, height: 10000 }),
     })
-    await expect(clipboardBitmap(Buffer.from([1]), 'image/png')).rejects.toThrow('too large')
+    expect(() => nativeClipboardBitmap(Buffer.from([1]))).toThrow('too large')
     expect(mocks.window).not.toHaveBeenCalled()
   })
 })

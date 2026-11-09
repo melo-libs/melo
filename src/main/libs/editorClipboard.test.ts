@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   html: vi.fn(),
   notify: vi.fn(),
+  backgroundDecode: vi.fn(),
+}))
+vi.mock('./clipboardBitmap', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./clipboardBitmap')>()),
+  decodeClipboardBitmap: mocks.backgroundDecode,
 }))
 vi.mock('electron', () => ({
   clipboard: { write: mocks.write, readHTML: mocks.html },
@@ -45,10 +50,8 @@ const copy = (html: string, singleImage = false) =>
 const finishAsyncCopy = () => new Promise((resolve) => setImmediate(resolve))
 
 describe('main-process image copy', () => {
-  it('embeds a local image and writes the bitmap, HTML and text exactly once', async () => {
-    expect(
-      await copy('<p data-pm-slice="1 1 []"><img src="app://.assets/test.png"></p>', true),
-    ).toEqual({
+  it('embeds a local image and writes the bitmap, HTML and text exactly once', () => {
+    expect(copy('<p data-pm-slice="1 1 []"><img src="app://.assets/test.png"></p>', true)).toEqual({
       fallbackImages: 0,
       pending: false,
     })
@@ -65,10 +68,10 @@ describe('main-process image copy', () => {
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
-  it('preserves remote and data URLs in mixed selections without network or rasterization', async () => {
+  it('preserves remote and data URLs in mixed selections without network or rasterization', () => {
     const html =
       '<p>Before<img src="https://example.com/a.png"><img src="data:image/gif;base64,AQID">After</p>'
-    expect(await copy(html)).toEqual({ fallbackImages: 0, pending: false })
+    expect(copy(html)).toEqual({ fallbackImages: 0, pending: false })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write).toHaveBeenCalledWith({ text: 'Selected text', html })
     expect(mocks.fetch).not.toHaveBeenCalled()
@@ -82,15 +85,15 @@ describe('main-process image copy', () => {
       ['jpg', 'image/jpeg'],
     ]) {
       await fs.writeFile(path.join(root, `.assets/image.${extension}`), Buffer.from([4, 5, 6]))
-      await copy(`<p>Before<img src=".assets/image.${extension}">After</p>`)
+      copy(`<p>Before<img src=".assets/image.${extension}">After</p>`)
       expect(mocks.write.mock.lastCall![0].html).toContain(`data:${type};base64,BAUG`)
     }
     expect(mocks.decode).not.toHaveBeenCalled()
   })
 
-  it('keeps all text and good images when another image cannot be embedded', async () => {
+  it('keeps all text and good images when another image cannot be embedded', () => {
     expect(
-      await copy('<p>Before<img src=".assets/missing.png"><img src=".assets/test.png">After</p>'),
+      copy('<p>Before<img src=".assets/missing.png"><img src=".assets/test.png">After</p>'),
     ).toEqual({ fallbackImages: 1, pending: false })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     const html = mocks.write.mock.lastCall![0].html
@@ -100,21 +103,21 @@ describe('main-process image copy', () => {
     expect(html).toContain('data:image/png;base64,AQID')
   })
 
-  it('rejects changed workspaces without replacing the clipboard', async () => {
-    await expect(
+  it('rejects changed workspaces without replacing the clipboard', () => {
+    expect(() =>
       writeEditorClipboard(
         { text: '', html: '', singleImage: false, workspaceRoot: root + '-other' },
         root,
         mocks.notify,
       ),
-    ).rejects.toThrow('Workspace changed')
+    ).toThrow('Workspace changed')
     expect(mocks.write).not.toHaveBeenCalled()
   })
 
   it('keeps traversal and symlink escapes as references without reading outside the workspace', async () => {
     await fs.symlink(os.tmpdir(), path.join(root, 'outside'))
     expect(
-      await copy(
+      copy(
         '<p><img src="../secret.png"><img src="outside/secret.png"><img src="file:///etc/passwd"></p>',
       ),
     ).toEqual({ fallbackImages: 3, pending: false })
@@ -124,9 +127,7 @@ describe('main-process image copy', () => {
 
   it('resolves escaped filenames and fragments like the app image protocol', async () => {
     await fs.writeFile(path.join(root, '.assets/a b#c.png'), Buffer.from([1, 2, 3]))
-    expect(
-      (await copy('<p><img src="app://.assets/a%20b%23c.png#view"></p>', true)).fallbackImages,
-    ).toBe(0)
+    expect(copy('<p><img src="app://.assets/a%20b%23c.png#view"></p>', true).fallbackImages).toBe(0)
     expect(mocks.write.mock.lastCall![0].image).toBeDefined()
   })
 
@@ -135,7 +136,7 @@ describe('main-process image copy', () => {
     await fs.truncate(path.join(root, '.assets/oversize.png'), MAX_CLIPBOARD_IMAGE_BYTES + 1)
     await fs.writeFile(path.join(root, '.assets/large.png'), Buffer.alloc(13 * 1024 * 1024))
     expect(
-      await copy(
+      copy(
         '<p><img src=".assets/large.png"><img src=".assets/large.png"><img src=".assets/oversize.png"></p>',
       ),
     ).toEqual({ fallbackImages: 2, pending: false })
@@ -147,21 +148,78 @@ describe('main-process image copy', () => {
     expect(html.length).toBeLessThanOrEqual(32 * 1024 * 1024)
   })
 
-  it('retains HTML when native bitmap decoding fails or exceeds the pixel limit', async () => {
-    mocks.decode.mockReturnValue({ isEmpty: () => true })
-    expect((await copy('<p><img src=".assets/test.png"></p>', true)).fallbackImages).toBe(1)
-    expect(mocks.write.mock.lastCall![0].image).toBeUndefined()
-    expect(mocks.write.mock.lastCall![0].html).toContain('data:image/png;base64,')
+  it('retains HTML when the bitmap exceeds the pixel limit', () => {
     mocks.decode.mockReturnValue({
       isEmpty: () => false,
       getSize: () => ({ width: 10000, height: 10000 }),
     })
-    expect((await copy('<p><img src=".assets/test.png"></p>', true)).fallbackImages).toBe(1)
+    expect(copy('<p><img src=".assets/test.png"></p>', true).fallbackImages).toBe(1)
     expect(mocks.write.mock.lastCall![0].image).toBeUndefined()
   })
 
-  it('decodes an existing data URL synchronously for a single image', async () => {
-    expect((await copy('<p><img src="data:image/png;base64,AQID"></p>', true)).pending).toBe(false)
+  it('returns usable local HTML before an unsupported codec finishes, then upgrades the bitmap', async () => {
+    let finish!: (image: { isEmpty: () => boolean }) => void
+    mocks.decode.mockReturnValue({ isEmpty: () => true })
+    mocks.backgroundDecode.mockImplementation(() => new Promise((resolve) => (finish = resolve)))
+    expect(copy('<p data-pm-slice="1 1 []"><img src=".assets/test.png"></p>', true)).toEqual({
+      fallbackImages: 0,
+      pending: true,
+    })
+    expect(mocks.write).toHaveBeenCalledTimes(1)
+    expect(mocks.write.mock.lastCall![0].html).toContain('data:image/png;base64,AQID')
+    expect(mocks.write.mock.lastCall![0].html).toContain('data-melo-copy-id')
+    expect(mocks.backgroundDecode).not.toHaveBeenCalled()
+    await finishAsyncCopy()
+    expect(mocks.backgroundDecode).toHaveBeenCalledWith(Buffer.from([1, 2, 3]), 'image/png')
+    const bitmap = { isEmpty: () => false }
+    finish(bitmap)
+    await finishAsyncCopy()
+    expect(mocks.write).toHaveBeenCalledTimes(2)
+    expect(mocks.write.mock.lastCall![0].image).toBe(bitmap)
+    expect(mocks.notify).toHaveBeenLastCalledWith('copied')
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it.each(['external', 'Melo'])(
+    'protects a newer %s copy while a local codec is pending',
+    async (source) => {
+      let finish!: (image: { isEmpty: () => boolean }) => void
+      mocks.decode.mockReturnValue({ isEmpty: () => true })
+      mocks.backgroundDecode.mockImplementation(() => new Promise((resolve) => (finish = resolve)))
+      copy('<p><img src="data:image/gif;base64,AQID"></p>', true)
+      await finishAsyncCopy()
+      if (source === 'external') mocks.html.mockReturnValue('<p>New external copy</p>')
+      else copy('<p>New Melo copy</p>')
+      const writes = mocks.write.mock.calls.length
+      finish({ isEmpty: () => false })
+      await finishAsyncCopy()
+      expect(mocks.write).toHaveBeenCalledTimes(writes)
+      expect(mocks.notify).not.toHaveBeenCalled()
+    },
+  )
+
+  it('retains local embedded HTML when background decoding fails', async () => {
+    mocks.decode.mockReturnValue({ isEmpty: () => true })
+    mocks.backgroundDecode.mockRejectedValue(new Error('Invalid image'))
+    expect(copy('<p><img src="data:image/gif;base64,AQID"></p>', true).pending).toBe(true)
+    await finishAsyncCopy()
+    expect(mocks.write).toHaveBeenCalledTimes(1)
+    expect(mocks.write.mock.lastCall![0].html).toContain('data:image/gif;base64,AQID')
+    expect(mocks.notify).toHaveBeenCalledWith('failed')
+  })
+
+  it('propagates the initial write failure without starting background decoding', async () => {
+    mocks.decode.mockReturnValue({ isEmpty: () => true })
+    mocks.write.mockImplementation(() => {
+      throw new Error('Clipboard unavailable')
+    })
+    expect(() => copy('<p><img src=".assets/test.png"></p>', true)).toThrow('Clipboard unavailable')
+    await finishAsyncCopy()
+    expect(mocks.backgroundDecode).not.toHaveBeenCalled()
+  })
+
+  it('decodes an existing data URL synchronously for a single image', () => {
+    expect(copy('<p><img src="data:image/png;base64,AQID"></p>', true).pending).toBe(false)
     expect(mocks.write.mock.lastCall![0].image).toBeDefined()
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
@@ -176,7 +234,7 @@ describe('main-process image copy', () => {
         }),
     )
     expect(
-      await copy('<p data-pm-slice="1 1 []"><img src="https://example.com/a.png"></p>', true),
+      copy('<p data-pm-slice="1 1 []"><img src="https://example.com/a.png"></p>', true),
     ).toEqual({ fallbackImages: 0, pending: true })
     expect(mocks.write).toHaveBeenCalledTimes(1)
     expect(mocks.write.mock.lastCall![0].html).toContain('data-melo-copy-id')
@@ -200,7 +258,8 @@ describe('main-process image copy', () => {
           resolve = finish
         }),
     )
-    await copy('<p><img src="https://example.com/a.png"></p>', true)
+    copy('<p><img src="https://example.com/a.png"></p>', true)
+    await finishAsyncCopy()
     mocks.html.mockReturnValue('<p>New clipboard from another app</p>')
     resolve(new Response(new Uint8Array([1, 2, 3])))
     await finishAsyncCopy()
@@ -217,8 +276,9 @@ describe('main-process image copy', () => {
           resolve = finish
         }),
     )
-    await copy('<p><img src="https://example.com/a.png"></p>', true)
-    await copy('<p>New<img src=".assets/test.png"></p>')
+    copy('<p><img src="https://example.com/a.png"></p>', true)
+    await finishAsyncCopy()
+    copy('<p>New<img src=".assets/test.png"></p>')
     resolve(new Response(new Uint8Array([1, 2, 3])))
     await finishAsyncCopy()
     expect(mocks.write).toHaveBeenCalledTimes(2)
@@ -227,25 +287,25 @@ describe('main-process image copy', () => {
 
   it('keeps reference content when a remote image fails or is oversized', async () => {
     mocks.fetch.mockRejectedValueOnce(new Error('Offline'))
-    await copy('<p><img src="https://example.com/missing.png"></p>', true)
+    copy('<p><img src="https://example.com/missing.png"></p>', true)
     await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('failed'))
     expect(mocks.write).toHaveBeenCalledTimes(1)
     mocks.notify.mockClear()
     mocks.fetch.mockResolvedValueOnce(new Response(new Uint8Array(MAX_CLIPBOARD_IMAGE_BYTES + 1)))
-    await copy('<p><img src="https://example.com/large.png"></p>', true)
+    copy('<p><img src="https://example.com/large.png"></p>', true)
     await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('failed'))
     expect(mocks.write).toHaveBeenCalledTimes(2)
     expect(mocks.decode).not.toHaveBeenCalled()
   })
 
   it('rejects credentials in remote image URLs before fetching', async () => {
-    await copy('<p><img src="https://user:password@example.com/a.png"></p>', true)
+    copy('<p><img src="https://user:password@example.com/a.png"></p>', true)
     await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('failed'))
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
-  it('rejects invalid IPC data before writing', async () => {
-    await expect(writeEditorClipboard({ text: 1, html: '' }, root, mocks.notify)).rejects.toThrow()
+  it('rejects invalid IPC data before writing', () => {
+    expect(() => writeEditorClipboard({ text: 1, html: '' }, root, mocks.notify)).toThrow()
     expect(mocks.write).not.toHaveBeenCalled()
   })
 })
