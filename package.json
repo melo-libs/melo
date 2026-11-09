@@ -39,6 +39,7 @@
     "test:e2e:single-instance": "pnpm run build && node scripts/e2e-single-instance.mjs",
     "test:e2e:onboarding": "pnpm run build && node scripts/e2e-onboarding.mjs",
     "test:e2e:workspace": "pnpm run build && node scripts/e2e-workspace-watcher.mjs",
+    "test:e2e:clipboard": "pnpm run build && node scripts/e2e-editor-clipboard.mjs",
     "test:e2e:agent": "pnpm run build && node scripts/e2e-agent.mjs"
   },
   "dependencies": {

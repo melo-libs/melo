@@ -7,6 +7,14 @@ import { updateManager } from './updater'
 import { openSettingsWindow } from './settingsWindow'
 
 const PRODUCT_NAME = 'Melo'
+const COPY_MARKDOWN_MENU_ID = 'copy-as-markdown'
+let copyMarkdownAvailable = false
+
+export function setCopyMarkdownAvailable(available: boolean): void {
+  copyMarkdownAvailable = available
+  const item = Menu.getApplicationMenu()?.getMenuItemById(COPY_MARKDOWN_MENU_ID)
+  if (item) item.enabled = available
+}
 
 export default function createMenu(
   mainWindow: BrowserWindow,
@@ -116,6 +124,17 @@ export default function createMenu(
         { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
+        {
+          id: COPY_MARKDOWN_MENU_ID,
+          label: m.copyAsMarkdown,
+          accelerator: 'CmdOrCtrl+Shift+C',
+          enabled: copyMarkdownAvailable,
+          click: () => {
+            if (BrowserWindow.getFocusedWindow() === mainWindow) {
+              mainWindow.webContents.send(IpcChannels.OnCopyAsMarkdown)
+            }
+          },
+        },
         { role: 'paste' },
         { role: 'delete' },
         { type: 'separator' },

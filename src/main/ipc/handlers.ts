@@ -76,14 +76,13 @@ import {
 } from '../api/workspaces'
 import path from 'path'
 import fs from 'fs-extra'
-import { preferences } from '../preferences'
+import { LAST_DIRECTORY_KEY, preferences } from '../preferences'
 import { getSettings, updateSettings } from '../settings'
 import { openSettingsWindow } from '../settingsWindow'
 import { getMainWindow } from '../windows'
 import { updateManager } from '../updater'
 import { closeUpdateWindow } from '../updateWindow'
 
-const LAST_DIRECTORY_KEY = 'lastDirectory'
 const CODE_GUIDE_VERSION_KEY = 'codeGuideVersion'
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
 
@@ -692,10 +691,12 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
 
   [IpcChannels.InvokeSavePastedImage]: async (_, args) => {
     try {
-      const { imageBuffer, mimeType } = args
+      const { imageBuffer, mimeType, workspaceRoot } = args
 
       // Get rootDir from preferences (lastDirectory)
       const rootDir = preferences.get(LAST_DIRECTORY_KEY) as string | null
+      if (!rootDir || path.resolve(workspaceRoot) !== path.resolve(rootDir))
+        return { success: false, error: 'Workspace changed while importing images' }
 
       const result = await savePastedImage(imageBuffer, mimeType, rootDir)
       return { success: true, data: result }

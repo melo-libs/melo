@@ -2,6 +2,8 @@ import { app } from 'electron'
 import fs from 'fs-extra'
 import path from 'path'
 
+export const LAST_DIRECTORY_KEY = 'lastDirectory'
+
 interface Preferences {
   ignoredVersion?: string
   // Add other preferences here as needed

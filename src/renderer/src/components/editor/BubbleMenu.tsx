@@ -21,6 +21,8 @@ import { openAgent } from '../../store/agent'
 import { openImageView } from './ImageLightbox'
 import { currentBlockType, turnInto } from './blockCommands'
 import { FORMAT_OPTIONS, blockName } from './overlayData'
+import { copyImageNode } from './EditorClipboard'
+import { copyText } from '../../lib/clipboard'
 import type { BlockType } from './sampleDoc'
 
 // Widest textual trigger face (by character count — close enough at one
@@ -859,8 +861,7 @@ function ImagePanel({
     }
   }
   const copy = () => {
-    navigator.clipboard.writeText(sel.src)
-    toast(t('editor.addressCopied'))
+    void copyText(sel.src).then((ok) => toast(t(ok ? 'editor.addressCopied' : 'editor.copyFailed')))
   }
   const remove = () => {
     editor.chain().focus().setNodeSelection(sel.pos).deleteSelection().run()
@@ -935,6 +936,14 @@ function ImagePanel({
           onClick={copy}
         >
           <Icon name="copy" size={14} />
+        </button>
+        <button
+          className="bubble-btn"
+          title={t('editor.copyImage')}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => void copyImageNode(editor, sel.pos)}
+        >
+          <Icon name="image" size={14} />
         </button>
         <button
           className="bubble-btn"

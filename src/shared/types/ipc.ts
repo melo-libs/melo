@@ -1,3 +1,8 @@
+import type {
+  ClipboardImageCopyStatus,
+  EditorClipboardContent,
+  EditorClipboardResult,
+} from '../clipboard'
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
 import type {
@@ -58,6 +63,10 @@ export enum IpcChannels {
   OnFileOpened = 'on-file-opened',
   OnWorkspaceChanged = 'on-workspace-changed',
   OnSave = 'on-save',
+  OnCopyAsMarkdown = 'on-copy-as-markdown',
+  CopyMarkdownAvailable = 'copy-markdown-available',
+  CopyEditorClipboard = 'copy-editor-clipboard',
+  OnClipboardImageCopy = 'on-clipboard-image-copy',
   OnLanguageChanged = 'on-language-changed',
   OnSettingsChanged = 'on-settings-changed',
   OnUpdateState = 'on-update-state',
@@ -217,6 +226,13 @@ export type WorkspaceChangedEvent =
 
 // Channel-specific type definitions
 export interface IpcChannelDefinitions {
+  [IpcChannels.OnCopyAsMarkdown]: { args: undefined; response: void }
+  [IpcChannels.CopyMarkdownAvailable]: { args: { available: boolean }; response: void }
+  [IpcChannels.CopyEditorClipboard]: {
+    args: EditorClipboardContent
+    response: IpcResponse<EditorClipboardResult>
+  }
+  [IpcChannels.OnClipboardImageCopy]: { args: ClipboardImageCopyStatus; response: void }
   [IpcChannels.AgentCommand]: { args: AgentCommand; response: IpcResponse<AgentCommandResult> }
   [IpcChannels.OnAgentComponents]: { args: AgentComponents; response: void }
   [IpcChannels.OnAgentView]: { args: AgentView; response: void }
@@ -405,6 +421,7 @@ export interface IpcChannelDefinitions {
     args: {
       imageBuffer: Uint8Array
       mimeType: string
+      workspaceRoot: string
     }
     response: IpcResponse<{
       filePath: string
@@ -655,6 +672,7 @@ export type IpcResponseType<K extends IpcChannels> = IpcChannelDefinitions[K]['r
 
 // API interface exposed to renderer
 export interface IpcApi {
+  copyEditorClipboard(content: EditorClipboardContent): IpcResponse<EditorClipboardResult>
   getPathForFile(file: File): string
   channels: typeof IpcChannels
   send: <K extends IpcChannels>(channel: K, args: IpcChannelDefinitions[K]['args']) => void

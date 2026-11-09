@@ -2,9 +2,7 @@ import { protocol, session } from 'electron'
 import path from 'path'
 import fs from 'fs-extra'
 import mime from 'mime-types'
-import { preferences } from './preferences'
-
-const LAST_DIRECTORY_KEY = 'lastDirectory'
+import { LAST_DIRECTORY_KEY, preferences } from './preferences'
 
 /** Chromium auto-attaches the renderer's own origin as Referer when the
  *  editor loads a remote image — hotlink protection (WeChat's CDN and

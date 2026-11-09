@@ -1,6 +1,8 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { Selection, TextSelection } from '@tiptap/pm/state'
+import { Fragment, Slice } from '@tiptap/pm/model'
+import { sliceToMarkdown } from './clipboard'
 import type { BlockType } from './sampleDoc'
 
 /* ============================================================
@@ -148,7 +150,8 @@ export function duplicateCurrentBlock(editor: Editor): boolean {
 
 /** Serialize one block to Markdown (block-menu "Copy as Markdown"). */
 export function blockMarkdown(editor: Editor, node: PMNode): string {
-  const manager = editor.storage.markdown?.manager
-  const md = manager?.serialize(node.toJSON())
-  return md?.trim() || node.textContent
+  return (
+    sliceToMarkdown(editor.storage.markdown.manager, new Slice(Fragment.from(node), 0, 0)) ??
+    node.textContent
+  )
 }
