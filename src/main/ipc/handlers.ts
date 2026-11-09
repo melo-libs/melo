@@ -76,14 +76,13 @@ import {
 } from '../api/workspaces'
 import path from 'path'
 import fs from 'fs-extra'
-import { preferences } from '../preferences'
+import { LAST_DIRECTORY_KEY, preferences } from '../preferences'
 import { getSettings, updateSettings } from '../settings'
 import { openSettingsWindow } from '../settingsWindow'
 import { getMainWindow } from '../windows'
 import { updateManager } from '../updater'
 import { closeUpdateWindow } from '../updateWindow'
 
-const LAST_DIRECTORY_KEY = 'lastDirectory'
 const CODE_GUIDE_VERSION_KEY = 'codeGuideVersion'
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
 
