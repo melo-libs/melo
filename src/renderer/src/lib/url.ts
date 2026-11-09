@@ -12,3 +12,9 @@ export function safeExternalUrl(raw: string): string | null {
     return null
   }
 }
+
+export function openExternalLink(raw: string): void {
+  const url = safeExternalUrl(raw)
+  // Main intercepts new windows and opens the URL in its system handler.
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+}

@@ -16,6 +16,7 @@ import { MarkdownInput } from './MarkdownInput'
 import { ClipboardPaste } from './ClipboardPaste'
 import { ParagraphMarkdown } from '@shared/serializers/paragraphMarkdown'
 import { Wikilink } from './links/Wikilink'
+import { LinkNavigation } from './links/LinkNavigation'
 import { SmoothCaret } from './SmoothCaret'
 import { BlockShortcuts } from './BlockShortcuts'
 import { EditorClipboard } from './EditorClipboard'
@@ -106,14 +107,14 @@ export const editorExtensions: AnyExtension[] = [
     // Drop indicator in our accent (softened via .melo-dropcursor opacity),
     // not ProseMirror's default heavy black line.
     dropcursor: { color: 'var(--accent)', width: 1, class: 'melo-dropcursor' },
-    // Clicking a link places the caret; opening goes through the bubble
-    // link panel (a single click that yanks you to the browser makes the
-    // link text uneditable).
+    // Ordinary clicks keep links editable; LinkNavigation owns explicit
+    // navigation gestures and clicks in a read-only document.
     link: { openOnClick: false },
   }),
   // Keeps the selection visible (as a `.selection` decoration) while focus
   // is in the bubble's link input, so you can see what you're linking.
   Selection,
+  LinkNavigation,
   ParagraphMarkdown,
   TaskList,
   TaskItem.extend({
