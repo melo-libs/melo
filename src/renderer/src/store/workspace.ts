@@ -19,6 +19,9 @@ export const activeNoteAtom = atom<string | null>(null)
  *  activeNoteAtom; clicking a folder only sets this. */
 export const treeSelectionAtom = atom<string | null>(null)
 
+/** Explicit navigation requests must also reveal a folder already selected. */
+export const revealDirectoryAtom = atom<{ path: string } | null>(null)
+
 /** True while the index is being built/rebuilt after a workspace switch. */
 export const indexingAtom = atom(false)
 

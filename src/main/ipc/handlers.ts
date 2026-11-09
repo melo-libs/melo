@@ -82,6 +82,14 @@ import { openSettingsWindow } from '../settingsWindow'
 import { getMainWindow } from '../windows'
 import { updateManager } from '../updater'
 import { closeUpdateWindow } from '../updateWindow'
+import { z } from 'zod'
+import { resolveDocumentLink } from '../libs/documentLinks'
+
+const documentLinkRequest = z.object({
+  href: z.string().min(1).max(8192),
+  fromPath: z.string().min(1).max(8192).nullable(),
+  workspaceRoot: z.string().min(1).max(8192),
+})
 
 const CODE_GUIDE_VERSION_KEY = 'codeGuideVersion'
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
@@ -904,6 +912,25 @@ export const ipcHandlers: { [K in IpcChannels]?: IpcHandler<K> } = {
         return { success: false, error: 'Operation cancelled' }
       }
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+  },
+
+  [IpcChannels.InvokeResolveDocumentLink]: async (event, args) => {
+    if (event.sender !== getMainWindow()?.webContents)
+      return { success: false, error: 'Not the editor window' }
+    const input = documentLinkRequest.safeParse(args)
+    if (!input.success) return { success: false, error: 'Invalid document link' }
+    try {
+      const root = preferences.get<string>(LAST_DIRECTORY_KEY)
+      const data = await resolveDocumentLink(input.data, root)
+      if (root !== preferences.get<string>(LAST_DIRECTORY_KEY))
+        return { success: true, data: { kind: 'error', reason: 'workspaceChanged' } }
+      return { success: true, data }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Could not resolve link',
+      }
     }
   },
 

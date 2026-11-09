@@ -22,6 +22,7 @@ import {
   activeNoteAtom,
   inlineCreateAtom,
   recentNotesAtom,
+  revealDirectoryAtom,
   searchOpenAtom,
   treeCreatingAtom,
   treeCreatingFolderAtom,
@@ -54,6 +55,7 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
   const activeTabId = useAtomValue(activeTabIdAtom)
   const [, setActiveId] = useAtom(activeNoteAtom)
   const [selectedId, setSelectedId] = useAtom(treeSelectionAtom)
+  const [directoryToReveal, setDirectoryToReveal] = useAtom(revealDirectoryAtom)
   const pushRecent = useSetAtom(recentNotesAtom)
   const setSearchOpen = useSetAtom(searchOpenAtom)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -89,6 +91,16 @@ export const Sidebar = ({ onResizeStart, onResetWidth }: SidebarProps) => {
   }, [tree])
 
   const onToggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !e[id] }))
+  useEffect(() => {
+    if (!directoryToReveal) return
+    const chain = ancestorChain(tree, directoryToReveal.path)
+    setExpanded((previous) => {
+      const next = { ...previous }
+      for (const id of chain) next[id] = true
+      return next
+    })
+    setDirectoryToReveal(null)
+  }, [directoryToReveal, setDirectoryToReveal, tree])
   const activateNote = (id: string) => {
     setActiveId(id)
     setSelectedId(id)

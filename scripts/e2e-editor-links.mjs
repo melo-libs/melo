@@ -16,13 +16,38 @@ const errors = []
 try {
   fs.mkdirSync(workspace)
   fs.mkdirSync(profile)
+  fs.mkdirSync(path.join(workspace, 'notes', 'deep'), { recursive: true })
+  fs.mkdirSync(path.join(workspace, '.assets'))
+  fs.writeFileSync(path.join(workspace, 'notes', 'deep', 'inside.md'), '# Inside\n')
+  fs.writeFileSync(
+    path.join(workspace, 'notes', 'next.md'),
+    '# Next\n\n' + 'Paragraph.\n\n'.repeat(35) + '## Target heading\n\nTarget body.\n',
+  )
+  fs.writeFileSync(
+    path.join(workspace, '.assets', 'image.png'),
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  )
+  fs.writeFileSync(path.join(workspace, 'preview.pdf'), blankPdf())
+  fs.writeFileSync(path.join(workspace, 'deck.key'), 'Unsupported viewer fixture')
+  fs.writeFileSync(path.join(root, 'outside.md'), '# Outside\n')
+  fs.symlinkSync(path.join(root, 'outside.md'), path.join(workspace, 'escape.md'))
   fs.writeFileSync(
     path.join(profile, 'preferences.json'),
     JSON.stringify({ lastDirectory: workspace }),
   )
   fs.writeFileSync(
     path.join(workspace, 'links.md'),
-    '[Example **website**](https://example.com/)\n\nPlain text.\n',
+    '[Example **website**](https://example.com/)\n\n' +
+      '[Relative note](notes/next.md#target-heading)\n\n' +
+      '[Image](.assets/image.png)\n\n[PDF](preview.pdf)\n\n' +
+      '[Folder](notes/deep)\n\n[Missing](missing.md)\n\n' +
+      '[Outside symlink](escape.md)\n\n[System file](deck.key)\n\n' +
+      '[Current heading](#current-heading)\n\n' +
+      'Paragraph.\n\n'.repeat(20) +
+      '## Current heading\n\nPlain text.\n',
   )
   app = await electron.launch({
     executablePath: electronPath,
@@ -33,8 +58,13 @@ try {
   await app.evaluate(({ shell }) => {
     // Exercise real new-window routing without launching a browser or mail app.
     globalThis.openedEditorLinks = []
+    globalThis.openedEditorPaths = []
     shell.openExternal = async (url) => {
       globalThis.openedEditorLinks.push(url)
+    }
+    shell.openPath = async (target) => {
+      globalThis.openedEditorPaths.push(target)
+      return ''
     }
   })
   page = await app.firstWindow()
@@ -121,6 +151,77 @@ try {
   await page.locator('.ProseMirror p').last().click()
   await page.waitForFunction(() => !document.querySelector('.bubble-selection'))
   assert.deepEqual(await opened(), [])
+
+  const sourceRow = page.locator('.tree-row', {
+    has: page.locator('.tree-name', { hasText: /^links$/ }),
+  })
+  const goBack = async () => {
+    await sourceRow.click()
+    await page.locator('.ProseMirror a[href="notes/next.md#target-heading"]').waitFor()
+    await page.locator('.ProseMirror').evaluate((element) => {
+      element.editor.commands.focus('start')
+    })
+  }
+  const follow = async (href) => {
+    await page.locator(`.ProseMirror a[href="${href}"]`).click({ modifiers: [modifier] })
+  }
+
+  await follow('#current-heading')
+  await page.waitForFunction(() => document.querySelector('.ed-scroll').scrollTop > 100)
+  await follow('notes/next.md#target-heading')
+  await page
+    .locator('.ProseMirror h1')
+    .filter({ hasText: /^Next$/ })
+    .waitFor()
+  await page.waitForFunction(() => document.querySelector('.ed-scroll').scrollTop > 300)
+  assert.equal(
+    await page.locator('.ed-tab[data-active="true"] .ed-tab-title').textContent(),
+    'next',
+  )
+
+  await goBack()
+  await page.locator('.ProseMirror a[href="notes/next.md#target-heading"]').click()
+  await page.locator('.bubble-selection').getByTitle('Add link ⌘K', { exact: true }).click()
+  await page.locator('.link-pop .lk-apply').click()
+  assert.equal(
+    await page.locator('.ProseMirror a[href="notes/next.md#target-heading"]').count(),
+    1,
+    'saving an existing relative link must preserve its href',
+  )
+
+  await follow('.assets/image.png')
+  await page.locator('.viewer-media img').waitFor()
+  await page.waitForFunction(() => document.querySelector('.viewer-media img')?.naturalWidth === 1)
+  assert.equal(
+    await page.locator('.ed-tab[data-active="true"] .ed-tab-title').textContent(),
+    'image.png',
+  )
+  await goBack()
+  await follow('preview.pdf')
+  await page.locator('.pdf-page canvas').waitFor()
+  assert.equal(
+    await page.locator('.ed-tab[data-active="true"] .ed-tab-title').textContent(),
+    'preview.pdf',
+  )
+  await goBack()
+  await follow('notes/deep')
+  await page
+    .locator('.tree-row', { has: page.locator('.tree-name', { hasText: /^inside$/ }) })
+    .waitFor()
+  assert.equal(
+    await page.locator('.ed-tab[data-active="true"] .ed-tab-title').textContent(),
+    'links',
+  )
+  await follow('missing.md')
+  await page.getByText('The linked file or folder could not be found.', { exact: true }).waitFor()
+  await follow('escape.md')
+  await page.getByText('This link points outside the current workspace.', { exact: true }).waitFor()
+  await follow('deck.key')
+  await assertEventually(
+    () => app.evaluate(() => globalThis.openedEditorPaths),
+    [path.join(workspace, 'deck.key')],
+  )
+  assert.deepEqual(await opened(), [], 'local paths must never reach the browser handler')
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
   assert.deepEqual(errors, [])
   console.log(
@@ -138,6 +239,13 @@ try {
           'read-only navigation',
           'plain-text dismissal',
           'system handler routing',
+          'relative note and cross-note fragment',
+          'fragment-only navigation',
+          'preserved local href on edit',
+          'in-app image and PDF viewers',
+          'directory reveal',
+          'missing and outside-workspace feedback',
+          'unsupported file uses safe system opening',
         ],
       },
       null,
@@ -171,4 +279,21 @@ async function assertEventually(read, expected) {
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
   assert.deepEqual(await read(), expected)
+}
+
+function blankPdf() {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>',
+  ]
+  let pdf = '%PDF-1.4\n'
+  const offsets = []
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(pdf))
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  }
+  const xref = Buffer.byteLength(pdf)
+  pdf += `xref\n0 4\n0000000000 65535 f \n${offsets.map((offset) => String(offset).padStart(10, '0') + ' 00000 n \n').join('')}`
+  return pdf + `trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
 }

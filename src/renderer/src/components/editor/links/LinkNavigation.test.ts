@@ -3,9 +3,11 @@ import { parseHTML } from 'linkedom'
 import { getSchema } from '@tiptap/core'
 import { EditorState, TextSelection } from '@tiptap/pm/state'
 import { editorExtensions } from '../tiptapExtensions'
-import { handleExternalLinkClick, selectedLinkHref } from './LinkNavigation'
+import { handleDocumentLinkClick, selectedLinkHref } from './LinkNavigation'
 
-const open = vi.fn()
+import { openDocumentLink } from '../../../lib/documentLinks'
+vi.mock('../../../lib/documentLinks', () => ({ openDocumentLink: vi.fn() }))
+const open = vi.mocked(openDocumentLink)
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('navigator', { platform: 'MacIntel' })
@@ -27,7 +29,7 @@ function click(options: Partial<MouseEvent> = {}, editable = true, href = 'https
     preventDefault: vi.fn(),
     ...options,
   }
-  const handled = handleExternalLinkClick({ dom, editable }, event as unknown as MouseEvent)
+  const handled = handleDocumentLinkClick({ dom, editable }, event as unknown as MouseEvent)
   return { handled, event }
 }
 
@@ -43,7 +45,7 @@ describe('external link navigation', () => {
     const { handled, event } = click({ metaKey: true })
     expect(handled).toBe(true)
     expect(event.preventDefault).toHaveBeenCalledOnce()
-    expect(open).toHaveBeenCalledWith('https://example.com/', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith('https://example.com/', expect.anything())
   })
 
   it('uses Control-click on Windows and preserves macOS Control-click', () => {
@@ -68,14 +70,17 @@ describe('external link navigation', () => {
     expect(open).not.toHaveBeenCalled()
   })
 
-  it.each(['javascript:alert(1)', 'data:text/html,hello', 'file:///private/note.md'])(
-    'blocks unsafe navigation: %s',
-    (url) => {
-      const { event } = click({ metaKey: true }, true, url)
-      expect(event.preventDefault).toHaveBeenCalled()
-      expect(open).not.toHaveBeenCalled()
-    },
-  )
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,hello',
+    'file:///private/note.md',
+    '../note.md',
+    '#heading',
+  ])('routes stored hrefs through navigation with feedback: %s', (url) => {
+    const { event } = click({ metaKey: true }, true, url)
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith(url, expect.anything())
+  })
 
   it('does not open wikilinks through the external route', () => {
     const { document } = parseHTML(
@@ -83,7 +88,7 @@ describe('external link navigation', () => {
     )
     const dom = document.querySelector('main')! as unknown as HTMLElement
     expect(
-      handleExternalLinkClick({ dom, editable: false }, {
+      handleDocumentLinkClick({ dom, editable: false }, {
         target: dom.firstChild,
         button: 0,
       } as unknown as MouseEvent),

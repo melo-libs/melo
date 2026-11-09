@@ -5,6 +5,7 @@ import type {
 } from '../clipboard'
 import type { SmartHit, SmartRule, SmartSort, SmartViewDef, SmartVocab } from './smart'
 import type { AppSettings } from './settings'
+import type { ResolveDocumentLinkRequest, ResolvedDocumentLink } from '../documentLinks'
 import type {
   AgentComponents,
   AgentConfiguration,
@@ -123,6 +124,7 @@ export enum IpcChannels {
   InvokeCreateWorkspace = 'invoke-create-workspace',
   // Open a workspace file with the OS default application
   InvokeOpenPath = 'invoke-open-path',
+  InvokeResolveDocumentLink = 'invoke-resolve-document-link',
   // Open an http(s) URL in the system browser
   InvokeOpenExternal = 'invoke-open-external',
   // Duplicate a file or directory next to itself ("name copy.ext")
@@ -466,6 +468,10 @@ export interface IpcChannelDefinitions {
   [IpcChannels.InvokeOpenPath]: {
     args: { path: string }
     response: IpcResponse<void>
+  }
+  [IpcChannels.InvokeResolveDocumentLink]: {
+    args: ResolveDocumentLinkRequest
+    response: IpcResponse<ResolvedDocumentLink>
   }
   [IpcChannels.InvokeOpenExternal]: {
     args: { url: string }

@@ -1,7 +1,7 @@
 import { Extension, getMarkAttributes, getMarkRange, isMacOS } from '@tiptap/core'
 import { Plugin, type EditorState } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
-import { openExternalLink } from '../../../lib/url'
+import { openDocumentLink } from '../../../lib/documentLinks'
 
 function navigationModifier(
   event: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
@@ -18,7 +18,7 @@ export function selectedLinkHref(state: EditorState): string | null {
   return href
 }
 
-export function handleExternalLinkClick(
+export function handleDocumentLinkClick(
   view: Pick<EditorView, 'dom' | 'editable'>,
   event: MouseEvent,
 ): boolean {
@@ -30,7 +30,7 @@ export function handleExternalLinkClick(
   const link = target?.closest?.('a[href]')
   if (!link || !view.dom.contains(link) || link.classList.contains('wikilink')) return false
   event.preventDefault()
-  openExternalLink(link.getAttribute('href') ?? '')
+  void openDocumentLink(link.getAttribute('href') ?? '', view.dom)
   return true
 }
 
@@ -62,7 +62,7 @@ export const LinkNavigation = Extension.create({
         },
         // ProseMirror handleClick runs on mouseup. Cancel the actual click
         // default so a read-only anchor cannot also navigate on its own.
-        props: { handleDOMEvents: { click: handleExternalLinkClick } },
+        props: { handleDOMEvents: { click: handleDocumentLinkClick } },
       }),
     ]
   },

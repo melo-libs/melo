@@ -10,7 +10,9 @@ import { NodeRangeSelection } from '@tiptap/extension-node-range'
 import { IpcChannels } from '@shared/types/ipc'
 import { Icon } from '../Icon'
 import { cn } from '../../lib/cn'
-import { openExternalLink, safeExternalUrl } from '../../lib/url'
+import { normalizeLinkInput } from '../../lib/url'
+import { classifyDocumentHref } from '@shared/documentLinks'
+import { openDocumentLink } from '../../lib/documentLinks'
 import { useMenuNavigation } from '../../hooks/useMenuNavigation'
 import { toast } from '../Toaster'
 import i18n from '../../i18n'
@@ -152,6 +154,7 @@ function LinkDropdown({
   })
   const [text, setText] = useState(initial.text)
   const [url, setUrl] = useState(initial.url)
+  const normalizedHref = normalizeLinkInput(url, initial.url)
   const urlRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     urlRef.current?.focus()
@@ -159,9 +162,7 @@ function LinkDropdown({
   }, [])
 
   const apply = () => {
-    // Same allowlist as open(): the raw attr ends up verbatim in the saved
-    // Markdown, so a javascript: href must never be stored either.
-    const href = safeExternalUrl(url)
+    const href = normalizedHref
     if (!href) return
     const finalText = text.trim() || href
     if (finalText === initial.text) {
@@ -229,10 +230,14 @@ function LinkDropdown({
       <div className="lk-actions">
         <button
           className="bubble-btn"
-          title={t('editor.openLink')}
-          disabled={!safeExternalUrl(url)}
+          title={t(
+            normalizedHref && classifyDocumentHref(normalizedHref).kind !== 'external'
+              ? 'editor.openDocument'
+              : 'editor.openLink',
+          )}
+          disabled={!normalizedHref}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => openExternalLink(url)}
+          onClick={() => normalizedHref && void openDocumentLink(normalizedHref, editor.view.dom)}
         >
           <Icon name="externalLink" size={14} />
         </button>
@@ -248,7 +253,7 @@ function LinkDropdown({
         <span className="lk-spacer" />
         <button
           className="lk-apply"
-          disabled={!safeExternalUrl(url)}
+          disabled={!normalizedHref}
           onMouseDown={(e) => e.preventDefault()}
           onClick={apply}
           title={t('editor.applyEnter')}
@@ -625,11 +630,19 @@ export const EditorBubbleMenu = ({ editor, onShare }: { editor: Editor; onShare:
       {s.linkHref && (
         <button
           className="bubble-btn"
-          title={t('editor.openLink')}
-          aria-label={t('editor.openLink')}
-          disabled={!safeExternalUrl(s.linkHref)}
+          title={t(
+            classifyDocumentHref(s.linkHref).kind === 'external'
+              ? 'editor.openLink'
+              : 'editor.openDocument',
+          )}
+          aria-label={t(
+            classifyDocumentHref(s.linkHref).kind === 'external'
+              ? 'editor.openLink'
+              : 'editor.openDocument',
+          )}
+          disabled={classifyDocumentHref(s.linkHref).kind === 'unsupported'}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => openExternalLink(s.linkHref!)}
+          onClick={() => void openDocumentLink(s.linkHref!, editor.view.dom)}
         >
           <Icon name="externalLink" size={14} />
         </button>

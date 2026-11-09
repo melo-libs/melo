@@ -4,10 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { AgentContext } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
 import { agentCommand, agentMessagesAtom, agentEntrySeenAtom, openAgent } from '../../store/agent'
-import { workspacePathAtom, treeSelectionAtom, recentNotesAtom } from '../../store/workspace'
-import { openFileAtom } from '../../store/editor'
-import { activeSmartIdAtom } from '../../store/smart'
-import { appStore } from '../../store/appStore'
+import { openWorkspaceFile } from '../../lib/documentLinks'
 import { agentFilePath } from './agentFiles'
 import { toast } from '../Toaster'
 import { Icon } from '../Icon'
@@ -180,12 +177,7 @@ export const AgentWindow = () => {
           !response.data.canonicalPath.startsWith(expected)
         )
           throw Error(t('agent.fileUnavailable'))
-        appStore.set(openFileAtom, response.data.canonicalPath)
-        if (workspace === appStore.get(workspacePathAtom)) {
-          appStore.set(treeSelectionAtom, response.data.canonicalPath)
-          appStore.set(activeSmartIdAtom, null)
-          appStore.set(recentNotesAtom, response.data.canonicalPath)
-        }
+        openWorkspaceFile(response.data.canonicalPath, workspace)
       } catch (error) {
         toast(error instanceof Error ? error.message : t('agent.fileUnavailable'))
       }

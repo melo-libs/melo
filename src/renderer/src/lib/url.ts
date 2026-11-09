@@ -1,3 +1,5 @@
+import { classifyDocumentHref } from '@shared/documentLinks'
+
 /** http(s)/mailto only, scheme-less input coerced to https — keeps
  *  javascript: and friends away from the system browser and out of
  *  saved documents. */
@@ -13,8 +15,19 @@ export function safeExternalUrl(raw: string): string | null {
   }
 }
 
-export function openExternalLink(raw: string): void {
-  const url = safeExternalUrl(raw)
-  // Main intercepts new windows and opens the URL in its system handler.
-  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+/** Completion belongs only to edited input, not hrefs loaded from a note. */
+export function normalizeLinkInput(raw: string, originalHref = ''): string | null {
+  const href = raw.trim()
+  const target = classifyDocumentHref(href)
+  if (target.kind === 'unsupported') return null
+  if (target.kind === 'external') return target.url
+  if (
+    href === originalHref.trim() ||
+    target.kind === 'fragment' ||
+    /^(?:file:|[a-z]:[\\/]|\.{1,2}[\\/]|[\\/])/i.test(href) ||
+    /\.(?:md|markdown|txt|pdf|png|jpe?g|gif|webp|svg)(?:[?#]|$)/i.test(href) ||
+    (href.includes('/') && !href.split('/')[0].includes('.'))
+  )
+    return href
+  return safeExternalUrl(href)
 }
