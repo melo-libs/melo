@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { MERMAID_EXAMPLE, MERMAID_LANGUAGE } from './mermaid'
 import { IpcChannels } from '@shared/types/ipc'
 import { type Editor } from '@tiptap/core'
 import { PluginKey } from '@tiptap/pm/state'
@@ -163,6 +164,9 @@ function runSlash(editor: Editor, item: SlashListItem) {
       break
     case 'code':
       chain.toggleCodeBlock().run()
+      break
+    case 'mermaid':
+      chain.setCodeBlock({ language: MERMAID_LANGUAGE }).insertContent(MERMAID_EXAMPLE).run()
       break
     case 'table':
       chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()

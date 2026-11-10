@@ -702,6 +702,7 @@ export const ImageBubble = ({ editor }: { editor: Editor }) => {
   const workspacePath = useAtomValue(workspacePathAtom)
 
   const readSel = useCallback(() => {
+    if (!editor.isEditable) return null
     const s = editor.state.selection
     if (s instanceof NodeSelection && s.node.type.name === 'image') {
       return {
@@ -735,6 +736,8 @@ export const ImageBubble = ({ editor }: { editor: Editor }) => {
       // move lands after blur, hence the frame delay.
       requestAnimationFrame(() => {
         if (elRef.current?.contains(document.activeElement)) return
+        const selected = readSel()
+        if (selected && editor.view.nodeDOM(selected.pos)?.contains(document.activeElement)) return
         setSel(null)
         setAnchor(null)
       })

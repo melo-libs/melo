@@ -11,6 +11,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { MeloCodeBlock, lowlight } from './CodeBlock'
+import { imageNodeView } from './ImageNodeView'
 import { MathShortcut } from './MathShortcut'
 import { MarkdownInput } from './MarkdownInput'
 import { ClipboardPaste } from './ClipboardPaste'
@@ -43,7 +44,9 @@ function imageBlockDecos(doc: PMNode): DecorationSet {
       parent?.type.name === 'paragraph' &&
       parent.childCount === 1
     ) {
-      decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'img-block' }))
+      decos.push(
+        Decoration.node(pos, pos + node.nodeSize, { class: 'img-block' }, { meloImageBlock: true }),
+      )
     }
     return node.isBlock
   })
@@ -167,45 +170,8 @@ export const editorExtensions: AnyExtension[] = [
         },
       }
     },
-    // NodeView wraps the img so the alt text can render as a caption —
-    // CSS alone can't surface attr(alt) of a replaced element. Block vs
-    // inline presentation comes from the .img-block decoration plugin
-    // below.
     addNodeView() {
-      return ({ node }) => {
-        const dom = document.createElement('span')
-        dom.className = 'img-wrap'
-        const img = document.createElement('img')
-        const cap = document.createElement('span')
-        cap.className = 'img-alt'
-        cap.contentEditable = 'false'
-        // Double-click opens the lightbox viewer (single click = select/edit).
-        img.addEventListener('dblclick', () => {
-          if (img.src)
-            window.dispatchEvent(new CustomEvent('melo:image-view', { detail: { src: img.src } }))
-        })
-        const sync = (n: typeof node) => {
-          const src = (n.attrs.src as string | null) ?? ''
-          img.src = src && !/^[a-z][a-z0-9+.-]*:/i.test(src) ? `app://${src}` : src
-          img.alt = (n.attrs.alt as string | null) ?? ''
-          for (const attr of ['title', 'width', 'height'] as const) {
-            const v = n.attrs[attr] as string | number | null
-            if (v != null && v !== '') img.setAttribute(attr, String(v))
-            else img.removeAttribute(attr)
-          }
-          cap.textContent = (n.attrs.alt as string | null) ?? ''
-        }
-        sync(node)
-        dom.append(img, cap)
-        return {
-          dom,
-          update: (n) => {
-            if (n.type !== node.type) return false
-            sync(n)
-            return true
-          },
-        }
-      }
+      return imageNodeView
     },
     addProseMirrorPlugins() {
       return [

@@ -1,6 +1,6 @@
 import { Extension, type Editor } from '@tiptap/core'
 import { IpcChannels } from '@shared/types/ipc'
-import { Plugin, TextSelection } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, TextSelection } from '@tiptap/pm/state'
 import { Fragment, Slice } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { appStore } from '../../store/appStore'
@@ -15,6 +15,14 @@ export function canCopyEditorSelection(editor: Editor): boolean {
   const { dom } = editor.view
   const document = dom.ownerDocument
   if (document.activeElement === dom) return true
+  const active = document.activeElement
+  if (
+    active &&
+    editor.state.selection instanceof NodeSelection &&
+    !active.matches('input, textarea, [contenteditable="true"]') &&
+    editor.view.nodeDOM(editor.state.selection.from)?.contains(active)
+  )
+    return true
   const selection = document.getSelection()
   // A read-only editor's selection can be active while focus stays on <body>.
   return Boolean(
