@@ -1,0 +1,108 @@
+.ed-prose .ProseMirror .image-viewport {
+  position: relative;
+  white-space: normal;
+
+  .image-viewport-canvas {
+    position: relative;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    cursor: grab;
+    &:focus-visible {
+      // Focus is indicated by the enclosing image/diagram block.
+      outline: none;
+    }
+    &.is-dragging {
+      cursor: grabbing;
+    }
+  }
+
+  .image-viewport-canvas > img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    height: auto;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    transform-origin: 0 0;
+    pointer-events: none;
+  }
+
+  .image-viewport-controls {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-sm);
+    background: var(--paper);
+    color: var(--ink-2);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms var(--ease);
+  }
+
+  &:hover .image-viewport-controls,
+  &:focus-within .image-viewport-controls {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .image-viewport-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-sm);
+    color: var(--ink-2);
+    &:hover {
+      background: var(--paper-2);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+    &:disabled {
+      color: var(--ink-4);
+      cursor: default;
+    }
+  }
+
+  .image-viewport-percentage {
+    min-width: 40px;
+    text-align: center;
+    font: 11px var(--font-sans);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .image-viewport-canvas[hidden],
+  .image-viewport-controls[hidden] {
+    display: none;
+  }
+
+  &.image-viewport-photo {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .image-viewport-status {
+    display: block;
+    padding: 16px;
+    color: var(--ink-3);
+    font: 13px var(--font-sans);
+    text-align: center;
+    &[hidden] {
+      display: none;
+    }
+  }
+}

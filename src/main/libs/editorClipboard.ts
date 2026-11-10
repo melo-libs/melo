@@ -22,7 +22,7 @@ import { downloadClipboardImage } from './clipboardImageDownload'
 const contentSchema = z.object({
   text: z.string().max(MAX_CLIPBOARD_TEXT_LENGTH),
   html: z.string().max(MAX_CLIPBOARD_HTML_LENGTH),
-  workspaceRoot: z.string().min(1),
+  workspaceRoot: z.string(),
   singleImage: z.boolean(),
 })
 
@@ -88,15 +88,22 @@ export function writeEditorClipboard(
   notify: (status: ClipboardImageCopyStatus) => void,
 ): EditorClipboardResult {
   const content = contentSchema.parse(input)
-  if (!workspaceRoot || path.resolve(workspaceRoot) !== path.resolve(content.workspaceRoot))
-    throw new Error('Workspace changed while copying')
   const { document } = parseHTML(`<html><body>${content.html}</body></html>`)
   const images = Array.from(document.body.querySelectorAll('img'))
   const single = content.singleImage && images.length === 1
   const src = single ? (images[0].getAttribute('src') ?? '') : ''
+  // Generated PNGs can be copied from standalone documents without file access.
+  const standalonePng = !content.workspaceRoot && single && /^data:image\/png;base64,/i.test(src)
+  if (
+    !standalonePng &&
+    (!workspaceRoot ||
+      !content.workspaceRoot ||
+      path.resolve(workspaceRoot) !== path.resolve(content.workspaceRoot))
+  )
+    throw new Error('Workspace changed while copying')
   let pendingImage: string | { bytes: Buffer; mimeType: string } | undefined =
     single && /^https?:\/\//i.test(src) ? src : undefined
-  const root = fs.realpathSync(workspaceRoot)
+  const root = standalonePng ? null : fs.realpathSync(workspaceRoot!)
   let htmlLength = document.body.innerHTML.length
   let fallbackImages = 0
   let image: NativeImage | null = null
@@ -106,6 +113,7 @@ export function writeEditorClipboard(
     if (/^https?:\/\//i.test(source)) continue
     try {
       if (/^data:image\//i.test(source)) continue
+      if (!root) throw new Error('Image needs a workspace')
       const asset = workspaceImage(source, root)
       if (asset.bytes > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error('Image is too large to copy')
       // Check before reading/encoding so a selection of large photos stays bounded.
@@ -123,7 +131,7 @@ export function writeEditorClipboard(
       )
       replacement.setAttribute(
         CLIPBOARD_IMAGE_WORKSPACE_ATTRIBUTE,
-        clipboardWorkspaceKey(workspaceRoot),
+        clipboardWorkspaceKey(workspaceRoot!),
       )
       const nextLength = htmlLength - element.outerHTML.length + replacement.outerHTML.length
       if (nextLength > MAX_CLIPBOARD_HTML_LENGTH) throw new Error('Clipboard HTML is too large')

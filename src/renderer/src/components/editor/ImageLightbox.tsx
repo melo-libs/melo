@@ -23,8 +23,8 @@ interface ViewTransform {
   ty: number
 }
 
-export function openImageView(src: string): void {
-  window.dispatchEvent(new CustomEvent('melo:image-view', { detail: { src } }))
+export function openImageView(src: string, background?: string): void {
+  window.dispatchEvent(new CustomEvent('melo:image-view', { detail: { src, background } }))
 }
 
 const fitScale = (w: number, h: number): number =>
@@ -39,6 +39,7 @@ const centered = (w: number, h: number, s: number): ViewTransform => ({
 export const ImageLightbox = () => {
   const { t } = useTranslation()
   const [src, setSrc] = useState<string | null>(null)
+  const [background, setBackground] = useState<string>()
   const [view, setView] = useState<ViewTransform | null>(null)
   const nat = useRef({ w: 0, h: 0 })
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -47,7 +48,9 @@ export const ImageLightbox = () => {
 
   useEffect(() => {
     const onView = (e: Event) => {
-      setSrc((e as CustomEvent<{ src: string }>).detail.src)
+      const detail = (e as CustomEvent<{ src: string; background?: string }>).detail
+      setSrc(detail.src)
+      setBackground(detail.background)
       setView(null)
     }
     window.addEventListener('melo:image-view', onView)
@@ -58,6 +61,20 @@ export const ImageLightbox = () => {
     setSrc(null)
     setView(null)
   }, [])
+
+  useEffect(() => {
+    if (!src) return
+    const overlay = overlayRef.current!
+    const previous = document.activeElement as HTMLElement | null
+    overlay.focus({ preventScroll: true })
+    return () => {
+      if (
+        previous?.isConnected &&
+        (document.activeElement === document.body || overlay.contains(document.activeElement))
+      )
+        previous.focus({ preventScroll: true })
+    }
+  }, [src])
 
   const toFit = useCallback(() => {
     const { w, h } = nat.current
@@ -97,6 +114,21 @@ export const ImageLightbox = () => {
   useEffect(() => {
     if (!src) return
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        const overlay = overlayRef.current!
+        const buttons = overlay.querySelectorAll<HTMLButtonElement>('button')
+        if (
+          e.shiftKey &&
+          (document.activeElement === overlay || document.activeElement === buttons[0])
+        ) {
+          e.preventDefault()
+          buttons[buttons.length - 1].focus()
+        } else if (!e.shiftKey && document.activeElement === buttons[buttons.length - 1]) {
+          e.preventDefault()
+          buttons[0].focus()
+        }
+        return
+      }
       if (e.key === 'Escape') close()
       else if (e.key === '+' || e.key === '=')
         zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.25)
@@ -136,6 +168,10 @@ export const ImageLightbox = () => {
     <div
       ref={overlayRef}
       className="ilb-scrim"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('editor.imageViewer')}
+      tabIndex={-1}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close()
       }}
@@ -154,6 +190,7 @@ export const ImageLightbox = () => {
           view
             ? {
                 transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`,
+                backgroundColor: background,
                 visibility: 'visible',
               }
             : { visibility: 'hidden' }

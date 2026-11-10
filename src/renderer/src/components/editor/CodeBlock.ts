@@ -6,6 +6,8 @@ import i18n from '../../i18n'
 import { appStore } from '../../store/appStore'
 import { settingsAtom } from '../../store/settings'
 import { copyText } from '../../lib/clipboard'
+import { createMermaidPreview } from './MermaidPreview'
+import { MERMAID_LANGUAGE } from './mermaid'
 
 /* ============================================================
    MeloCodeBlock — CodeBlockLowlight plus the ergonomics a code
@@ -19,7 +21,7 @@ import { copyText } from '../../lib/clipboard'
 
 export const lowlight = createLowlight(common)
 
-export const CODE_LANGUAGES = lowlight.listLanguages().sort()
+export const CODE_LANGUAGES = [...lowlight.listLanguages(), MERMAID_LANGUAGE].sort()
 
 /** Current line's bounds inside a code block, in doc positions. */
 function currentLine(state: EditorState): {
@@ -197,6 +199,7 @@ export const MeloCodeBlock = CodeBlockLowlight.extend({
       })
 
       chrome.append(copy, chip)
+      let diagram: ReturnType<typeof createMermaidPreview> | null = null
 
       const sync = (n: typeof node) => {
         const lines = n.textContent.split('\n').length
@@ -204,6 +207,13 @@ export const MeloCodeBlock = CodeBlockLowlight.extend({
         const language = (n.attrs.language as string | null) ?? ''
         chip.textContent = language || i18n.t('editor.plainLanguage')
         chip.classList.toggle('is-plain', !language)
+        if (language.toLowerCase() === MERMAID_LANGUAGE) {
+          diagram ??= createMermaidPreview(dom, chrome, editor, getPos)
+          diagram.update(n.textContent)
+        } else {
+          diagram?.destroy()
+          diagram = null
+        }
       }
       sync(node)
 
@@ -222,6 +232,7 @@ export const MeloCodeBlock = CodeBlockLowlight.extend({
       return {
         dom,
         contentDOM: code,
+        stopEvent: (event) => diagram?.stopEvent(event) ?? false,
         update: (n) => {
           if (n.type !== node.type) return false
           sync(n)
@@ -230,6 +241,7 @@ export const MeloCodeBlock = CodeBlockLowlight.extend({
         ignoreMutation: (m) =>
           m.type !== 'selection' && !code.contains(m.target as globalThis.Node),
         destroy: () => {
+          diagram?.destroy()
           i18n.off('languageChanged', onLanguageChanged)
         },
       }

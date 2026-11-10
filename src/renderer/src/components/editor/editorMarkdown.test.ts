@@ -14,6 +14,8 @@ describe('editor Markdown persistence', () => {
     ['alphabetic lists', 'a. First\nb. Second'],
     ['Roman lists', 'I. First\nII. Second'],
     ['code blocks', '```ts\nconst value = "# literal"\n\n// keep blank line\n```'],
+    ['Mermaid diagrams', '```mermaid\nflowchart LR\n  A[开始] --> B[完成]\n```'],
+    ['invalid Mermaid source', '```mermaid\nflowchart LR\n  A[unfinished\n```'],
     ['link preceded by exclamation', '\\![example](https://example.com)'],
     ['image caption', '![Caption](.assets/example.png "Title")'],
     ['math', 'Inline $x^2$ formula\n\n$$\ny = x + 1\n$$'],

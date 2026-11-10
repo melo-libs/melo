@@ -7,6 +7,7 @@ import i18n from '../../i18n'
 import { toast } from '../Toaster'
 import { getMarkdown } from '../../store/documentSession'
 import { lowlight } from './CodeBlock'
+import { renderMermaidBlocks } from './mermaid'
 
 /* ============================================================
    Document export — Markdown / standalone HTML / PDF.
@@ -145,6 +146,7 @@ async function buildExportHtml(
   const article = doc.body.firstElementChild as HTMLElement
 
   highlightCode(article)
+  await renderMermaidBlocks(article)
   const hasMath = renderMath(article)
   await inlineImages(article, workspacePath)
 
@@ -220,6 +222,9 @@ function finishToast(ok: boolean, error?: string): void {
    ============================================================ */
 
 const EXPORT_CSS = `
+.mermaid-diagram { margin: 16px 0; text-align: center; break-inside: avoid; }
+.mermaid-diagram img { max-width: 100%; height: auto; }
+.mermaid-error { color: #74777d; font-size: 12px; white-space: pre-wrap; }
 :root {
   --ink: #1f2023;
   --ink-2: #43464b;

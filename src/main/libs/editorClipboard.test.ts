@@ -50,6 +50,46 @@ const copy = (html: string, singleImage = false) =>
 const finishAsyncCopy = () => new Promise((resolve) => setImmediate(resolve))
 
 describe('main-process image copy', () => {
+  it('copies a self-contained PNG from a standalone document without a workspace', () => {
+    expect(
+      writeEditorClipboard(
+        {
+          text: 'Diagram',
+          html: '<img src="data:image/png;base64,AQID">',
+          workspaceRoot: '',
+          singleImage: true,
+        },
+        null,
+        mocks.notify,
+      ),
+    ).toEqual({ fallbackImages: 0, bitmap: 'ready' })
+    expect(mocks.write).toHaveBeenCalledTimes(1)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('still requires a workspace for local, remote and non-PNG image references', () => {
+    for (const src of [
+      '.assets/test.png',
+      'https://example.com/a.png',
+      'data:image/svg+xml;base64,AQID',
+    ]) {
+      expect(() =>
+        writeEditorClipboard(
+          {
+            text: '',
+            html: `<img src="${src}">`,
+            workspaceRoot: '',
+            singleImage: true,
+          },
+          null,
+          mocks.notify,
+        ),
+      ).toThrow('Workspace changed')
+    }
+    expect(mocks.write).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
   it('embeds a local image and writes the bitmap, HTML and text exactly once', () => {
     expect(copy('<p data-pm-slice="1 1 []"><img src="app://.assets/test.png"></p>', true)).toEqual({
       fallbackImages: 0,

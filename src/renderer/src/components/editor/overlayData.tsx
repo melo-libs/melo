@@ -124,6 +124,13 @@ export const SLASH_COMMANDS: SlashSection[] = [
         keywords: ['img', 'photo', 'picture', 'upload'],
       },
       {
+        id: 'mermaid',
+        name: 'Mermaid diagram',
+        desc: 'Flowcharts, sequence diagrams and more',
+        icon: 'codeBlock',
+        keywords: ['diagram', 'flowchart', 'sequence', 'chart', '图表', '流程图', '时序图'],
+      },
+      {
         id: 'table',
         name: 'Table',
         desc: 'Insert a 3×3 table',
