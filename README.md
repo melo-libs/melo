@@ -1,61 +1,140 @@
-# Melo
+<p align="center">
+  <img src="resources/icon.png" width="88" height="88" alt="Melo's yellow pufferfish mascot">
+</p>
 
-Turn information into knowledge of your own.
+<h1 align="center">Melo</h1>
 
-Melo is a personal knowledge workspace built around CODE: Collect, Organize, Distill, and Express. Your notes are plain `.md` files in a folder you choose, edited in a true WYSIWYG editor. No account, no lock-in — point it at an existing notes folder and everything just works. (Search runs on a small rebuildable index in `.melo/`; your notes never live inside it.)
+<p align="center"><strong>Notes you own. An AI companion when you need one.</strong></p>
+<p align="center">A local-first Markdown workspace for reading, thinking, and writing.</p>
 
-## Get Melo
+<p align="center">
+  <a href="https://github.com/melo-libs/melo/releases/latest"><img src="https://img.shields.io/github/v/release/melo-libs/melo?color=ddad00&label=release" alt="Latest release"></a>
+  <a href="https://github.com/melo-libs/melo/actions/workflows/ci.yml"><img src="https://github.com/melo-libs/melo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/melo-libs/melo?color=586069" alt="MIT license"></a>
+</p>
 
-Download a macOS build for your Mac (Apple silicon or Intel) from [GitHub Releases](https://github.com/melo-libs/melo/releases). Choose a folder as your workspace, or open an individual Markdown file; Melo keeps your notes in their original location.
+<p align="center">
+  <a href="https://github.com/melo-libs/melo/releases/latest">Download for macOS</a> ·
+  <a href="https://www.melolib.com">Website</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="https://github.com/melo-libs/melo/discussions">Discussions</a>
+</p>
 
-The latest published release may be older than the features described here. Check the release notes for the version you download. Unsigned macOS builds may require approval in Privacy & Security before opening; they can check for updates, but new versions must be installed manually from GitHub Releases.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/workspace-dark.png">
+  <img src="docs/images/workspace-light.png" alt="Melo workspace with a file sidebar, a Markdown note, tasks, a table, and a Mermaid diagram">
+</picture>
 
-## What it does
+<p align="center"><sub>Real app screenshots with example notes, captured from main.</sub></p>
 
-**Write**
+Melo keeps your notes as plain `.md` files in a folder you choose. Save articles, connect ideas, and turn what you read into something of your own. Open an existing notes folder or a single Markdown file; your files stay in their original location.
 
-- WYSIWYG Markdown editing (Tiptap/ProseMirror) — headings, lists, task lists, quotes, tables
-- Syntax-highlighted code blocks with a language picker, line numbers and smart indentation
-- LaTeX math (inline `$…$` and block `$$…$$`, rendered with KaTeX) with a guided equation editor
-- Slash commands (`/`), block drag handles, find & replace (`⌘F` / `⌥⌘F`)
-- Wikilinks (`[[…]]`) with backlinks, unlinked mentions and a local graph
+When you want help, open **Ask Melo** beside your document. Connect Claude Code or Codex to understand an article, work on a draft, or organize files together. AI is optional; writing, reading, and organizing your notes do not require a Melo account.
 
-**Collect**
+## A workspace for the whole reading loop
 
-- Web clipping: paste a URL into the search palette (`⌘K`) and the article is extracted, converted to Markdown and saved — images downloaded into the workspace so clips read offline
-- Paste or drag images straight into notes (stored under `.assets/`, relative paths)
-- Files of any kind live alongside notes: PDF reading, image / video / audio viewing built in
+Melo follows **CODE: Collect, Organize, Distill, Express**.
 
-**Find**
+|              | What you can do                                                                                            |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| **Collect**  | Clip web articles with their source and images. Keep PDFs, images, audio, and video alongside your notes.  |
+| **Organize** | Use folders, tags, Smart Folders, and `[[wikilinks]]`. Follow backlinks and explore the local graph.       |
+| **Distill**  | Read without clutter, search across your workspace, and ask Melo about the document or a selected passage. |
+| **Express**  | Write in a WYSIWYG Markdown editor, refine a draft with AI, and export to Markdown, HTML, or PDF.          |
 
-- `⌘K` palette: title + full-text search with filters (`#tag`, `kind:pdf`, `path:inbox`) and a live preview pane
-- Smart folders: saved rule-based views over the whole workspace (source, kind, dates, tags…)
+### Write without leaving Markdown behind
 
-**Own**
+Headings, task lists, quotes, tables, highlighted code blocks, and LaTeX equations appear as you type. Use `/` to insert a block, drag the handle to reorder it, or select text for formatting and links.
 
-- Everything is a file on your disk; edits made outside Melo are picked up live
-- Export any note as Markdown, standalone HTML (a single self-contained file) or PDF
-- English and Simplified Chinese interface; light / dark / system theme
+Mermaid diagrams support source editing, inline zoom and pan, and copying either the complete image or its code. Ordinary images share the same inline viewing controls. Both features are on `main`; they are **not included in v2.1.3**.
 
-## Development
+### Find the note, keep your place
 
-Use Node.js 24 and the pnpm version pinned in `package.json`.
+Press `⌘K` to search titles and full text with a live preview. Narrow results with `#tag`, `kind:pdf`, or `path:Inbox`. Paste a URL into the same palette to clip an article, or carry a question into Ask Melo.
 
-```bash
+![Workspace search with matching notes and an article preview](docs/images/search.png)
+
+### Bring your own AI connection
+
+Melo works with **Claude Code and Codex** through ACP. Reuse a tool already installed on your Mac, or let Melo download the required components when you connect. Sign in with a supported account, or configure an API key compatible with the selected tool.
+
+- The current document, selected text, files, and screenshots can become conversation context.
+- Review proposed document and file changes through Melo's permission flow.
+- Connection settings verify API credentials before saving a replacement.
+- API keys saved by Melo use the computer's secure storage.
+
+Notes are stored locally. Using AI sends the relevant context to the service you connect; local storage does not make AI requests offline.
+
+<details>
+<summary>See the AI connection screen</summary>
+
+![Melo's first-use screen with Claude Code and Codex connection options](docs/images/ai-setup.png)
+
+See [supported API connections](docs/agent-api-providers.md) for protocol requirements and provider details.
+
+</details>
+
+### Keep your files yours
+
+- Notes remain ordinary Markdown files; images live under `.assets/` with relative paths.
+- Changes made in another editor are picked up live.
+- Search uses a rebuildable index in `.melo/`; your notes are not stored in that index.
+- English and Simplified Chinese interfaces, with light, dark, and system themes.
+- No built-in cloud sync or automatic backup. Back up the whole workspace, including `.assets/` and `.melo/`.
+
+## Download and get started
+
+Published builds are currently available for **macOS**.
+
+| Your Mac                     | Download from [the latest release](https://github.com/melo-libs/melo/releases/latest) |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| Apple silicon — M1 and later | The DMG ending in `-arm64.dmg`                                                        |
+| Intel                        | The DMG ending in `-x64.dmg`                                                          |
+
+1. Open the DMG and move Melo into Applications.
+2. Choose a workspace folder, or open a Markdown file.
+3. Start writing. Connect an AI tool from the pufferfish button whenever you want help.
+
+macOS releases are self-signed and **not notarized by Apple**. On first launch, macOS may ask you to allow Melo in **System Settings → Privacy & Security**. Releases from 2.0.2 onward support in-app updates; users on 2.0.1 or earlier need one manual installation first.
+
+This README follows `main`. Check the [release notes](https://github.com/melo-libs/melo/releases) for the features in your installed version.
+
+## Useful shortcuts
+
+| Shortcut     | Action                                        |
+| ------------ | --------------------------------------------- |
+| `⌘K`         | Search, run a command, or paste a URL to clip |
+| `⌘⇧C`        | Copy the editor selection as Markdown         |
+| `⌘N`         | Start a new note                              |
+| `⌘S`         | Save a draft; saved notes then autosave       |
+| `⌘F` / `⌥⌘F` | Find / replace in the current note            |
+| `/`          | Insert a block on an empty line               |
+| `[[`         | Link to another note                          |
+| `⌘,`         | Open preferences                              |
+
+The [in-app user guide](src/renderer/src/assets/guides/melo.en.md) has more examples.
+
+## Build and contribute
+
+Melo uses Electron, React, TypeScript, Tiptap / ProseMirror, and Jotai. Use **Node.js 24** and the pnpm version pinned in `package.json`.
+
+```sh
+corepack enable
 pnpm install
-pnpm run dev                 # start the app in dev mode
-pnpm run lint                # read-only ESLint and Prettier checks
-pnpm run lint:fix            # apply ESLint fixes
-pnpm run typecheck           # main/preload and renderer typechecks
-pnpm test                    # unit tests
-pnpm run release:check       # lint, typechecks, tests, production build
-pnpm run build:mac:unsigned  # local unsigned macOS package
+pnpm run dev
 ```
 
-Development builds use a persistent `Melo Dev` profile in the system app-data directory, separate from the installed app. Select your workspace on the first development launch. Set `MELO_USER_DATA` to use a different profile for tests.
+```sh
+pnpm run lint          # ESLint and formatting checks
+pnpm run typecheck     # Main, preload, and renderer
+pnpm test             # Unit tests
+pnpm run build        # Typecheck and production build
+```
 
-CI validates macOS arm64 and x64 builds; publishing a release is a separate manual step. Built with Electron 31, React 18, TypeScript, Tiptap, and Jotai. See [AGENTS.md](AGENTS.md) for architecture notes.
+Development runs use a separate **Melo Dev** profile. Set `MELO_USER_DATA` to use an isolated profile. CI checks macOS arm64 and x64; publishing a release is a separate step.
+
+Read the [contribution guide](CONTRIBUTING.md), [architecture notes](AGENTS.md), and [macOS release guide](docs/mac-release.md). Report a [bug](https://github.com/melo-libs/melo/issues/new?template=bug_report.yml), propose a [feature](https://github.com/melo-libs/melo/issues/new?template=feature_request.yml), or ask a question in [Discussions](https://github.com/melo-libs/melo/discussions).
 
 ## License
 
-[MIT](LICENSE) © 2026 Melo Labs
+[MIT](LICENSE) © 2026 Melo Labs.
