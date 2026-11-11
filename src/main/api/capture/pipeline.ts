@@ -274,7 +274,7 @@ export async function downloadImages(
 
 /* ---- favicon ---- */
 
-function extractFaviconUrl(html: string, pageUrl: string): string {
+export function extractFaviconUrl(html: string, pageUrl: string): string {
   const iconRe = /<link\b[^>]*rel\s*=\s*["'](?:shortcut\s+)?icon["'][^>]*>/gi
   const best = { url: '', size: 0 }
 
@@ -292,7 +292,8 @@ function extractFaviconUrl(html: string, pageUrl: string): string {
 
   if (best.url) {
     try {
-      return new URL(best.url, pageUrl).href
+      const url = new URL(best.url, pageUrl)
+      if (url.protocol === 'http:' || url.protocol === 'https:') return url.href
     } catch {
       /* fall through */
     }

@@ -21,6 +21,9 @@ import {
 } from '../../store/workspace'
 import { findNode } from '../sidebar/treeOps'
 import { FileTypeIcon } from '../FileTypeIcon'
+import { Favicon } from '../Favicon'
+import { Icon } from '../Icon'
+import { Button } from '../ui/Button'
 import { QIcon, HiText, HiRanges } from './SearchIcon'
 import { renderPreviewHtml } from './previewMarkdown'
 import { SearchField, SearchTips } from './SearchField'
@@ -71,12 +74,6 @@ function isWebUrl(raw: string): { url: string; host: string } | null {
   } catch {
     return null
   }
-}
-
-function domainHue(domain: string) {
-  let h = 0
-  for (let i = 0; i < domain.length; i++) h = (h * 31 + domain.charCodeAt(i)) % 360
-  return 20 + (h % 60) + (h % 3) * 70
 }
 
 const relTime = (ms?: number) => {
@@ -234,7 +231,7 @@ export const SearchPalette = () => {
   const [allTags, setAllTags] = useState<{ tag: string; count: number }[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const clipRef = useRef<{ submit: () => void }>(null)
+  const clipRef = useRef<ClipPanelHandle>(null)
 
   const empty = query.trim() === ''
 
@@ -403,16 +400,10 @@ export const SearchPalette = () => {
       return
     }
     if (isClip) {
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        clipRef.current?.submit()
-        return
-      }
       if (e.key === 'Escape') {
         e.preventDefault()
         close()
-        return
-      }
+      } else clipRef.current?.onKeyDown(e)
       return
     }
     if (e.key === 'ArrowDown') {
@@ -470,6 +461,18 @@ export const SearchPalette = () => {
     [close, openFile],
   )
 
+  const askShortcut = workspacePath ? (
+    <button
+      className="pb-ask-shortcut"
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.stopPropagation()
+      }}
+      onClick={askMelo}
+    >
+      <MeloLogo size={16} /> {t('search.askMelo')} <kbd>⌘↵</kbd>
+    </button>
+  ) : null
+
   if (!open) return null
 
   return (
@@ -495,20 +498,23 @@ export const SearchPalette = () => {
           folderWords={folderWords}
         />
 
-        <div className={cn('pb-body', isClip && 'pb-body-clip')}>
-          {isClip ? (
-            <ClipPanel
-              ref={clipRef}
-              url={urlMatch.url}
-              host={urlMatch.host}
-              workspacePath={workspacePath}
-              inboxId={inboxId}
-              tree={tree}
-              onSaved={handleClipSaved}
-              onOpenExisting={openFile}
-            />
-          ) : (
-            <>
+        {isClip ? (
+          <ClipPanel
+            key={workspacePath}
+            ref={clipRef}
+            url={urlMatch.url}
+            host={urlMatch.host}
+            workspacePath={workspacePath}
+            inboxId={inboxId}
+            tree={tree}
+            inputRef={inputRef}
+            askShortcut={askShortcut}
+            onSaved={handleClipSaved}
+            onOpenExisting={openFile}
+          />
+        ) : (
+          <>
+            <div className="pb-body">
               <div className="pb-list" ref={listRef}>
                 {flat.map((r, i) => {
                   if (r.kind === 'head')
@@ -570,37 +576,27 @@ export const SearchPalette = () => {
               <div className="pb-preview">
                 <PreviewPane preview={preview} />
               </div>
-            </>
-          )}
-        </div>
+            </div>
 
-        <div className="pb-foot">
-          <SearchTips />
-          <div className="pb-foot-hints">
-            {workspacePath && (
-              <button
-                className="pb-ask-shortcut"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.stopPropagation()
-                }}
-                onClick={askMelo}
-              >
-                <MeloLogo size={16} /> {t('search.askMelo')} <kbd>⌘↵</kbd>
-              </button>
-            )}
-            <span>
-              <kbd>
-                <QIcon name="arrowUpDown" size={12} />
-              </kbd>
-            </span>
-            <span>
-              <kbd>↵</kbd>
-            </span>
-            <span>
-              <kbd>esc</kbd>
-            </span>
-          </div>
-        </div>
+            <div className="pb-foot">
+              <SearchTips />
+              <div className="pb-foot-hints">
+                {askShortcut}
+                <span>
+                  <kbd>
+                    <QIcon name="arrowUpDown" size={12} />
+                  </kbd>
+                </span>
+                <span>
+                  <kbd>↵</kbd>
+                </span>
+                <span>
+                  <kbd>esc</kbd>
+                </span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -617,9 +613,14 @@ interface UrlPreview {
   imageCount: number
   excerpt: string
   bodyPreview: string
+  faviconUrl: string
 }
 
 type ClipPhase = 'fetching' | 'ready' | 'error'
+
+interface ClipPanelHandle {
+  onKeyDown(event: React.KeyboardEvent): void
+}
 
 interface ClipPanelProps {
   url: string
@@ -627,20 +628,14 @@ interface ClipPanelProps {
   workspacePath: string | null
   inboxId: string | null
   tree: ReturnType<typeof useAtomValue<typeof workspaceTreeAtom>>
+  inputRef: React.RefObject<HTMLInputElement>
+  askShortcut: React.ReactNode
   onSaved: (filePath: string, title: string, openAfter: boolean) => void
   onOpenExisting: (id: string) => void
 }
 
-const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(function ClipPanel(
-  { url, host, workspacePath, inboxId, tree, onSaved, onOpenExisting },
-  ref,
-) {
-  const [phase, setPhase] = useState<ClipPhase>('fetching')
-  const [urlPreview, setUrlPreview] = useState<UrlPreview | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [existing, setExisting] = useState<{ path: string; title: string; savedAt: number } | null>(
-    null,
-  )
+const ClipPanel = React.forwardRef<ClipPanelHandle, ClipPanelProps>(function ClipPanel(props, ref) {
+  const { workspacePath, inboxId, tree } = props
   const [dest, setDest] = useState(() => {
     // Settings pick the preselected folder; anything that no longer
     // exists (deleted folder, stale path) falls back to Inbox.
@@ -654,6 +649,40 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
     if (candidate && findNode(tree, candidate)?.kind === 'folder') return candidate
     return inboxId ?? ''
   })
+  // Destination belongs to this palette session; capture state belongs to the URL.
+  return <ClipCapture key={props.url} {...props} ref={ref} dest={dest} setDest={setDest} />
+})
+
+interface ClipCaptureProps extends ClipPanelProps {
+  dest: string
+  setDest: (dest: string) => void
+}
+
+const ClipCapture = React.forwardRef<ClipPanelHandle, ClipCaptureProps>(function ClipCapture(
+  {
+    url,
+    host,
+    workspacePath,
+    inboxId,
+    tree,
+    inputRef,
+    askShortcut,
+    onSaved,
+    onOpenExisting,
+    dest,
+    setDest,
+  },
+  ref,
+) {
+  const [phase, setPhase] = useState<ClipPhase>('fetching')
+  const [urlPreview, setUrlPreview] = useState<UrlPreview | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [existing, setExisting] = useState<{
+    path: string
+    title: string
+    savedAt: number
+    favicon?: string
+  } | null>(null)
   const [pending, setPending] = useState<'save' | 'open' | null>(null)
   const [saving, setSaving] = useState(false)
   const destRef = useRef(dest)
@@ -661,16 +690,27 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
   const treeRef = useRef(tree)
   treeRef.current = tree
 
-  const hue = useMemo(() => domainHue(host), [host])
+  const [active, setActive] = useState<0 | 1>(0)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const folderRef = useRef<HTMLDivElement>(null)
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!menuOpen) return
+    const onOutside = (event: MouseEvent) => {
+      if (!folderRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [menuOpen])
 
   // Auto-fetch on mount
   useEffect(() => {
-    setPhase('fetching')
-    setUrlPreview(null)
-    setErrorMsg(null)
-    setExisting(null)
-    setPending(null)
-    setSaving(false)
     let alive = true
     Promise.all([
       window.api.invoke(IpcChannels.InvokePreviewUrl, { url }),
@@ -714,6 +754,7 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
           destFolder,
           workspaceRoot: workspacePath,
         })
+        if (!alive.current) return
         if (res.success && res.data) {
           localStorage.setItem('melo.clipDest', destFolder || '')
           if (res.data.empty) toast(i18n.t('clip.emptyExtract'))
@@ -723,6 +764,7 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
           setSaving(false)
         }
       } catch (e) {
+        if (!alive.current) return
         toast(e instanceof Error ? e.message : i18n.t('clip.captureFailed'))
         setSaving(false)
       }
@@ -732,11 +774,11 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
 
   // Fire queued save once ready
   useEffect(() => {
-    if (phase === 'ready' && pending) {
-      doSave(pending === 'open')
-      setPending(null)
-    }
-  }, [phase, pending, doSave])
+    if (phase === 'fetching' || !pending) return
+    setPending(null)
+    if (existing) onOpenExisting(existing.path)
+    else if (phase === 'ready') void doSave(pending === 'open')
+  }, [phase, pending, existing, doSave, onOpenExisting])
 
   const commit = useCallback(
     (openAfter: boolean) => {
@@ -744,17 +786,6 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
       else if (phase === 'fetching') setPending(openAfter ? 'open' : 'save')
     },
     [phase, doSave],
-  )
-
-  React.useImperativeHandle(
-    ref,
-    () => ({
-      submit: () => {
-        if (existing) onOpenExisting(existing.path)
-        else commit(false)
-      },
-    }),
-    [commit, existing, onOpenExisting],
   )
 
   // Folder list from workspace tree — labels include parent path for hierarchy
@@ -783,173 +814,240 @@ const ClipPanel = React.forwardRef<{ submit: () => void }, ClipPanelProps>(funct
     return parts[parts.length - 1]
   }, [destLabel])
 
-  const isLoading = saving || !!pending
-
   const showExisting = !!existing && phase !== 'fetching'
+
+  const busy = saving || !!pending
+  const saveDisabled = busy || phase === 'error' || !workspacePath
+  const closeFolder = () => {
+    setMenuOpen(false)
+    setActive(0)
+    inputRef.current?.focus()
+  }
+  const choose = (index: 0 | 1) => {
+    if (showExisting) {
+      if (index === 0) onOpenExisting(existing.path)
+      else {
+        setExisting(null)
+        setActive(0)
+      }
+    } else if (!saveDisabled) commit(index === 1)
+  }
+  React.useImperativeHandle(ref, () => ({
+    onKeyDown(event) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActive((index) => (index === 0 ? 1 : 0))
+        inputRef.current?.focus()
+      } else if (event.key === 'Enter' && !(event.target as HTMLElement).closest('button')) {
+        event.preventDefault()
+        choose(active)
+      } else if (
+        event.key === 'Tab' &&
+        !event.shiftKey &&
+        !showExisting &&
+        !busy &&
+        workspacePath
+      ) {
+        event.preventDefault()
+        setActive(0)
+        setMenuOpen(true)
+      }
+    },
+  }))
+  const status = showExisting ? 'saved' : busy ? 'fetching' : phase
+  const statusText = showExisting
+    ? i18n.t('clip.alreadySaved')
+    : saving
+      ? i18n.t('topBar.saving')
+      : pending
+        ? i18n.t('clip.savingWhenReady')
+        : phase === 'fetching'
+          ? i18n.t('clip.capturingArticle')
+          : phase === 'error'
+            ? i18n.t('clip.couldNotFetch')
+            : i18n.t('clip.readyToSave')
+  const existingParent = existing?.path.replace(/[\\/][^\\/]+$/, '')
+  const existingLocation = folders.find((folder) => folder.id === existingParent)?.label
 
   return (
     <>
-      {/* LEFT — control column */}
-      <div className="pb-list clip-ctrl">
-        <div className="clip-link">
-          <span className="clip-fav" style={{ '--h': hue } as React.CSSProperties}>
-            {host[0].toUpperCase()}
-          </span>
-          <div className="clip-link-main">
-            <div className="clip-link-domain">
-              <QIcon name="globe" size={12} /> {host}
-            </div>
-            <div className="clip-link-url">{url.replace(/^https?:\/\//i, '')}</div>
+      <div className="pb-body pb-body-clip">
+        <div className="pb-list clip-ctrl">
+          <div className="clip-ctrl-heading">
+            <span>{i18n.t('clip.webClip')}</span>
+            <span className={cn('clip-status', status)} role="status">
+              {status === 'fetching' ? (
+                <span className="clip-spinner-sm" />
+              ) : (
+                <QIcon name={status === 'error' ? 'close' : 'check'} size={12} />
+              )}
+              {statusText}
+            </span>
           </div>
-          {showExisting ? (
-            <span className="clip-badge saved">
-              <QIcon name="check" size={12} /> {i18n.t('clip.alreadySaved')}
-            </span>
-          ) : (
-            <span className="clip-badge">
-              <QIcon name="scissors" size={12} /> {i18n.t('clip.linkDetected')}
-            </span>
-          )}
-        </div>
-
-        <div className="clip-ctrl-body">
-          {showExisting ? (
-            <>
-              <div className="clip-exist-hint">{i18n.t('clip.openInstead')}</div>
-              <ClipSaveButton
-                loading={false}
-                destLabel={i18n.t('clip.openExisting')}
-                folders={[]}
-                dest=""
-                setDest={() => {}}
-                onSave={() => onOpenExisting(existing!.path)}
-                hideChevron
-              />
-              <button className="clip-link-btn" onClick={() => setExisting(null)}>
-                {i18n.t('clip.clipAgain')}
-              </button>
-            </>
-          ) : (
-            <>
-              <div className={cn('clip-status', phase)}>
-                {phase === 'fetching' ? (
-                  <>
-                    <span className="clip-spinner-sm dark" /> {i18n.t('clip.capturingArticle')}
-                  </>
-                ) : phase === 'error' ? (
-                  <>
-                    <QIcon name="close" size={13} /> {errorMsg}
-                  </>
-                ) : (
-                  <>
-                    <QIcon name="check" size={13} /> {i18n.t('clip.readyToSave')}
-                  </>
+          <div className="clip-actions">
+            {showExisting ? (
+              <>
+                <Button
+                  className={cn('clip-action-row', active === 0 && 'active')}
+                  onMouseMove={() => setActive(0)}
+                  onFocus={() => setActive(0)}
+                  onClick={() => choose(0)}
+                >
+                  <QIcon name="file" size={16} />
+                  <span>{i18n.t('clip.openExisting')}</span>
+                  {active === 0 && (
+                    <span className="clip-action-enter" aria-hidden="true">
+                      ↵
+                    </span>
+                  )}
+                </Button>
+                <Button
+                  className={cn('clip-action-row', active === 1 && 'active')}
+                  onMouseMove={() => setActive(1)}
+                  onFocus={() => setActive(1)}
+                  onClick={() => choose(1)}
+                >
+                  <Icon name="refresh" size={16} />
+                  <span>{i18n.t('clip.clipAgain')}</span>
+                  {active === 1 && (
+                    <span className="clip-action-enter" aria-hidden="true">
+                      ↵
+                    </span>
+                  )}
+                </Button>
+                <p className="clip-exist-hint">{i18n.t('clip.openInstead')}</p>
+              </>
+            ) : (
+              <>
+                <div className="clip-save" ref={folderRef}>
+                  <div
+                    className={cn(
+                      'clip-action-row',
+                      active === 0 && 'active',
+                      saveDisabled && 'disabled',
+                    )}
+                    onMouseMove={() => setActive(0)}
+                    onClick={() => choose(0)}
+                  >
+                    <Button
+                      className="clip-action-main"
+                      disabled={saveDisabled}
+                      aria-label={`${i18n.t('clip.saveToLabel')} ${destLabel}`}
+                      onFocus={() => setActive(0)}
+                    >
+                      <Icon name="inbox" size={16} />
+                      <span>{i18n.t('clip.saveToLabel')}</span>
+                    </Button>
+                    <Button
+                      className={cn('clip-folder-trigger', menuOpen && 'open')}
+                      disabled={busy || !workspacePath}
+                      aria-label={i18n.t('clip.changeFolder')}
+                      title={destLabel}
+                      aria-expanded={menuOpen}
+                      onFocus={() => setActive(0)}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setMenuOpen((open) => !open)
+                      }}
+                    >
+                      <span>{destShort}</span>
+                      <QIcon name="chev" size={10} />
+                    </Button>
+                    {active === 0 && (
+                      <span className="clip-action-enter" aria-hidden="true">
+                        ↵
+                      </span>
+                    )}
+                  </div>
+                  {menuOpen && (
+                    <FolderMenu
+                      folders={folders}
+                      dest={dest}
+                      setDest={(id) => {
+                        setDest(id)
+                        closeFolder()
+                      }}
+                      onClose={closeFolder}
+                    />
+                  )}
+                </div>
+                <Button
+                  className={cn('clip-action-row', active === 1 && 'active')}
+                  disabled={saveDisabled}
+                  onMouseMove={() => setActive(1)}
+                  onFocus={() => setActive(1)}
+                  onClick={() => choose(1)}
+                >
+                  <Icon name="externalLink" size={16} />
+                  <span>{i18n.t('clip.saveAndOpen')}</span>
+                  {active === 1 && (
+                    <span className="clip-action-enter" aria-hidden="true">
+                      ↵
+                    </span>
+                  )}
+                </Button>
+                {phase === 'error' && (
+                  <p className="clip-error" role="alert">
+                    {errorMsg}
+                  </p>
                 )}
-              </div>
-              <ClipSaveButton
-                loading={isLoading}
-                destLabel={destShort}
-                folders={folders}
-                dest={dest}
-                setDest={setDest}
-                onSave={() => commit(false)}
-              />
-              <button className="clip-link-btn" onClick={() => commit(true)}>
-                {i18n.t('clip.saveAndOpen')}
-              </button>
-            </>
+                {!workspacePath && (
+                  <p className="clip-error" role="alert">
+                    {i18n.t('clip.needsWorkspace')}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="pb-preview clip-reader">
+          {showExisting ? (
+            <ClipExistingPreview
+              host={host}
+              preview={urlPreview}
+              existing={existing}
+              location={existingLocation}
+            />
+          ) : phase === 'ready' && urlPreview ? (
+            <ClipReaderPreview host={host} preview={urlPreview} />
+          ) : (
+            <ClipSkeleton host={host} fetching={phase === 'fetching'} />
           )}
         </div>
       </div>
-
-      {/* RIGHT — reader preview */}
-      <div className="pb-preview clip-reader">
-        {showExisting && urlPreview ? (
-          <ClipExistingPreview host={host} preview={urlPreview} existing={existing!} />
-        ) : phase === 'ready' && urlPreview ? (
-          <ClipReaderPreview host={host} preview={urlPreview} destLabel={destShort} />
-        ) : (
-          <ClipSkeleton host={host} hue={hue} fetching={phase === 'fetching'} />
-        )}
+      <div className="pb-foot clip-foot">
+        <div className="pb-foot-hints">
+          {askShortcut}
+          {!showExisting && (
+            <span>
+              <kbd>tab</kbd>
+              {i18n.t('search.acFolder')}
+            </span>
+          )}
+          <span>
+            <kbd>
+              <QIcon name="arrowUpDown" size={12} />
+            </kbd>
+            {i18n.t('clip.selectAction')}
+          </span>
+          <span>
+            <kbd>↵</kbd>
+            {i18n.t(
+              menuOpen || (showExisting && active === 1)
+                ? 'clip.chooseAction'
+                : showExisting && active === 0
+                  ? 'clip.openAction'
+                  : 'menu.save',
+            )}
+          </span>
+          <span title={i18n.t('clip.closeShortcut')}>
+            <kbd>esc</kbd>
+          </span>
+        </div>
       </div>
     </>
   )
 })
-
-/* ---- Save split button ---- */
-
-function ClipSaveButton({
-  loading,
-  destLabel,
-  folders,
-  dest,
-  setDest,
-  onSave,
-  hideChevron,
-}: {
-  loading: boolean
-  destLabel: string
-  folders: { id: string; label: string }[]
-  dest: string
-  setDest: (d: string) => void
-  onSave: () => void
-  hideChevron?: boolean
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDoc = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [menuOpen])
-
-  return (
-    <div className={cn('clip-save', 'block')} ref={wrapRef}>
-      <div className={cn('clip-save-btn', loading && 'loading')}>
-        <button className="clip-save-main" onClick={onSave} disabled={loading}>
-          {loading ? (
-            <>
-              <span className="clip-spinner-sm" /> {i18n.t('clip.savingWhenReady')}
-            </>
-          ) : hideChevron ? (
-            <>
-              <kbd>↵</kbd> {destLabel}
-            </>
-          ) : (
-            <>
-              <kbd>↵</kbd>{' '}
-              <Trans i18nKey="clip.saveTo" values={{ dest: destLabel }} components={{ b: <b /> }} />
-            </>
-          )}
-        </button>
-        {!loading && !hideChevron && (
-          <button
-            className={cn('clip-save-dest', menuOpen && 'open')}
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label={i18n.t('clip.changeFolder')}
-          >
-            <QIcon name="chev" size={13} />
-          </button>
-        )}
-      </div>
-      {menuOpen && (
-        <FolderMenu
-          folders={folders}
-          dest={dest}
-          setDest={(d) => {
-            setDest(d)
-            setMenuOpen(false)
-          }}
-          onClose={() => setMenuOpen(false)}
-        />
-      )}
-    </div>
-  )
-}
 
 /* ---- Folder dropdown ---- */
 
@@ -967,27 +1065,32 @@ function FolderMenu({
   const [q, setQ] = useState('')
   const [hi, setHi] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   useEffect(() => inputRef.current?.focus(), [])
 
   const filtered = useMemo(
     () => folders.filter((f) => f.label.toLowerCase().includes(q.toLowerCase())),
     [folders, q],
   )
+  useEffect(() => {
+    listRef.current?.children[hi]?.scrollIntoView({ block: 'nearest' })
+  }, [hi, filtered])
 
   const pick = (f: { id: string }) => setDest(f.id)
 
   const onKey = (e: React.KeyboardEvent) => {
     e.stopPropagation()
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setHi((h) => Math.min(filtered.length - 1, h + 1))
+      setHi((h) => Math.max(0, Math.min(filtered.length - 1, h + 1)))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setHi((h) => Math.max(0, h - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (filtered[hi]) pick(filtered[hi])
-    } else if (e.key === 'Escape') {
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
       e.preventDefault()
       onClose()
     }
@@ -1000,14 +1103,17 @@ function FolderMenu({
         <input
           ref={inputRef}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value)
+            setHi(0)
+          }}
           onKeyDown={onKey}
           placeholder={i18n.t('clip.findFolder')}
           spellCheck={false}
           autoComplete="off"
         />
       </div>
-      <div className="clip-dest-list">
+      <div className="clip-dest-list" ref={listRef}>
         {filtered.map((f, i) => (
           <button
             key={f.id}
@@ -1035,15 +1141,7 @@ function FolderMenu({
 
 /* ---- Reader preview (right pane, ready state) ---- */
 
-function ClipReaderPreview({
-  host,
-  preview,
-  destLabel,
-}: {
-  host: string
-  preview: UrlPreview
-  destLabel: string
-}) {
+function ClipReaderPreview({ host, preview }: { host: string; preview: UrlPreview }) {
   const previewHtml = useMemo(() => {
     const textOnly = preview.bodyPreview.replace(/!\[[^\]]*\]\([^)]+\)\n*/g, '')
     return renderPreviewHtml(textOnly, [])
@@ -1052,7 +1150,8 @@ function ClipReaderPreview({
   return (
     <div className="clip-rd">
       <div className="clip-rd-kicker">
-        <QIcon name="globe" size={12} /> {i18n.t('clip.webClip')} · {host}
+        <Favicon url={preview.faviconUrl} size={14} fallback="globe" /> {i18n.t('clip.webClip')} ·{' '}
+        {host}
       </div>
       <div className="clip-rd-title">{preview.title}</div>
       <div className="clip-rd-meta">
@@ -1063,16 +1162,8 @@ function ClipReaderPreview({
             {i18n.t('search.imagesCount', { count: preview.imageCount })}
           </>
         )}
-        <span className="clip-dot" />
-        {destLabel}
       </div>
-      <div className="clip-rd-rule" />
-      {preview.excerpt ? (
-        <p className="clip-rd-lead">{preview.excerpt}</p>
-      ) : (
-        <p className="clip-rd-lead placeholder">{i18n.t('clip.clippedLead', { host })}</p>
-      )}
-      <div className="clip-rd-rule" />
+      {preview.excerpt ? <p className="clip-rd-lead">{preview.excerpt}</p> : null}
       <div className="pb-prev-md" dangerouslySetInnerHTML={{ __html: previewHtml }} />
     </div>
   )
@@ -1084,40 +1175,41 @@ function ClipExistingPreview({
   host,
   preview,
   existing,
+  location,
 }: {
   host: string
-  preview: UrlPreview
-  existing: { path: string; title: string; savedAt: number }
+  preview: UrlPreview | null
+  existing: { path: string; title: string; savedAt: number; favicon?: string }
+  location?: string
 }) {
   const previewHtml = useMemo(() => {
-    const textOnly = preview.bodyPreview.replace(/!\[[^\]]*\]\([^)]+\)\n*/g, '')
+    const textOnly = (preview?.bodyPreview ?? '').replace(/!\[[^\]]*\]\([^)]+\)\n*/g, '')
     return renderPreviewHtml(textOnly, [])
-  }, [preview.bodyPreview])
+  }, [preview?.bodyPreview])
 
   return (
     <div className="clip-rd existing">
       <div className="clip-rd-kicker">
-        <QIcon name="file" size={12} /> {i18n.t('clip.webClip')} · {host}
+        <Favicon path={existing.favicon} url={preview?.faviconUrl} size={14} fallback="globe" />{' '}
+        {i18n.t('clip.webClip')} · {host}
       </div>
-      <div className="clip-rd-title">{existing.title || preview.title}</div>
+      <div className="clip-rd-title">{existing.title || preview?.title || host}</div>
       <div className="clip-rd-meta">
         {relTime(existing.savedAt)
           ? i18n.t('clip.savedRel', { time: relTime(existing.savedAt) })
           : i18n.t('clip.savedPreviously')}
-        {preview.wordCount > 0 && (
+        {location && (
           <>
             <span className="clip-dot" />
-            {i18n.t('search.wordsCount', { count: preview.wordCount })}
+            {location}
           </>
         )}
       </div>
-      <div className="clip-rd-rule" />
-      {preview.excerpt ? (
+      {preview?.excerpt ? (
         <p className="clip-rd-lead">{preview.excerpt}</p>
       ) : (
         <p className="clip-rd-lead placeholder">{i18n.t('clip.prevClipped', { host })}</p>
       )}
-      <div className="clip-rd-rule" />
       <div className="pb-prev-md" dangerouslySetInnerHTML={{ __html: previewHtml }} />
     </div>
   )
@@ -1125,12 +1217,9 @@ function ClipExistingPreview({
 
 /* ---- Skeleton (right pane, fetching state) ---- */
 
-function ClipSkeleton({ host, hue, fetching }: { host: string; hue: number; fetching: boolean }) {
+function ClipSkeleton({ host, fetching }: { host: string; fetching: boolean }) {
   return (
     <div className={cn('clip-sk', fetching && 'shimmer')}>
-      <div className="clip-sk-fav" style={{ '--h': hue } as React.CSSProperties}>
-        {host[0].toUpperCase()}
-      </div>
       <div className="clip-sk-domain">
         {fetching ? i18n.t('clip.capturingFrom', { host }) : host}
       </div>

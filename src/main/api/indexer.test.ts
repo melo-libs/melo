@@ -17,6 +17,7 @@ import {
   getClipSources,
   getClipSourcesForPaths,
   getFileMeta,
+  findBySource,
   fullScan,
 } from './indexer'
 import { getSmartViews, saveSmartViews } from './smartViews'
@@ -46,6 +47,20 @@ beforeEach(() => {
 afterEach(() => {
   closeIndex()
   fs.removeSync(root)
+})
+
+it('returns the saved favicon when finding a clipped source', () => {
+  const notePath = write(
+    'clip.md',
+    '---\nsource: https://example.com/article\nfavicon: ".assets/favicons/example.svg"\n---\n\n# Article\n',
+  )
+  expect(findBySource('https://example.com/article')).toMatchObject({
+    path: notePath,
+    favicon: '.assets/favicons/example.svg',
+  })
+  write('no-icon.md', '---\nsource: https://example.com/plain\n---\n\n# Plain\n')
+  expect(findBySource('https://example.com/plain')?.favicon).toBeUndefined()
+  expect(findBySource('https://example.com/missing')).toBeNull()
 })
 
 describe('resolveWikilinks', () => {

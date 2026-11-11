@@ -1,29 +1,33 @@
 import { useEffect, useState } from 'react'
-import { Icon } from './Icon'
+import { Icon, type IconName } from './Icon'
 import './Favicon.scss'
 
 export interface FaviconProps {
   path?: string
+  url?: string
   size?: number
+  fallback?: IconName
 }
 
-/** Reuse the captured local asset without fetching the source website again. */
-export const Favicon = ({ path, size = 16 }: FaviconProps) => {
-  const [failedPath, setFailedPath] = useState<string>()
-  useEffect(() => setFailedPath(undefined), [path])
+/** Saved clips reuse their local asset; unsaved previews can use the site's icon URL. */
+export const Favicon = ({ path, url, size = 16, fallback = 'paperclip' }: FaviconProps) => {
+  const src = path ? `app://${encodeURIComponent(path)}` : url
+  const [failedSrc, setFailedSrc] = useState<string>()
+  useEffect(() => setFailedSrc(undefined), [src])
 
   return (
     <span className="favicon" style={{ width: size, height: size }}>
-      {path && path !== failedPath ? (
+      {src && src !== failedSrc ? (
         <img
-          src={`app://${encodeURIComponent(path)}`}
+          src={src}
+          referrerPolicy="no-referrer"
           alt=""
           width={size}
           height={size}
-          onError={() => setFailedPath(path)}
+          onError={() => setFailedSrc(src)}
         />
       ) : (
-        <Icon name="paperclip" size={size} />
+        <Icon name={fallback} size={size} />
       )}
     </span>
   )

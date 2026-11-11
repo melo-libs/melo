@@ -596,11 +596,12 @@ export interface IpcChannelDefinitions {
       imageCount: number
       excerpt: string
       bodyPreview: string
+      faviconUrl: string
     }>
   }
   [IpcChannels.InvokeFindBySource]: {
     args: { url: string }
-    response: IpcResponse<{ path: string; title: string; savedAt: number } | null>
+    response: IpcResponse<{ path: string; title: string; savedAt: number; favicon?: string } | null>
   }
   [IpcChannels.InvokeGetLanguage]: {
     args: undefined
