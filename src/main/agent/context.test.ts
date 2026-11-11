@@ -1,5 +1,60 @@
 import { expect, it } from 'vitest'
 import { assembleContext, MAX_CONTEXT_CHARS } from './context'
+
+it('makes newly attached files the default targets and labels the open editor file as background', () => {
+  const attachments = [
+    { id: 'csv', name: '客户问题.csv', size: 42, path: 'Inbox/客户问题.csv' },
+    { id: 'pdf', name: 'Report.pdf', size: 123, path: 'Inbox/Report.pdf' },
+  ]
+  const prompt = assembleContext({
+    text: '帮我整理这个文件',
+    context: { activeFilePath: 'Inbox/The CODE Idea in Melo.md', attachments },
+    memory: { user: '', workspace: '' },
+    history: [],
+  })
+  const current = prompt.slice(
+    prompt.indexOf('Files attached to THIS message (default request targets'),
+  )
+  expect(current).toContain(
+    JSON.stringify(attachments.map(({ id, name, path }) => ({ id, name, path }))),
+  )
+  expect(current).toContain(
+    'Background editor file at send time (not an attached-file target), relative to workspace: Inbox/The CODE Idea in Melo.md',
+  )
+  expect(current).not.toContain('File open in the editor at send time')
+  expect(prompt).toContain(
+    'A user request explicitly naming another file or referring to a quoted passage or the open editor file overrides that default.',
+  )
+  expect(prompt).toContain(
+    'If several sources are plausible and the request does not distinguish them, ask which one before changing files.',
+  )
+  expect(prompt).toContain('Never edit an unrelated editor file just because it is open.')
+  expect(current).toContain('User request:\n帮我整理这个文件')
+})
+
+it('keeps attachment references in follow-ups without turning the current editor into the ongoing task', () => {
+  const prompt = assembleContext({
+    text: '为什么放到那个目录？',
+    context: { activeFilePath: 'Ideas.md' },
+    memory: { user: '', workspace: '' },
+    history: [
+      {
+        id: 'request',
+        role: 'user',
+        content: '整理这个文件',
+        createdAt: 1,
+        context: {
+          activeFilePath: 'Guide.md',
+          attachments: [{ id: 'csv', name: 'report.csv', size: 42, path: 'Inbox/report.csv' }],
+        },
+      },
+    ],
+  })
+  expect(prompt).toContain('Without new attachments, continue the subject of an ongoing task')
+  expect(prompt).toContain('csv: Inbox/report.csv')
+  expect(prompt).toContain('File open in the editor at send time, relative to workspace: Ideas.md')
+})
+
 it('carries real filing and undo outcomes alongside a discussion, without raw command output', () => {
   const prompt = assembleContext({
     text: 'Why did you suggest that folder?',

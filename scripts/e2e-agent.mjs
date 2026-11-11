@@ -176,7 +176,7 @@ async function respondToFixture(request, response) {
       )
       .findLast((text) => text.includes('User request:')) ?? ''
   const currentRequest = promptText.split('User request:\n').at(-1) ?? ''
-  if (currentRequest.startsWith('active_file_fixture'))
+  if (currentRequest.startsWith('active_file_fixture') || currentRequest === 'file_intake_fixture')
     contextPrompts.set(currentRequest, promptText)
   let metadataReply = ''
   if (currentRequest === 'tags_fixture' || currentRequest === 'smart_fixture') {
@@ -801,11 +801,15 @@ try {
     await tagEditor.waitFor({ state: 'hidden' })
     await editor.hover()
     const removeTrip = page.getByRole('button', { name: 'Remove #旅行计划', exact: true })
-    assert.equal(await removeTrip.evaluate((el) => getComputedStyle(el).opacity), '0')
+    await waitUntil('tag remove button hides away from hover', () =>
+      removeTrip.evaluate((el) => getComputedStyle(el).opacity === '0'),
+    )
     const tripTag = page.locator('.document-tag').filter({ hasText: '#旅行计划' })
     const tripBounds = await tripTag.boundingBox()
     await tripTag.hover()
-    assert.equal(await removeTrip.evaluate((el) => getComputedStyle(el).opacity), '1')
+    await waitUntil('tag remove button appears on hover', () =>
+      removeTrip.evaluate((el) => getComputedStyle(el).opacity === '1'),
+    )
     assert.deepEqual(await tripTag.boundingBox(), tripBounds)
     if (process.env.MELO_E2E_TAGS_SCREENSHOT)
       await page.screenshot({
@@ -1151,7 +1155,7 @@ try {
   )
   await page.locator('.agent-inline-file').filter({ hasText: 'Packing list' }).click()
   await waitUntil('open a cited file', async () => (await editor.innerText()).includes('Raincoat'))
-  const sourceCount = await page.locator('.agent-source-divider').count()
+  const dateDividerCount = await page.locator('.agent-date-divider').count()
   assert.equal(await page.locator('.agent-context-strip').count(), 0)
   await page.locator('.agent-compose textarea').fill('active_file_fixture packing')
   await page.evaluate(
@@ -1172,7 +1176,7 @@ try {
       .get('active_file_fixture packing')
       .includes('editor at send time, relative to workspace: packing.md'),
   )
-  assert.equal(await page.locator('.agent-source-divider').count(), sourceCount + 1)
+  assert.equal(await page.locator('.agent-date-divider').count(), dateDividerCount)
   await page.locator('.agent-compose textarea').fill('A draft about packing')
   await page.locator('.agent-user .agent-quote-source').click()
   await waitUntil('open a quoted source', async () =>
@@ -1180,8 +1184,8 @@ try {
   )
   assert.equal(await page.locator('.agent-context-strip').count(), 0)
   assert.equal(
-    await page.locator('.agent-source-divider').count(),
-    sourceCount + 1,
+    await page.locator('.agent-date-divider').count(),
+    dateDividerCount,
     'switching tabs without sending must not create history boundaries',
   )
   assert.equal(await page.locator('.agent-compose textarea').inputValue(), 'A draft about packing')
@@ -1196,11 +1200,21 @@ try {
       .get('active_file_fixture note')
       .includes('editor at send time, relative to workspace: note.md'),
   )
-  assert.equal(await page.locator('.agent-source-divider').count(), sourceCount + 2)
-  if (process.env.MELO_E2E_CONTEXT_SCREENSHOT)
+  assert.equal(await page.locator('.agent-date-divider').count(), dateDividerCount)
+  if (process.env.MELO_E2E_CONTEXT_SCREENSHOT) {
     await page
       .locator('.agent-window')
       .screenshot({ path: process.env.MELO_E2E_CONTEXT_SCREENSHOT })
+    const body = page.locator('.agent-body')
+    const position = await body.evaluate((element) => element.scrollTop)
+    await page.locator('.agent-date-divider').first().scrollIntoViewIfNeeded()
+    await page.locator('.agent-window').screenshot({
+      path: process.env.MELO_E2E_CONTEXT_SCREENSHOT.replace('.png', '-dates.png'),
+    })
+    await body.evaluate((element, top) => {
+      element.scrollTop = top
+    }, position)
+  }
 
   await page.locator('.toast').waitFor({ state: 'hidden' })
   await page.locator('.agent-compose textarea').fill('edit_fixture')
@@ -1266,6 +1280,16 @@ try {
       (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
   )
   assert((await editor.innerText()).includes('Sunday'))
+  assert(
+    (await page.locator('.agent-approval-record > summary').last().innerText()).includes('note.md'),
+  )
+  assert(
+    (await page.locator('.agent-change-details > summary').last().innerText()).includes('note.md'),
+  )
+  if (process.env.MELO_E2E_DIFF_SCREENSHOT)
+    await page.locator('.agent-window').screenshot({
+      path: process.env.MELO_E2E_DIFF_SCREENSHOT.replace('.png', '-result.png'),
+    })
   await page
     .locator('.agent-changes')
     .last()
@@ -1876,6 +1900,51 @@ try {
           'I suggest Travel/Hangzhou/Hotel.txt',
         ) && (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
     )
+    const attachmentPrompt = contextPrompts.get('file_intake_fixture')
+    assert(attachmentPrompt?.includes('Files attached to THIS message (default request targets'))
+    assert(
+      attachmentPrompt.includes(
+        'Background editor file at send time (not an attached-file target)',
+      ),
+    )
+    for (const file of intakeFiles) {
+      assert(
+        attachmentPrompt.includes(
+          JSON.stringify({ id: file.id, name: file.name, path: `Inbox/${file.name}` }),
+        ),
+      )
+    }
+    assert.equal(await page.locator('.agent-source-divider').count(), 0)
+    for (const file of intakeFiles) {
+      await page
+        .locator('.agent-user .agent-attachment-meta strong')
+        .filter({ hasText: file.name })
+        .waitFor()
+    }
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT)
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-attachment-focus.png'),
+      })
+    if (process.env.MELO_E2E_INTAKE_SCREENSHOT) {
+      const originalStyle = await page.locator('.agent-window').getAttribute('style')
+      await page.locator('.agent-window').evaluate((element) => {
+        element.style.width = '360px'
+      })
+      assert.equal(
+        await page
+          .locator('.agent-user .agent-attachments')
+          .last()
+          .evaluate((element) => element.scrollWidth > element.clientWidth),
+        false,
+      )
+      await page.locator('.agent-window').screenshot({
+        path: process.env.MELO_E2E_INTAKE_SCREENSHOT.replace('.png', '-sent-narrow.png'),
+      })
+      await page.locator('.agent-window').evaluate((element, style) => {
+        if (style === null) element.removeAttribute('style')
+        else element.setAttribute('style', style)
+      }, originalStyle)
+    }
     assert.equal(await page.locator('.agent-permission[data-pending]').count(), 0)
     assert.equal(
       await page.locator('.agent-assistant').last().locator('mark').innerText(),
@@ -1931,6 +2000,7 @@ try {
       'filing must wait for user approval',
     )
     assert(!fs.existsSync(path.join(workspace, 'Reference')), 'a suggestion does not move files')
+    const filingDateCount = await page.locator('.agent-date-divider').count()
     await textarea.fill('file_intake_why_fixture: Why Hangzhou?')
     await page.getByRole('button', { name: 'Send', exact: true }).click()
     await waitUntil(
@@ -1940,6 +2010,7 @@ try {
           'I suggested Hangzhou because',
         ) && (await page.getByRole('button', { name: 'Send', exact: true }).isVisible()),
     )
+    assert.equal(await page.locator('.agent-date-divider').count(), filingDateCount)
     assert(fs.existsSync(path.join(workspace, 'Inbox/reservation.txt')))
     assert(!fs.existsSync(path.join(workspace, 'Travel/Hangzhou')))
     assert.equal(await page.locator('.agent-permission[data-pending]').count(), 0)

@@ -4,7 +4,12 @@ import { expect, it, vi } from 'vitest'
 import { AgentPermission } from './AgentPermission'
 import type { AgentApproval } from '@shared/types/agent'
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: { from?: string; to?: string }) =>
+      key === 'agent.movedPath' ? `${values?.from} → ${values?.to}` : key,
+  }),
+}))
 const approval: AgentApproval = {
   id: 'edit',
   operation: { kind: 'edit', path: 'Note.md', diff: '@@ -1 +1 @@\n-old <script>\n+new <img>' },
@@ -71,4 +76,24 @@ it.each([
     }),
   )
   expect(html).not.toContain('agent.allowConversation')
+})
+
+it.each([
+  { kind: 'edit' as const, path: 'Notes/report.md', diff: '' },
+  { kind: 'move' as const, source: 'Inbox/report.csv', destination: 'Research/report.csv' },
+])('keeps actual file paths visible in a collapsed $kind record', (operation) => {
+  const html = renderToStaticMarkup(
+    createElement(AgentPermission, {
+      permission: { id: 'done', operation, status: 'allowed' },
+      active: false,
+      busy: false,
+      workspaceName: 'notes',
+      onRespond: () => {},
+    }),
+  )
+  const summary = html.slice(0, html.indexOf('</summary>'))
+  if (operation.kind === 'edit') expect(summary).toContain('Notes/report.md')
+  else {
+    expect(summary).toContain('Inbox/report.csv → Research/report.csv')
+  }
 })

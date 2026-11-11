@@ -282,54 +282,15 @@
   right: 0;
   top: 0;
 }
-.agent-source-divider {
+.agent-date-divider {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 6px 0 16px;
-  min-width: 0;
-  // A referenced passage needs more separation from the preceding exchange.
-  &:not(:first-child) {
-    margin-top: 48px;
-  }
-  &::before,
-  &::after {
-    content: '';
-    flex: 1;
-    min-width: 12px;
-    height: 1px;
-    background: var(--hairline-3);
-  }
-  > button,
-  > span {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    min-width: 0;
-    max-width: calc(100% - 44px);
-    gap: 5px;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    color: var(--ink-2);
-    font: inherit;
-    font-size: 12px;
-    line-height: 18px;
-  }
-  svg {
-    flex-shrink: 0;
-  }
-  strong {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-weight: 500;
-    max-width: 240px;
-  }
-  time {
-    color: var(--ink-3);
-    font-size: 11px;
+  justify-content: center;
+  margin: 24px 0 16px;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 18px;
+  &:first-child {
+    margin-top: 4px;
   }
 }
 .agent-transcript-empty {
@@ -1185,6 +1146,8 @@
   min-width: 0;
   max-width: 150px;
   gap: 3px;
+  font-weight: 400;
+  text-align: left;
   strong {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1204,8 +1167,8 @@
     border: 0;
   }
   .agent-attachment > .ui-button {
-    height: 36px;
-    padding: 0;
+    height: 44px;
+    padding: 4px 8px;
   }
   .file-thumbnail {
     width: 44px;
@@ -2223,4 +2186,9 @@
   color: var(--danger);
   font-size: 12px;
   line-height: 18px;
+}
+
+.agent-operation-target {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

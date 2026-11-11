@@ -7,6 +7,8 @@
 
 export const en = {
   agent: {
+    historyToday: 'Today',
+    historyYesterday: 'Yesterday',
     moreHistory: 'Load more',
     changes: 'File changes',
     movedPath: '{{from}} → {{to}}',

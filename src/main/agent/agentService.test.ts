@@ -99,6 +99,7 @@ describe('AgentService lifecycle', () => {
     )
     const view = service.create(root, 'claude')
     service.send(view.conversation.id, 'Organize this file', {
+      activeFilePath: 'Inbox/The CODE Idea in Melo.md',
       attachments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'booking.pdf', size: 10 }],
     })
     expect(factory).not.toHaveBeenCalled()
@@ -113,6 +114,15 @@ describe('AgentService lifecycle', () => {
       store.messages(view.conversation.id).find((message) => message.receipt)?.receipt?.files[0],
     ).toMatchObject({ status: 'stored', path: 'Inbox/booking.pdf' })
     expect(prompt.mock.calls[0][0]).toContain('Inbox/booking.pdf')
+    expect(prompt.mock.calls[0][0]).toContain(
+      'Files attached to THIS message (default request targets',
+    )
+    expect(prompt.mock.calls[0][0]).toContain(
+      'Background editor file at send time (not an attached-file target), relative to workspace: Inbox/The CODE Idea in Melo.md',
+    )
+    expect(prompt.mock.calls[0][0]).not.toContain(
+      'File open in the editor at send time, relative to workspace: Inbox/The CODE Idea in Melo.md',
+    )
   })
 
   it('preserves failed receipt state without handing an unreceived file to the Harness', async () => {

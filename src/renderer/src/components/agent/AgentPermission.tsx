@@ -120,6 +120,8 @@ export function AgentPermission({
     operation.kind === 'move'
       ? t('agent.movedPath', { from: operation.source, to: operation.destination })
       : location
+  const fileTarget =
+    native || operation.kind === 'memory' || operation.kind === 'organize' ? null : target
   const pending = operation.kind !== 'organize' && active && permission.status === 'pending'
   const status = permission.status === 'pending' && !pending ? 'expired' : permission.status
   const content =
@@ -239,7 +241,14 @@ export function AgentPermission({
   return (
     <details className="agent-permission agent-approval-record">
       <summary>
-        {title} · {t(`agent.approvalLabel.${status}`)}
+        {title}
+        {fileTarget && (
+          <>
+            {' '}
+            · <span className="agent-operation-target">{fileTarget}</span>
+          </>
+        )}{' '}
+        · {t(`agent.approvalLabel.${status}`)}
       </summary>
       {content}
     </details>
