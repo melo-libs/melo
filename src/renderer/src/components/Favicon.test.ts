@@ -36,3 +36,30 @@ it('retries a failed favicon after switching away and back', async () => {
     flushSync(() => root.unmount())
   }
 })
+
+it('uses the preview icon URL, preferring a saved asset when present', async () => {
+  const { window } = parseHTML('<html><body><div id="root"></div></body></html>')
+  vi.stubGlobal('window', window)
+  vi.stubGlobal('document', window.document)
+  const { createRoot } = await import('react-dom/client')
+  const { flushSync } = await import('react-dom')
+  const container = window.document.getElementById('root')!
+  const root = createRoot(container)
+  const url = 'https://example.com/brand.svg'
+  try {
+    flushSync(() => root.render(createElement(Favicon, { url, fallback: 'globe' })))
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(url)
+    expect(container.querySelector('img')?.getAttribute('referrerPolicy')).toBe('no-referrer')
+    flushSync(() => container.querySelector('img')!.dispatchEvent(new window.Event('error')))
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('svg')).not.toBeNull()
+
+    const path = '.assets/favicons/saved.svg'
+    flushSync(() => root.render(createElement(Favicon, { path, url })))
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      `app://${encodeURIComponent(path)}`,
+    )
+  } finally {
+    flushSync(() => root.unmount())
+  }
+})

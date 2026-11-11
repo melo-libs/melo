@@ -12,6 +12,7 @@ import {
   countImages,
   downloadImages,
   downloadFavicon,
+  extractFaviconUrl,
   sanitizeFilename,
   uniquePath,
   buildFrontmatter,
@@ -48,6 +49,7 @@ export interface PreviewResult {
   imageCount: number
   excerpt: string
   bodyPreview: string
+  faviconUrl: string
 }
 
 export async function previewUrl(url: string): Promise<PreviewResult> {
@@ -66,6 +68,7 @@ export async function previewUrl(url: string): Promise<PreviewResult> {
     imageCount: countImages(markdown),
     excerpt: article.excerpt,
     bodyPreview: markdown,
+    faviconUrl: extractFaviconUrl(html, url),
   }
 }
 

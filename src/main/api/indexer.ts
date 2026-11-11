@@ -585,18 +585,28 @@ export function getFilesByTag(tag: string): { path: string; title: string }[] {
 
 export function findBySource(
   sourceUrl: string,
-): { path: string; title: string; savedAt: number } | null {
+): { path: string; title: string; savedAt: number; favicon?: string } | null {
   if (!db) return null
   const normalized = normalizeUrl(sourceUrl)
   const row = db
     .prepare(
-      `SELECT f.path AS path, f.title AS title, f.mtime AS mtime FROM files f
+      `SELECT f.path AS path, f.title AS title, f.mtime AS mtime, icon.value AS favicon FROM files f
        JOIN fields d ON d.file_id = f.id
+       LEFT JOIN fields icon ON icon.file_id = f.id AND icon.key = 'favicon'
        WHERE d.key = 'source' AND d.value = ?
        LIMIT 1`,
     )
-    .get(normalized) as { path: string; title: string; mtime: number } | undefined
-  return row ? { path: toAbs(row.path), title: row.title, savedAt: row.mtime } : null
+    .get(normalized) as
+    | { path: string; title: string; mtime: number; favicon: string | null }
+    | undefined
+  return row
+    ? {
+        path: toAbs(row.path),
+        title: row.title,
+        savedAt: row.mtime,
+        favicon: row.favicon?.replace(/^"|"$/g, ''),
+      }
+    : null
 }
 
 /* ---------------- wikilink resolution (F4) ----------------

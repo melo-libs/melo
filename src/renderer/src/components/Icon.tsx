@@ -42,6 +42,9 @@ const paths: Record<string, JSX.Element> = {
       <path d="M9 5.5v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
+  refresh: (
+    <path d="M3 4.5v4h4M3.5 7a6 6 0 1 1-.2 4" strokeLinecap="round" strokeLinejoin="round" />
+  ),
   settings: (
     <>
       <path d="M3 5h12M3 13h12" strokeLinecap="round" />
