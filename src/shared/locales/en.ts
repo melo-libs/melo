@@ -888,7 +888,6 @@ export const en = {
     clipped: 'Clipped {{date}}',
     viewOriginal: 'View original',
     alreadySaved: 'Already saved',
-    linkDetected: 'Link detected',
     openInstead: 'Open it instead of clipping a duplicate.',
     openExisting: 'Open existing note',
     clipAgain: 'Clip again anyway',
@@ -908,8 +907,6 @@ export const en = {
     noMatchingFolders: 'No matching folders',
     webClip: 'Web clip',
     capturingFrom: 'Capturing from {{host}}…',
-    clippedLead:
-      'Clipped from {{host}}. The full article text will sync to this note when you open it — then highlight and distill the parts that resonate.',
     prevClipped: 'Previously clipped from {{host}}.',
     savedRel: 'Saved {{time}}',
     savedPreviously: 'Saved previously',

@@ -711,12 +711,6 @@ const ClipCapture = React.forwardRef<ClipPanelHandle, ClipCaptureProps>(function
 
   // Auto-fetch on mount
   useEffect(() => {
-    setPhase('fetching')
-    setUrlPreview(null)
-    setErrorMsg(null)
-    setExisting(null)
-    setPending(null)
-    setSaving(false)
     let alive = true
     Promise.all([
       window.api.invoke(IpcChannels.InvokePreviewUrl, { url }),
