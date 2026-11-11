@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { persistTabSessionNow } from '../../store/tabSession'
 import { settingsAtom } from '../../store/settings'
 import i18n from '../../i18n'
@@ -41,6 +41,7 @@ import './table/table.scss'
 
 export interface EditorProps {
   theme: 'light' | 'dark'
+  agentPanel?: ReactNode
   sidebarAvailable?: boolean
   onLifecycleReadyChange?: (ready: boolean) => void
   onToggleSidebar: () => void
@@ -81,6 +82,7 @@ const bookmarkUrl = (content: string): string | null => {
 
 export const Editor = ({
   theme,
+  agentPanel,
   sidebarAvailable = true,
   onLifecycleReadyChange,
   onToggleSidebar,
@@ -457,43 +459,50 @@ export const Editor = ({
         onToggleOutline={onToggleOutline}
         onToggleTheme={onToggleTheme}
       />
-      {hasTabs ? (
-        <>
-          <Tabs
-            tabs={tabs}
-            activeId={activeTabId ?? ''}
-            onSelect={handleSelectTab}
-            onClose={handleCloseTab}
-            onCloseOthers={handleCloseOthers}
-            onCloseToRight={handleCloseToRight}
-            onNew={handleNewTab}
-          />
-          <div className="ed-scroll" data-viewer={viewerActive || undefined}>
-            <div style={{ display: viewerActive ? 'none' : 'contents' }}>
-              <EditorPage
-                activeTabId={viewerActive ? null : activeTabId}
-                title={activeTab?.title ?? 'Untitled'}
-                width={editorWidth}
-                onShare={setSharePayload}
-              />
-            </div>
-            {viewerActive && activeTab && activeKind && (
-              <ViewerPage
-                key={activeTab.id}
-                path={activeTab.id}
-                kind={activeKind}
-                name={activeTab.title}
-              />
-            )}
-          </div>
-          <BottomBar
-            filePath={activeTab?.path ?? null}
-            viewerKind={viewerActive ? activeKind : null}
-          />
-        </>
-      ) : (
-        <EmptyState />
+      {hasTabs && (
+        <Tabs
+          tabs={tabs}
+          activeId={activeTabId ?? ''}
+          onSelect={handleSelectTab}
+          onClose={handleCloseTab}
+          onCloseOthers={handleCloseOthers}
+          onCloseToRight={handleCloseToRight}
+          onNew={handleNewTab}
+        />
       )}
+      <div className="editor-workspace">
+        <div className="editor-content">
+          {hasTabs ? (
+            <>
+              <div className="ed-scroll" data-viewer={viewerActive || undefined}>
+                <div style={{ display: viewerActive ? 'none' : 'contents' }}>
+                  <EditorPage
+                    activeTabId={viewerActive ? null : activeTabId}
+                    title={activeTab?.title ?? 'Untitled'}
+                    width={editorWidth}
+                    onShare={setSharePayload}
+                  />
+                </div>
+                {viewerActive && activeTab && activeKind && (
+                  <ViewerPage
+                    key={activeTab.id}
+                    path={activeTab.id}
+                    kind={activeKind}
+                    name={activeTab.title}
+                  />
+                )}
+              </div>
+              <BottomBar
+                filePath={activeTab?.path ?? null}
+                viewerKind={viewerActive ? activeKind : null}
+              />
+            </>
+          ) : (
+            <EmptyState />
+          )}
+        </div>
+        {agentPanel}
+      </div>
 
       <ShareCard payload={sharePayload} onClose={() => setSharePayload(null)} />
     </div>

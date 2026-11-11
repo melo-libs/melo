@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { AgentContext } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
-import { agentCommand, agentMessagesAtom, agentEntrySeenAtom, openAgent } from '../../store/agent'
+import {
+  agentCommand,
+  agentMessagesAtom,
+  agentEntrySeenAtom,
+  openAgent,
+  agentPanelModeAtom,
+  agentPanelWidthAtom,
+} from '../../store/agent'
+import { agentDockWidth, AGENT_DOCK_MIN } from '../../lib/agentPanelLayout'
 import { openWorkspaceFile } from '../../lib/documentLinks'
 import { agentFilePath } from './agentFiles'
 import { toast } from '../Toaster'
@@ -21,7 +30,15 @@ import { useAgentGeometry } from './useAgentGeometry'
 import { useAgentController } from './useAgentController'
 import './agent.scss'
 
-export const AgentWindow = () => {
+export const AgentWindow = ({
+  docked,
+  dockWidth,
+  maxDockWidth,
+}: {
+  docked: boolean
+  dockWidth: number
+  maxDockWidth: number
+}) => {
   const { t } = useTranslation()
   const [settingsAccess, setSettingsAccess] = useState<'api'>()
   const openSettings = (access?: 'api') => {
@@ -73,7 +90,19 @@ export const AgentWindow = () => {
   useEffect(() => {
     if (root && !collapsed) setEntrySeen(true)
   }, [root, collapsed, setEntrySeen])
-  const { panel, drag, resize, captureClick } = useAgentGeometry(!!root, state.anchor, collapsed)
+  const setPanelMode = useSetAtom(agentPanelModeAtom)
+  const setPanelWidth = useSetAtom(agentPanelWidthAtom)
+  const { panel, drag, resize, captureClick, dockPreview } = useAgentGeometry(
+    !!root,
+    state.anchor,
+    collapsed,
+    {
+      docked,
+      maxWidth: maxDockWidth,
+      onMode: setPanelMode,
+      onWidth: setPanelWidth,
+    },
+  )
   const wasExpanded = useRef(false)
   useLayoutEffect(() => {
     if (collapsed && wasExpanded.current) panel.current?.querySelector('button')?.focus()
@@ -118,6 +147,18 @@ export const AgentWindow = () => {
     }
   }, [state.context])
   useLayoutEffect(() => {
+    const element = scroll.current
+    if (!element || collapsed || searching || settingsOpen) return
+    // Dragging out of the sidebar and reflowing a draft can resize the body
+    // without a React layout change. Preserve the same reading position then too.
+    const observer = new ResizeObserver(() => {
+      if (paging.current || prepend.current || jump.current) return
+      element.scrollTop = nearBottom.current ? element.scrollHeight : scrollTop.current
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [collapsed, searching, settingsOpen])
+  useLayoutEffect(() => {
     const el = scroll.current
     if (!el || searching || collapsed) return
     if (settingsOpen) return
@@ -140,7 +181,17 @@ export const AgentWindow = () => {
       el.scrollTop = prepend.current.top + el.scrollHeight - prepend.current.height
       prepend.current = null
     } else el.scrollTop = nearBottom.current ? el.scrollHeight : scrollTop.current
-  }, [messages, view?.status, searching, settingsOpen, state.open, collapsed, state.context])
+  }, [
+    messages,
+    view?.status,
+    searching,
+    settingsOpen,
+    state.open,
+    collapsed,
+    state.context,
+    docked,
+    dockWidth,
+  ])
   useEffect(() => {
     setHeaderScrolling(false)
     return () => {
@@ -260,11 +311,12 @@ export const AgentWindow = () => {
         else if (workspaceFile.startsWith(root! + '/'))
           void pasteAttachments(undefined, workspaceFile)
       }}
-      role={collapsed ? undefined : 'dialog'}
+      role={collapsed ? undefined : docked ? 'complementary' : 'dialog'}
       aria-label={t('agent.title')}
       onPointerDown={collapsed ? drag : undefined}
       onClickCapture={captureClick}
       data-collapsed={collapsed || undefined}
+      data-docked={docked || undefined}
       data-scrolling={(!collapsed && headerScrolling) || undefined}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing) {
@@ -274,6 +326,17 @@ export const AgentWindow = () => {
         }
       }}
     >
+      {dockPreview !== null &&
+        createPortal(
+          <div
+            className="agent-dock-preview"
+            style={{ width: dockWidth, top: dockPreview }}
+            aria-hidden="true"
+          >
+            <span>{t('agent.dockPreview')}</span>
+          </div>,
+          document.body,
+        )}
       {collapsed ? (
         <AgentEntry
           onOpen={() => {
@@ -310,6 +373,21 @@ export const AgentWindow = () => {
               {settingsOpen ? t('agent.connectionSettings') : 'Melo'}
             </strong>
             <div className="agent-head-actions">
+              <button
+                className="agent-quiet"
+                disabled={!docked && !dockWidth}
+                aria-label={t(docked ? 'agent.floatPanel' : 'agent.dockPanel')}
+                title={t(
+                  docked
+                    ? 'agent.floatPanel'
+                    : !dockWidth
+                      ? 'agent.dockUnavailable'
+                      : 'agent.dockPanel',
+                )}
+                onClick={() => setPanelMode(docked ? 'floating' : 'docked')}
+              >
+                <Icon name={docked ? 'externalLink' : 'panelR'} size={16} />
+              </button>
               {!settingsOpen && (
                 <button
                   className="agent-quiet"
@@ -516,14 +594,38 @@ export const AgentWindow = () => {
           )}
         </>
       )}
-      {!collapsed && (
-        <button
-          className="agent-resize"
-          tabIndex={-1}
-          aria-label={t('agent.resize')}
-          onPointerDown={resize}
-        />
-      )}
+      {!collapsed &&
+        (docked ? (
+          <div
+            className="agent-panel-resize"
+            role="separator"
+            aria-label={t('agent.resizePanel')}
+            aria-orientation="vertical"
+            aria-valuemin={AGENT_DOCK_MIN}
+            aria-valuemax={maxDockWidth}
+            aria-valuenow={dockWidth}
+            tabIndex={0}
+            onPointerDown={resize}
+            onKeyDown={(event) => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+              event.preventDefault()
+              const width =
+                event.key === 'Home'
+                  ? AGENT_DOCK_MIN
+                  : event.key === 'End'
+                    ? maxDockWidth
+                    : dockWidth + (event.key === 'ArrowLeft' ? 20 : -20)
+              setPanelWidth(agentDockWidth(width, maxDockWidth))
+            }}
+          />
+        ) : (
+          <button
+            className="agent-resize"
+            tabIndex={-1}
+            aria-label={t('agent.resize')}
+            onPointerDown={resize}
+          />
+        ))}
     </div>
   )
 }

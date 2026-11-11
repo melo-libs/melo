@@ -3,6 +3,8 @@
    empty state, preview inspector, builder modal.
    ============================================================ */
 
+@use '../../styles/mixins' as mixins;
+
 .smart-view .ico,
 .smart-modal .ico {
   display: inline-flex;
@@ -30,19 +32,12 @@
   font-family: var(--font-sans);
   font-size: 13px;
   border-right: 1px solid var(--hairline);
+  // Scrollbars stay inside the content box, separate from the resize hit area.
+  padding-right: mixins.$pane-resize-width;
 }
 .sv-resize {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
+  @include mixins.pane-resize;
   z-index: 10;
-}
-.sv-resize:hover,
-.sv-resize:active {
-  box-shadow: inset -2px 0 0 var(--hairline-2);
 }
 :where(.smart-view) button {
   font: inherit;

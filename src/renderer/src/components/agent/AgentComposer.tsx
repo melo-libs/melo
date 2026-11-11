@@ -79,8 +79,19 @@ export function AgentComposer({
   useLayoutEffect(() => {
     const el = input.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(132, Math.max(38, el.scrollHeight))}px`
+    const fit = () => {
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(132, Math.max(38, el.scrollHeight))}px`
+    }
+    fit()
+    let width = el.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return
+      width = el.clientWidth
+      fit()
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [draft])
   return (
     <div
