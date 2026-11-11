@@ -1,61 +1,53 @@
+<div align="center">
+
+<img src="resources/icon.png" width="112" alt="Melo logo" />
+
 # Melo
 
-Turn information into knowledge of your own.
+A local knowledge base for Mac. Notes, web clippings, PDFs, and documents in one folder, with an AI that reads along and helps you organize.
 
-Melo is a personal knowledge workspace built around CODE: Collect, Organize, Distill, and Express. Your notes are plain `.md` files in a folder you choose, edited in a true WYSIWYG editor. No account, no lock-in — point it at an existing notes folder and everything just works. (Search runs on a small rebuildable index in `.melo/`; your notes never live inside it.)
+[Download](https://github.com/melo-libs/melo/releases/latest) · [Website](https://www.melolib.com) · [Changelog](CHANGELOG.md) · [中文](README.zh-CN.md)
 
-## Get Melo
+</div>
 
-Download a macOS build for your Mac (Apple silicon or Intel) from [GitHub Releases](https://github.com/melo-libs/melo/releases). Choose a folder as your workspace, or open an individual Markdown file; Melo keeps your notes in their original location.
+<!-- TODO(screenshots): main window -->
 
-The latest published release may be older than the features described here. Check the release notes for the version you download. Unsigned macOS builds may require approval in Privacy & Security before opening; they can check for updates, but new versions must be installed manually from GitHub Releases.
+## Features
 
-## What it does
+- **It's just a folder.** Pick a folder to start, or an existing notes folder. Notes are `.md` files, images go in `.assets/`. No account, and Melo uploads nothing.
+- **Clip with ⌘K.** Paste an article link into `⌘K` and the text and images are saved as one Markdown file you can read offline.
+- **PDFs and documents.** Read PDFs, view images, audio, and video, and preview Word or PowerPoint files with Space. Smart Folders group files by type, tag, or date without moving them.
+- **WYSIWYG.** Type `## ` for a heading or `- [ ] ` for a to-do. Tables, code blocks, math, and `[[wikilinks]]` all live in the same note.
+- **AI.** Connect Claude Code or Codex with your own account, or with an API key from DeepSeek, Kimi, Zhipu, and others. It sees the document you're reading, so you can ask follow-ups and argue a point. It can also file, rename, and tag attachments from your Inbox. It asks before changing anything, and changes can be undone.
+- **Share cards.** Select a passage, turn it into an image, and paste it into a chat or a social app.
 
-**Write**
+<!-- TODO(screenshots): one GIF each for clipping, Smart Folders, AI chat, share cards -->
 
-- WYSIWYG Markdown editing (Tiptap/ProseMirror) — headings, lists, task lists, quotes, tables
-- Syntax-highlighted code blocks with a language picker, line numbers and smart indentation
-- LaTeX math (inline `$…$` and block `$$…$$`, rendered with KaTeX) with a guided equation editor
-- Slash commands (`/`), block drag handles, find & replace (`⌘F` / `⌥⌘F`)
-- Wikilinks (`[[…]]`) with backlinks, unlinked mentions and a local graph
+## Why we built Melo
 
-**Collect**
+Melo follows CODE from Tiago Forte's _Building a Second Brain_: Collect, Organize, Distill, Express. Most note apps we used stop after the first two steps. Things go in and stay there. Melo tries to cover the rest: talk a question through with AI while you read, write down what you've worked out, then share it.
 
-- Web clipping: paste a URL into the search palette (`⌘K`) and the article is extracted, converted to Markdown and saved — images downloaded into the workspace so clips read offline
-- Paste or drag images straight into notes (stored under `.assets/`, relative paths)
-- Files of any kind live alongside notes: PDF reading, image / video / audio viewing built in
+## Trade-offs
 
-**Find**
+**Why WYSIWYG?** We want what you see while writing to look like the finished note. The file underneath is standard Markdown, so another editor opens it with nothing missing.
 
-- `⌘K` palette: title + full-text search with filters (`#tag`, `kind:pdf`, `path:inbox`) and a live preview pane
-- Smart folders: saved rule-based views over the whole workspace (source, kind, dates, tags…)
+**Why not build our own AI?** Claude Code and Codex are already very good agents. Melo handles what they don't: which file to read, where conversations are kept, and how to undo a change.
 
-**Own**
+**How is it different from Obsidian?** Obsidian is great if you like picking plugins and building your own system. Melo ships clipping, file management, AI, and sharing in the app, so it works as soon as you open it. Both use plain Markdown, so you can point them at the same folder.
 
-- Everything is a file on your disk; edits made outside Melo are picked up live
-- Export any note as Markdown, standalone HTML (a single self-contained file) or PDF
-- English and Simplified Chinese interface; light / dark / system theme
+## Not there yet
 
-## Development
+- macOS only. No Windows or mobile apps.
+- No cloud sync. To back up, copy the whole folder, including `.assets` and `.melo`.
+- Some pages don't clip completely, and images that weren't downloaded need a connection.
+- AI features need your own account or API key, billed by that service.
 
-Use Node.js 24 and the pnpm version pinned in `package.json`.
+## Install
 
-```bash
-pnpm install
-pnpm run dev                 # start the app in dev mode
-pnpm run lint                # read-only ESLint and Prettier checks
-pnpm run lint:fix            # apply ESLint fixes
-pnpm run typecheck           # main/preload and renderer typechecks
-pnpm test                    # unit tests
-pnpm run release:check       # lint, typechecks, tests, production build
-pnpm run build:mac:unsigned  # local unsigned macOS package
-```
+Download the latest DMG from [GitHub Releases](https://github.com/melo-libs/melo/releases/latest): `arm64` for Apple silicon, `x64` for Intel.
 
-Development builds use a persistent `Melo Dev` profile in the system app-data directory, separate from the installed app. Select your workspace on the first development launch. Set `MELO_USER_DATA` to use a different profile for tests.
+Builds aren't notarized by Apple. If macOS can't verify Melo on first launch, open System Settings → Privacy & Security and click Open Anyway. Later versions update from inside the app.
 
-CI validates macOS arm64 and x64 builds; publishing a release is a separate manual step. Built with Electron 31, React 18, TypeScript, Tiptap, and Jotai. See [AGENTS.md](AGENTS.md) for architecture notes.
+## Contributing
 
-## License
-
-[MIT](LICENSE) © 2026 Melo Labs
+Melo is open source under the MIT license. Open an [issue](https://github.com/melo-libs/melo/issues) or start a thread in [Discussions](https://github.com/melo-libs/melo/discussions). For code changes, read [CONTRIBUTING.md](CONTRIBUTING.md) first, and report security issues privately as described in [SECURITY.md](SECURITY.md). If Melo is useful to you, a star or a recommendation helps.
