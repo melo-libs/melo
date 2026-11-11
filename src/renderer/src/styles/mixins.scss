@@ -1,4 +1,13 @@
-/* ============================================================
-   Shared SCSS mixins / functions.
-   Empty for now — populate as patterns emerge.
-   ============================================================ */
+$pane-resize-width: 12px;
+
+// Keep the pane border as the only visible edge, with room to grab it comfortably.
+@mixin pane-resize($edge: right) {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  #{$edge}: 0;
+  width: $pane-resize-width;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}

@@ -14,6 +14,22 @@
   position: relative;
 }
 
+// Navigation spans the document and conversation; only their content is split.
+.editor-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--agent-layout-w, 0px);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.editor-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* ---------- Top bar ---------- */
 .ed-top {
   display: flex;

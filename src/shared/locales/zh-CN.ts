@@ -2,6 +2,11 @@ import type { LocaleDict } from './en'
 
 export const zhCN: LocaleDict = {
   agent: {
+    dockPanel: '停靠到右侧',
+    floatPanel: '恢复浮窗',
+    dockPreview: '松开以停靠到右侧',
+    dockUnavailable: '加宽窗口后可停靠对话',
+    resizePanel: '调整对话侧栏宽度',
     historyToday: '今天',
     historyYesterday: '昨天',
     moreHistory: '查看更多',

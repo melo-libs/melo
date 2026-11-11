@@ -7,6 +7,11 @@
 
 export const en = {
   agent: {
+    dockPanel: 'Dock to right',
+    floatPanel: 'Restore floating window',
+    dockPreview: 'Release to dock on the right',
+    dockUnavailable: 'Widen the window to dock the conversation',
+    resizePanel: 'Resize conversation sidebar',
     historyToday: 'Today',
     historyYesterday: 'Yesterday',
     moreHistory: 'Load more',

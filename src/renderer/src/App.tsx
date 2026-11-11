@@ -41,7 +41,13 @@ import {
 } from './lib/workspace'
 import { openCodeGuide } from './lib/codeGuide'
 import { AgentWindow } from './components/agent/AgentWindow'
-import { connectAgent } from './store/agent'
+import {
+  connectAgent,
+  agentExpandedAtom,
+  agentPanelModeAtom,
+  agentPanelWidthAtom,
+} from './store/agent'
+import { agentDockWidth, AGENT_DOCK_MAX } from './lib/agentPanelLayout'
 
 const SIDEBAR_WIDTH_KEY = 'melo.sidebarWidth'
 const SIDEBAR_WIDTH_DEFAULT = 260
@@ -132,7 +138,6 @@ const App = () => {
   // The setting provides the startup state; the toggle is a per-session
   // choice and intentionally doesn't write back.
   const [outlineShown, setOutlineShown] = useState(settings.outlineByDefault)
-  const toggleOutline = () => setOutlineShown((v) => !v)
   // Theme lives in settings; 'system' resolves against the OS and follows
   // its changes live.
   const [sysDark, setSysDark] = useState(
@@ -152,7 +157,45 @@ const App = () => {
   const smart = useAtomValue(activeSmartIdAtom) != null
   const setActiveSmartId = useSetAtom(activeSmartIdAtom)
   const hasTabs = useAtomValue(tabsAtom).length > 0
-  const showOutline = outlineShown && hasTabs
+  const sidebarRequested = !!workspacePath && sidebarShown
+  const agentExpanded = useAtomValue(agentExpandedAtom)
+  const agentPanelMode = useAtomValue(agentPanelModeAtom)
+  const setAgentPanelMode = useSetAtom(agentPanelModeAtom)
+  const preferredAgentWidth = useAtomValue(agentPanelWidthAtom)
+  const [agentSpace, setAgentSpace] = useState(0)
+  const dockWidth = agentDockWidth(preferredAgentWidth, agentSpace)
+  const agentDocked =
+    !!workspacePath && agentExpanded && agentPanelMode === 'docked' && dockWidth > 0
+  const showOutline = outlineShown && hasTabs && !agentDocked
+  const toggleOutline = () => {
+    if (agentDocked) {
+      setAgentPanelMode('floating')
+      setOutlineShown(true)
+    } else setOutlineShown((shown) => !shown)
+  }
+  useLayoutEffect(() => {
+    const shell = appRef.current
+    if (!shell) return
+    const measure = () => {
+      const style = getComputedStyle(shell)
+      setAgentSpace(
+        Math.max(
+          0,
+          Math.min(
+            AGENT_DOCK_MAX,
+            shell.clientWidth -
+              (sidebarRequested ? SIDEBAR_WIDTH_MIN : 0) -
+              (smart ? parseFloat(style.getPropertyValue('--smart-list-min-w')) : 0) -
+              parseFloat(style.getPropertyValue('--editor-min-w')),
+          ),
+        ),
+      )
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(shell)
+    return () => observer.disconnect()
+  }, [booting, workspacePath, sidebarRequested, smart])
   const openFile = useSetAtom(openFileAtom)
   const setSearchOpen = useSetAtom(searchOpenAtom)
   const setTreeCreating = useSetAtom(treeCreatingAtom)
@@ -179,7 +222,8 @@ const App = () => {
       SIDEBAR_WIDTH_MIN +
       parseFloat(style.getPropertyValue('--smart-list-min-w')) +
       parseFloat(style.getPropertyValue('--editor-min-w')) +
-      (showOutline ? parseFloat(style.getPropertyValue('--outline-w')) : 0)
+      (showOutline ? parseFloat(style.getPropertyValue('--outline-w')) : 0) +
+      (agentDocked ? dockWidth : 0)
     // Observe the shell, not its panes, so hiding the sidebar cannot make
     // the observer alternately show and hide it as the center grows.
     const update = () => setSidebarFits(shell.clientWidth >= minimumWidth)
@@ -187,7 +231,7 @@ const App = () => {
     const observer = new ResizeObserver(update)
     observer.observe(shell)
     return () => observer.disconnect()
-  }, [booting, smart, showOutline, workspacePath])
+  }, [booting, smart, showOutline, workspacePath, agentDocked, dockWidth])
 
   const revealSidebar = useCallback(() => {
     // At narrow widths, the pane explicitly requested by the user wins.
@@ -563,17 +607,22 @@ const App = () => {
     )
   }
 
-  const sidebarRequested = !!workspacePath && sidebarShown
   const showSidebar = sidebarRequested && sidebarFits
 
   return (
     <div
       ref={appRef}
       className="app"
-      style={{ '--sidebar-w': `${sidebarWidthRef.current}px` } as CSSProperties}
+      style={
+        {
+          '--sidebar-w': `${sidebarWidthRef.current}px`,
+          '--agent-layout-w': `${agentDocked ? dockWidth : 0}px`,
+        } as CSSProperties
+      }
       data-sidebar={showSidebar ? 'shown' : 'hidden'}
       data-outline={showOutline ? 'shown' : 'hidden'}
       data-smart={smart || undefined}
+      data-agent-docked={agentDocked || undefined}
     >
       {sidebarRequested ? (
         <Sidebar onResizeStart={startSidebarResize} onResetWidth={resetSidebarWidth} />
@@ -585,6 +634,9 @@ const App = () => {
         <div className="center-pane">
           <Editor
             theme={theme}
+            agentPanel={
+              <AgentWindow docked={agentDocked} dockWidth={dockWidth} maxDockWidth={agentSpace} />
+            }
             sidebarAvailable={!!workspacePath}
             onLifecycleReadyChange={handleEditorReadyChange}
             onToggleSidebar={toggleSidebar}
@@ -596,7 +648,6 @@ const App = () => {
       {showOutline ? <Outline /> : <div className="app-region" />}
       <SmartBuilder />
       <SearchPalette />
-      <AgentWindow />
       <Toaster />
     </div>
   )

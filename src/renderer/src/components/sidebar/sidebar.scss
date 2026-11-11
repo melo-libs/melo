@@ -4,6 +4,8 @@
    button from file-menus.css.
    ============================================================ */
 
+@use '../../styles/mixins' as mixins;
+
 .sidebar {
   background: var(--sidebar-bg);
   border-right: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
@@ -13,22 +15,13 @@
   min-width: 0;
   height: 100vh;
   position: relative;
+  // Scrollbars stay inside the content box, separate from the resize hit area.
+  padding-right: mixins.$pane-resize-width;
 }
 
 .sb-resize {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  touch-action: none;
+  @include mixins.pane-resize;
   z-index: 10;
-  -webkit-app-region: no-drag;
-}
-.sb-resize:hover,
-.sb-resize:active {
-  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--hairline-2) 72%, transparent);
 }
 
 /* ---------- Top: traffic lights + workspace switcher ---------- */
@@ -1269,11 +1262,6 @@
 [data-theme='dark'] {
   .sidebar {
     border-right-color: var(--hairline);
-  }
-
-  .sb-resize:hover,
-  .sb-resize:active {
-    box-shadow: inset -2px 0 0 var(--hairline-2);
   }
 
   .sb-workspace:hover {

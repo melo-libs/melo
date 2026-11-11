@@ -16,6 +16,7 @@ import type {
   AgentMessage,
 } from '@shared/types/agent'
 import { IpcChannels } from '@shared/types/ipc'
+import { AGENT_DOCK_DEFAULT, type AgentPanelMode } from '../lib/agentPanelLayout'
 import { appStore } from './appStore'
 import { workspacePathAtom } from './workspace'
 import { activeTabIdAtom } from './editor'
@@ -123,6 +124,23 @@ export const agentWindowAtom = atom(
     }
     set(agentWindowStateAtom, next)
   },
+)
+
+export const agentExpandedAtom = atom((get) => {
+  const state = get(agentWindowAtom)
+  return state.open && !state.collapsed
+})
+export const agentPanelModeAtom = atomWithStorage<AgentPanelMode>(
+  'melo.agent.panel-mode',
+  'floating',
+  undefined,
+  { getOnInit: true },
+)
+export const agentPanelWidthAtom = atomWithStorage(
+  'melo.agent.panel-width',
+  AGENT_DOCK_DEFAULT,
+  undefined,
+  { getOnInit: true },
 )
 
 export type AgentMascotState = 'idle' | 'working' | 'waiting' | 'ready' | 'error' | 'offline'

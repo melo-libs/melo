@@ -14,6 +14,11 @@ import { Select } from '../ui/Select'
 import type { AgentModelLoadState } from '../../store/agent'
 import { AgentAttachments } from './AgentAttachments'
 
+function fitInputHeight(element: HTMLTextAreaElement) {
+  element.style.height = 'auto'
+  element.style.height = `${Math.min(132, Math.max(38, element.scrollHeight))}px`
+}
+
 export function AgentComposer({
   draft,
   context,
@@ -78,10 +83,20 @@ export function AgentComposer({
   }, [focusKey, connected])
   useLayoutEffect(() => {
     const el = input.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(132, Math.max(38, el.scrollHeight))}px`
+    if (el) fitInputHeight(el)
   }, [draft])
+  useLayoutEffect(() => {
+    const el = input.current
+    if (!el) return
+    let width = el.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return
+      width = el.clientWidth
+      fitInputHeight(el)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
   return (
     <div
       className="agent-compose"

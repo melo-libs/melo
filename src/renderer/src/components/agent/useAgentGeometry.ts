@@ -2,10 +2,17 @@ import {
   useCallback,
   useLayoutEffect,
   useRef,
+  useState,
   type PointerEvent as ReactPointerEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react'
 import { placeDock } from './dockPlacement'
+import {
+  AGENT_DOCK_EDGE,
+  AGENT_DOCK_MIN,
+  agentDockWidth,
+  type AgentPanelMode,
+} from '../../lib/agentPanelLayout'
 
 const dockPositionKey = 'melo.agent.dock-position'
 
@@ -21,7 +28,15 @@ export function useAgentGeometry(
   open: boolean,
   anchor: { x: number; y: number } | null,
   collapsed: boolean,
+  layout: {
+    docked: boolean
+    maxWidth: number
+    onMode(mode: AgentPanelMode): void
+    onWidth(width: number): void
+  },
 ) {
+  const { docked } = layout
+  const [dockPreview, setDockPreview] = useState<number | null>(null)
   const panel = useRef<HTMLDivElement>(null)
   const position = useRef<{ x: number; y: number } | null>(null)
   const dockPosition = useRef<{ x: number; y: number } | null | undefined>(undefined)
@@ -79,7 +94,11 @@ export function useAgentGeometry(
     }
     if (collapsed) obstacles = [...document.querySelectorAll(obstacleSelector)]
     repositionDock.current = collapsed ? dock : null
-    if (collapsed) {
+    if (docked && !collapsed) {
+      for (const property of ['left', 'top', 'width', 'height'])
+        element.style.removeProperty(property)
+      previousAnchor.current = anchor
+    } else if (collapsed) {
       element.style.removeProperty('width')
       element.style.removeProperty('height')
       dock()
@@ -101,7 +120,7 @@ export function useAgentGeometry(
     const clamp = () => {
       if (cleanup.current) return
       if (collapsed) dock()
-      else if (position.current) place(position.current.x, position.current.y)
+      else if (!docked && position.current) place(position.current.x, position.current.y)
     }
     const observer = new ResizeObserver(clamp)
     observer.observe(element)
@@ -134,12 +153,12 @@ export function useAgentGeometry(
       repositionDock.current = null
       window.removeEventListener('resize', clamp)
     }
-  }, [open, anchor, collapsed, place])
+  }, [open, anchor, collapsed, place, docked])
 
   const start = (event: ReactPointerEvent<HTMLElement>, resize: boolean) => {
     if (
       event.button !== 0 ||
-      (!resize && !collapsed && (event.target as HTMLElement).closest('button'))
+      (!resize && !collapsed && (event.target as HTMLElement).closest('button, input'))
     )
       return
     event.preventDefault()
@@ -147,19 +166,38 @@ export function useAgentGeometry(
     dragged.current = false
     const preferredDock = dockPosition.current
     const element = panel.current!
+    const resizeHandle = resize && docked ? event.currentTarget : null
+    const shell = resizeHandle ? element.closest<HTMLElement>('.app')! : null
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    if (resizeHandle) {
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    }
+    const previousPosition = position.current
+    const previousSize = size.current
+    const previousStyle = element.getAttribute('style')
+    const bounds = element.getBoundingClientRect()
     const origin = {
       x: event.clientX,
       y: event.clientY,
-      left: element.offsetLeft,
-      top: element.offsetTop,
+      left: bounds.left,
+      top: bounds.top,
       width: element.offsetWidth,
       height: element.offsetHeight,
     }
     let pointer = { x: event.clientX, y: event.clientY }
     let frame = 0
+    let snap = false
+    let resizedWidth = origin.width
     const update = () => {
       frame = 0
-      if (resize) {
+      if (resize && docked) {
+        resizedWidth = agentDockWidth(origin.width + origin.x - pointer.x, layout.maxWidth)
+        // Preview in the grid without rerendering the editor or persisting on every frame.
+        shell!.style.setProperty('--agent-layout-w', `${resizedWidth}px`)
+        resizeHandle!.setAttribute('aria-valuenow', String(resizedWidth))
+      } else if (resize) {
         const width = Math.round(
           Math.min(
             window.innerWidth - origin.left - 12,
@@ -182,17 +220,30 @@ export function useAgentGeometry(
         size.current = { width, height }
         element.style.width = `${width}px`
         element.style.height = `${height}px`
-      } else place(origin.left + pointer.x - origin.x, origin.top + pointer.y - origin.y)
+      } else {
+        if (docked) {
+          // Keep the same mounted conversation while dragging it out of the grid.
+          element.setAttribute('data-floating-drag', '')
+          element.style.width = `${size.current?.width ?? 500}px`
+          element.style.height = `${size.current?.height ?? 720}px`
+        }
+        const left = docked
+          ? pointer.x - Math.min(origin.x - origin.left, element.offsetWidth - 24)
+          : origin.left + pointer.x - origin.x
+        const top = docked ? pointer.y - (origin.y - origin.top) : origin.top + pointer.y - origin.y
+        place(left, top)
+        snap =
+          !collapsed &&
+          layout.maxWidth >= AGENT_DOCK_MIN &&
+          pointer.x >= window.innerWidth - AGENT_DOCK_EDGE
+        setDockPreview(snap ? Math.round(element.parentElement!.getBoundingClientRect().top) : null)
+      }
     }
     const move = (next: PointerEvent) => {
-      if (next.pointerId !== event.pointerId) return
+      if (next.pointerId !== event.pointerId || !(next.buttons & 1)) return
       pointer = { x: next.clientX, y: next.clientY }
       // Small pointer jitter must remain a click on the minimized button.
-      if (
-        collapsed &&
-        !dragged.current &&
-        Math.hypot(pointer.x - origin.x, pointer.y - origin.y) < 4
-      )
+      if (!resize && !dragged.current && Math.hypot(pointer.x - origin.x, pointer.y - origin.y) < 4)
         return
       dragged.current = true
       element.setAttribute('data-dragging', '')
@@ -201,12 +252,40 @@ export function useAgentGeometry(
     const stop = (event?: Event) => {
       if (frame) {
         cancelAnimationFrame(frame)
-        // Only pointer release commits the last frame. On unmount the panel
-        // ref is already detached, so cleanup must cancel without measuring.
-        if (event?.type === 'pointerup') update()
         frame = 0
       }
+      // Use the release position, rather than a queued move that may be stale.
+      // Cleanup without a release must not measure a detached panel.
+      if (event?.type === 'pointerup' && dragged.current) {
+        const released = event as PointerEvent
+        pointer = { x: released.clientX, y: released.clientY }
+        update()
+      }
       element.removeAttribute('data-dragging')
+      element.removeAttribute('data-floating-drag')
+      if (resizeHandle) {
+        document.body.style.cursor = previousCursor
+        document.body.style.userSelect = previousUserSelect
+        if (event && dragged.current) layout.onWidth(resizedWidth)
+        else if (!event && element.hasAttribute('data-docked')) {
+          shell!.style.setProperty('--agent-layout-w', `${origin.width}px`)
+          resizeHandle.setAttribute('aria-valuenow', String(origin.width))
+        }
+      }
+      setDockPreview(null)
+      if (!collapsed && !resize && dragged.current && event?.type === 'pointerup') {
+        layout.onMode(snap ? 'docked' : 'floating')
+        if (docked && snap) {
+          for (const property of ['left', 'top', 'width', 'height'])
+            element.style.removeProperty(property)
+        }
+      }
+      if (docked && event?.type !== 'pointerup') {
+        position.current = previousPosition
+        size.current = previousSize
+        if (previousStyle === null) element.removeAttribute('style')
+        else element.setAttribute('style', previousStyle)
+      }
       if (collapsed && dragged.current && event?.type === 'pointerup' && dockPosition.current) {
         const { x, y } = dockPosition.current
         localStorage.setItem(dockPositionKey, `${x},${y}`)
@@ -228,6 +307,7 @@ export function useAgentGeometry(
   }
   return {
     panel,
+    dockPreview,
     drag: (event: ReactPointerEvent<HTMLDivElement>) => start(event, false),
     captureClick: (event: ReactMouseEvent<HTMLDivElement>) => {
       if (collapsed && dragged.current && event.detail > 0) {
@@ -236,6 +316,6 @@ export function useAgentGeometry(
       }
       dragged.current = false
     },
-    resize: (event: ReactPointerEvent<HTMLButtonElement>) => start(event, true),
+    resize: (event: ReactPointerEvent<HTMLElement>) => start(event, true),
   }
 }

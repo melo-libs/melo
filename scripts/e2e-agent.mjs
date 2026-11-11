@@ -695,7 +695,9 @@ try {
         path: process.env.MELO_E2E_TAGS_SCREENSHOT.replace('.png', '-empty.png'),
       })
     await editor.locator('h1').hover()
-    assert.equal(await emptyTags.evaluate((el) => getComputedStyle(el).opacity), '1')
+    await waitUntil('empty tag entry appears on title hover', () =>
+      emptyTags.evaluate((el) => getComputedStyle(el).opacity === '1'),
+    )
     assert.deepEqual(await editor.locator('h1').boundingBox(), titleBeforeHover)
     if (process.env.MELO_E2E_TAGS_SCREENSHOT)
       await page.screenshot({
@@ -703,7 +705,9 @@ try {
       })
     await emptyTags.focus()
     await page.mouse.move(20, 20)
-    assert.equal(await emptyTags.evaluate((el) => getComputedStyle(el).opacity), '1')
+    await waitUntil('empty tag entry appears on title hover', () =>
+      emptyTags.evaluate((el) => getComputedStyle(el).opacity === '1'),
+    )
     await page.getByRole('button', { name: 'More actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Add tags', exact: true }).click()
     const tagEditor = page.locator('.document-tags[data-editing] .document-tags-row')
@@ -1229,6 +1233,36 @@ try {
   const approvalId = await page
     .locator('.agent-permission[data-pending]')
     .getAttribute('data-permission-id')
+  const approvalWindowBounds = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getContentBounds(),
+  )
+  await page.getByRole('button', { name: 'Dock to right', exact: true }).click()
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setContentSize(1120, 600),
+  )
+  await page.locator('.agent-window[data-docked]').waitFor()
+  await waitUntil('docked approval fits below tabs in a short window', async () => {
+    const bounds = await page.locator('.agent-window').boundingBox()
+    return Math.abs(bounds.y + bounds.height - (await page.evaluate(() => innerHeight))) < 2
+  })
+  const approvalInput = await page.locator('.agent-compose').boundingBox()
+  assert(
+    approvalInput.y + approvalInput.height <= (await page.evaluate(() => innerHeight)),
+    'approval must not push the composer offscreen',
+  )
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-approval-short.png'),
+    })
+  await app.evaluate(
+    ({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setContentBounds(bounds),
+    approvalWindowBounds,
+  )
+  await page.getByRole('button', { name: 'Restore floating window', exact: true }).click()
+  assert.equal(
+    await page.locator('.agent-permission[data-pending]').getAttribute('data-permission-id'),
+    approvalId,
+  )
   assert(
     (await page.locator('.agent-edit-diff [data-kind="removed"]').innerText()).includes('Saturday'),
   )
@@ -1542,6 +1576,241 @@ try {
     'reopening must keep the window position',
   )
   assert.equal(await page.locator('.agent-compose textarea').inputValue(), 'Keep this unsent draft')
+  // Docking changes the shell layout, not the conversation or its draft.
+  const sameConversationPanel = await page.locator('.agent-window').elementHandle()
+  const sameDraftInput = await page.locator('.agent-compose textarea').elementHandle()
+  const outlineWasShown = await page.locator('.app').getAttribute('data-outline')
+  const dockDraft = 'Keep this unsent draft while moving between layouts. '.repeat(4)
+  await page.locator('.agent-compose textarea').fill(dockDraft)
+  const bodyBeforeDock = await page.locator('.agent-body').evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return { height: element.clientHeight, total: element.scrollHeight }
+  })
+  await page.getByRole('button', { name: 'Dock to right', exact: true }).click()
+  await page.locator('.app[data-agent-docked]').waitFor()
+  assert(
+    await sameConversationPanel.evaluate(
+      (element) => element === document.querySelector('.agent-window'),
+    ),
+  )
+  assert(
+    await sameDraftInput.evaluate(
+      (element) => element === document.querySelector('.agent-compose textarea'),
+    ),
+  )
+  assert.equal(await page.locator('.agent-compose textarea').inputValue(), dockDraft)
+  assert.equal(await page.locator('.app').getAttribute('data-outline'), 'hidden')
+  const dockedBounds = await page.locator('.agent-window').boundingBox()
+  const centerBounds = await page.locator('.editor-content').boundingBox()
+  assert(
+    Math.abs(centerBounds.x + centerBounds.width - dockedBounds.x) < 2,
+    'docked chat must not cover the document',
+  )
+  const tabsBounds = await page.locator('.ed-tabs').boundingBox()
+  const topBarBounds = await page.locator('.ed-top').boundingBox()
+  const viewportWidth = await page.evaluate(() => innerWidth)
+  assert(
+    Math.abs(dockedBounds.y - tabsBounds.y - tabsBounds.height) < 2,
+    'conversation must begin below the tab strip',
+  )
+  assert(
+    Math.abs(tabsBounds.x + tabsBounds.width - viewportWidth) < 2,
+    'tabs must span the document and conversation',
+  )
+  assert(
+    Math.abs(topBarBounds.x + topBarBounds.width - viewportWidth) < 2,
+    'document toolbar must span both panes',
+  )
+  assert.equal(
+    Math.round(dockedBounds.height + dockedBounds.y),
+    await page.evaluate(() => innerHeight),
+  )
+  const resizeStyles = []
+  for (const [name, selector, delta] of [
+    ['sidebar', '.sb-resize', 20],
+    ['conversation', '.agent-panel-resize', -20],
+  ]) {
+    const handle = page.locator(selector)
+    const style = (element) => ({
+      width: getComputedStyle(element).width,
+      cursor: getComputedStyle(element).cursor,
+      background: getComputedStyle(element).backgroundColor,
+      shadow: getComputedStyle(element).boxShadow,
+      overlay: getComputedStyle(element, '::after').content,
+    })
+    await handle.hover()
+    const hoverStyle = await handle.evaluate(style)
+    assert.equal(hoverStyle.width, '12px')
+    assert.equal(hoverStyle.cursor, 'col-resize')
+    assert.equal(hoverStyle.shadow, 'none')
+    assert.equal(hoverStyle.overlay, 'none', 'resizing must not add a highlight rail')
+    const clip = { x: 0, y: tabsBounds.y + tabsBounds.height, width: viewportWidth, height: 240 }
+    const bounds = await handle.boundingBox()
+    const savedWidth = await page.evaluate(() => localStorage.getItem('melo.agent.panel-width'))
+    const beforeWidth = (await page.locator('.agent-window').boundingBox()).width
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 160)
+    await page.mouse.down()
+    await page.mouse.move(bounds.x + bounds.width / 2 + delta, bounds.y + 160, { steps: 4 })
+    assert.equal(await page.evaluate(() => document.body.style.cursor), 'col-resize')
+    if (name === 'conversation') {
+      await waitUntil(
+        'sidebar previews width before release',
+        async () =>
+          Math.round((await page.locator('.agent-window').boundingBox()).width) ===
+          Math.round(beforeWidth - delta),
+      )
+      assert.equal(
+        await page.evaluate(() => localStorage.getItem('melo.agent.panel-width')),
+        savedWidth,
+        'dragging must not save the width on every frame',
+      )
+    }
+    assert.deepEqual(await handle.evaluate(style), hoverStyle)
+    if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', `-${name}-drag.png`),
+        clip,
+      })
+    await page.mouse.up()
+    assert.equal(await page.evaluate(() => document.body.style.cursor), '')
+    resizeStyles.push(hoverStyle)
+    if (name === 'sidebar') await handle.dblclick()
+  }
+  assert.deepEqual(resizeStyles[0], resizeStyles[1])
+  await page.getByRole('separator', { name: 'Resize conversation sidebar' }).focus()
+  await page.keyboard.press('Home')
+  await waitUntil(
+    'sidebar width is keyboard-resizable',
+    async () => Math.round((await page.locator('.agent-window').boundingBox()).width) === 360,
+  )
+  await waitUntil('draft reflows in the narrower sidebar', () =>
+    page
+      .locator('.agent-compose textarea')
+      .evaluate((element) => element.clientHeight >= Math.min(130, element.scrollHeight - 2)),
+  )
+  await page.getByRole('button', { name: 'Toggle outline', exact: true }).click()
+  await waitUntil('explicit outline request restores the outline', () =>
+    page
+      .locator('.app')
+      .evaluate(
+        (element) =>
+          element.getAttribute('data-outline') === 'shown' &&
+          !element.hasAttribute('data-agent-docked'),
+      ),
+  )
+  if (outlineWasShown !== 'shown')
+    await page.getByRole('button', { name: 'Toggle outline', exact: true }).click()
+  await page.getByRole('button', { name: 'Dock to right', exact: true }).click()
+  await page.locator('.app[data-agent-docked]').waitFor()
+  if (bodyBeforeDock.total > bodyBeforeDock.height)
+    await waitUntil('latest reply remains visible after docking', () =>
+      page
+        .locator('.agent-body')
+        .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight < 4),
+    )
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-sidebar.png'),
+    })
+  const wideBounds = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getContentBounds(),
+  )
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setContentSize(800, 760),
+  )
+  await waitUntil('narrow windows fall back to floating', () =>
+    page.locator('.app').evaluate((element) => !element.hasAttribute('data-agent-docked')),
+  )
+  assert.equal(await page.locator('.agent-compose textarea').inputValue(), dockDraft)
+  await app.evaluate(
+    ({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setContentBounds(bounds),
+    wideBounds,
+  )
+  await page.locator('.app[data-agent-docked]').waitFor()
+  await page
+    .locator('.sf-row')
+    .filter({ hasText: /^Recent/ })
+    .click()
+  await page.locator('.app[data-smart]').waitFor()
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setContentSize(1280, 860),
+  )
+  await page.locator('.app[data-agent-docked]').waitFor()
+  assert((await page.locator('.editor-content').boundingBox()).width >= 320)
+  const smartBounds = await page.locator('.smart-view').boundingBox()
+  const smartEditorBounds = await page.locator('.center-pane').boundingBox()
+  assert(smartBounds.x + smartBounds.width <= smartEditorBounds.x + 1)
+  const smartToolbar = await page.locator('.ed-top').boundingBox()
+  const smartChat = await page.locator('.agent-window').boundingBox()
+  assert(
+    Math.abs(smartChat.y - smartToolbar.y - smartToolbar.height) < 2,
+    'without tabs, conversation must begin below the toolbar',
+  )
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT) {
+    await page.locator('.agent-compose textarea').focus()
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-smart-dark.png'),
+    })
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+  }
+  await page
+    .locator('.tree-row', { has: page.locator('.tree-name', { hasText: 'note' }) })
+    .first()
+    .click()
+  await app.evaluate(
+    ({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setContentBounds(bounds),
+    wideBounds,
+  )
+  await page.locator('.app[data-agent-docked]').waitFor()
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
+  assert.equal(await page.locator('.app[data-agent-docked]').count(), 0)
+  assert.equal(await page.locator('.app').getAttribute('data-outline'), outlineWasShown)
+  await page.locator('.agent-dock').click()
+  await page.locator('.app[data-agent-docked]').waitFor()
+  const dockHeader = await page.locator('.agent-head').boundingBox()
+  await page.locator('.agent-body').evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  await page.mouse.move(dockHeader.x + 90, dockHeader.y + 20)
+  await page.mouse.down()
+  await page.mouse.move(dockHeader.x - 200, 150, { steps: 6 })
+  await page.mouse.up()
+  await waitUntil('dragging out restores a floating conversation', () =>
+    page.locator('.app').evaluate((element) => !element.hasAttribute('data-agent-docked')),
+  )
+  await waitUntil('dragging out keeps the latest reply visible', () =>
+    page
+      .locator('.agent-body')
+      .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight < 4),
+  )
+  assert.equal(await page.locator('.agent-compose textarea').inputValue(), dockDraft)
+  assert.equal(await page.locator('.app').getAttribute('data-outline'), outlineWasShown)
+  const floatingHeader = await page.locator('.agent-head').boundingBox()
+  await page.mouse.move(floatingHeader.x + 90, floatingHeader.y + 20)
+  await page.mouse.down()
+  await page.mouse.move(await page.evaluate(() => innerWidth - 16), 140, { steps: 6 })
+  await page.locator('.agent-dock-preview').waitFor()
+  const previewBounds = await page.locator('.agent-dock-preview').boundingBox()
+  const previewTabs = await page.locator('.ed-tabs').boundingBox()
+  assert(
+    Math.abs(previewBounds.y - previewTabs.y - previewTabs.height) < 2,
+    'docking preview must match the space below tabs',
+  )
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-preview.png'),
+    })
+  await page.mouse.up()
+  await page.locator('.app[data-agent-docked]').waitFor()
+  assert.equal(await page.locator('.agent-dock-preview').count(), 0)
+  await page.getByRole('button', { name: 'Restore floating window', exact: true }).click()
+  await waitUntil('floating layout keeps the latest reply visible', () =>
+    page
+      .locator('.agent-body')
+      .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight < 4),
+  )
+  await page.locator('.agent-compose textarea').fill('Keep this unsent draft')
   await editor.focus()
   await page.keyboard.press('Meta+a')
   // Move the non-modal window away from the selection toolbar, as a user can.
@@ -2220,6 +2489,97 @@ try {
         (await restoredPage.locator('.agent-markdown').last().innerText()).includes('Weekend plan'),
     )
     await restoredPage.locator('.agent-status').waitFor({ state: 'hidden' })
+  }
+  if (!live && !packagedApp) {
+    if (await page.locator('.agent-dock').count()) await page.locator('.agent-dock').click()
+    await page.getByRole('button', { name: 'Dock to right', exact: true }).click()
+    await page.locator('.app[data-agent-docked]').waitFor()
+    await page.reload()
+    await page.locator('.agent-dock').click()
+    await page.locator('.app[data-agent-docked]').waitFor()
+    assert.equal(
+      Math.round((await page.locator('.agent-window').boundingBox()).width),
+      360,
+      'sidebar width and layout preference must survive reload',
+    )
+    await page.getByRole('button', { name: 'Restore floating window', exact: true }).click()
+  }
+  if (!live && !packagedApp) {
+    const scrollFolder = path.join(workspace, 'A-scroll-regression')
+    fs.mkdirSync(scrollFolder)
+    for (let index = 0; index < 90; index++) {
+      const title = `Scrollbar fixture ${String(index).padStart(3, '0')}`
+      fs.writeFileSync(path.join(scrollFolder, `${title}.md`), `# ${title}\n`)
+    }
+    const scrollFolderRow = page.locator('.tree-row').filter({ hasText: 'A-scroll-regression' })
+    await scrollFolderRow.waitFor()
+    if (
+      !(await scrollFolderRow
+        .locator('.tree-chev')
+        .evaluate((element) => element.classList.contains('open')))
+    )
+      await scrollFolderRow.click()
+    await waitUntil('long file tree is rendered', () =>
+      page
+        .locator('.sb-tree')
+        .evaluate((element) => element.scrollHeight > element.clientHeight * 2),
+    )
+    for (const [name, paneSelector, scrollSelector, resizeSelector] of [
+      ['sidebar', '.sidebar', '.sb-tree', '.sb-resize'],
+      ['smart', '.smart-view', '.sf-results', '.sv-resize'],
+    ]) {
+      if (name === 'smart') {
+        await page
+          .locator('.sf-row')
+          .filter({ hasText: /^Recent/ })
+          .click()
+        await waitUntil(
+          'scroll fixture notes are indexed',
+          async () => Number((await page.locator('.sv-count').innerText()).match(/\d+/)?.[0]) >= 90,
+        )
+      }
+      const area = page.locator(scrollSelector)
+      const pane = page.locator(paneSelector)
+      const paneWidth = (await pane.boundingBox()).width
+      await area.evaluate((element) => {
+        element.scrollTop = 0
+      })
+      await area.hover()
+      const metrics = await area.evaluate((element) => {
+        const bounds = element.getBoundingClientRect()
+        return {
+          right: bounds.right,
+          top: bounds.top,
+          height: element.clientHeight,
+          total: element.scrollHeight,
+          scrollbar: element.offsetWidth - element.clientWidth,
+        }
+      })
+      const resizeBounds = await page.locator(resizeSelector).boundingBox()
+      assert(
+        metrics.right <= resizeBounds.x + 1,
+        `${name} scrollbar must be outside the resize hit area`,
+      )
+      assert(metrics.scrollbar > 0, `${name} must expose a native scrollbar`)
+      const x = metrics.right - metrics.scrollbar / 2
+      const y = metrics.top + Math.max(8, (metrics.height * metrics.height) / metrics.total / 2)
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x, y + 80, { steps: 8 })
+      await page.mouse.up()
+      await waitUntil(`${name} scrollbar drags the list`, () =>
+        area.evaluate((element) => element.scrollTop > 10),
+      )
+      assert.equal(
+        (await pane.boundingBox()).width,
+        paneWidth,
+        `${name} scrollbar must not resize the column`,
+      )
+      if (process.env.MELO_E2E_DOCK_SCREENSHOT)
+        await page.screenshot({
+          path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', `-${name}-scrollbar.png`),
+        })
+    }
   }
   const errors = logs.filter((log) => log.includes('TypeError') || log.includes('ReferenceError'))
   assert.deepEqual(errors, [])

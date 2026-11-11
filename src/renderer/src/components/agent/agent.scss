@@ -1,3 +1,5 @@
+@use '../../styles/mixins' as mixins;
+
 .agent-window {
   position: fixed;
   container-type: size;
@@ -2122,8 +2124,10 @@
   font-size: 12px;
 }
 
-// Match the resize minimum while a confirmation is active, including old window sizes.
-.agent-window:not([data-collapsed]):has(.agent-permission[data-pending]) {
+// Floating confirmations need room; a docked panel must fit below the document tabs.
+.agent-window:not([data-collapsed]):is(:not([data-docked]), [data-floating-drag]):has(
+    .agent-permission[data-pending]
+  ) {
   min-height: min(520px, calc(100vh - 64px));
 }
 .agent-permission[data-pending] > .agent-card-actions {
@@ -2136,7 +2140,9 @@
 }
 
 // Paragraph comparisons need more room than folder or file-operation confirmations.
-.agent-window:not([data-collapsed]):has(.agent-permission[data-pending] .agent-edit-diff) {
+.agent-window:not([data-collapsed]):is(:not([data-docked]), [data-floating-drag]):has(
+    .agent-permission[data-pending] .agent-edit-diff
+  ) {
   min-height: min(640px, calc(100vh - 64px));
 }
 
@@ -2191,4 +2197,45 @@
 .agent-operation-target {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+// The conversation stays mounted in its grid column; only a drag lifts it out.
+.agent-window[data-docked]:not([data-floating-drag]) {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  border-left: 1px solid var(--hairline);
+  border-radius: 0;
+  box-shadow: none;
+}
+.agent-panel-resize {
+  @include mixins.pane-resize(left);
+  z-index: 2;
+}
+.agent-dock-preview {
+  position: fixed;
+  z-index: 499;
+  inset: 0 0 0 auto;
+  display: flex;
+  padding-top: 12px;
+  align-items: flex-start;
+  justify-content: center;
+  border: 1px solid var(--accent-line);
+  background: var(--selection);
+  pointer-events: none;
+  > span {
+    padding: 8px 12px;
+    border-radius: var(--r-md);
+    background: var(--paper);
+    color: var(--ink-2);
+    box-shadow: var(--shadow-sm);
+    font-size: 12px;
+  }
 }
