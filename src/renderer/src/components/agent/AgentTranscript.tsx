@@ -1,12 +1,12 @@
 import { agentTool } from '@shared/agentCapabilities'
-import { Fragment } from 'react'
+import { Fragment, type ReactElement } from 'react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { useTranslation } from 'react-i18next'
 import type { AgentHistoryMessage } from '@shared/types/agent'
 import { AgentMessage } from './AgentMessage'
 import { AgentActivity } from './AgentActivity'
 import { AgentChanges, AgentPlan } from './AgentChanges'
-import { AgentSource } from './AgentSource'
+import { AgentDateDivider } from './AgentDateDivider'
 import { AgentPermission } from './AgentPermission'
 import { AgentReceipt } from './AgentReceipt'
 import { AgentFilingResult } from './AgentFilingResult'
@@ -50,21 +50,17 @@ export function AgentTranscript({
       groups.push([])
     groups.at(-1)!.push(message)
   }
-  let lastSource = ''
+  let lastDay = ''
+  const dated = (id: string, at: number, content: ReactElement) => {
+    const day = new Date(at).toDateString()
+    const showDate = day !== lastDay
+    lastDay = day
+    return [showDate && <AgentDateDivider key={`date:${id}`} at={at} />, content]
+  }
   return (
     <>
       {groups.map((group) => {
-        const first = group[0],
-          inbox = !!first.context?.attachments?.length && !first.context.selection,
-          source =
-            first.context?.activeFilePath !== undefined
-              ? first.context.activeFilePath
-              : inbox
-                ? 'Inbox'
-                : first.context?.filePath
-        const sourceKey = source ? `${first.workspaceRoot}/${source}` : ''
-        const showSource = sourceKey && sourceKey !== lastSource
-        if (first.role === 'user') lastSource = sourceKey
+        const first = group[0]
         const imported = group.filter((message) => message.change?.kind === 'import')
         const changes = group.filter(
           (message) =>
@@ -104,140 +100,147 @@ export function AgentTranscript({
         )
         return (
           <Fragment key={first.id}>
-            {showSource && (
-              <AgentSource
-                path={source!}
-                at={first.createdAt}
-                onOpen={
-                  inbox && source === 'Inbox'
-                    ? undefined
-                    : () => onOpenFile(source!, first.workspaceRoot)
+            {imported.length > 0 &&
+              !group.some((message) => message.receipt) &&
+              dated(
+                `receipt:${first.id}`,
+                first.createdAt,
+                <AgentReceipt
+                  key={`receipt:${first.id}`}
+                  receipt={{
+                    files: imported.map((message) => ({
+                      id: message.change!.id,
+                      name: message.change!.path.split('/').pop()!,
+                      path: message.change!.path,
+                      status: 'stored',
+                    })),
+                  }}
+                  onOpen={(id) => onOpenFile(`melo-attachment:${id}`, first.workspaceRoot)}
+                />,
+              )}
+            {group
+              .map((message) => {
+                if (message.id === activity[0]?.id)
+                  return (
+                    <AgentActivity
+                      key={message.id}
+                      messages={activity}
+                      active={
+                        running &&
+                        group === groups.at(-1) &&
+                        first.conversationId === activeConversation
+                      }
+                    />
+                  )
+                if (activity.includes(message)) return null
+                if (message.change || message.filing) return null
+                if (message.receipt)
+                  return (
+                    <AgentReceipt
+                      key={message.id}
+                      receipt={message.receipt}
+                      onOpen={(id) => onOpenFile(`melo-attachment:${id}`, message.workspaceRoot)}
+                    />
+                  )
+                if (message.approval)
+                  return (
+                    <AgentPermission
+                      key={message.id}
+                      permission={message.approval}
+                      active={
+                        message.approval.id === activePermission &&
+                        message.conversationId === activeConversation
+                      }
+                      workspaceName={message.workspaceRoot.split('/').pop()!}
+                      busy={busy}
+                      onRespond={(allow, run) =>
+                        onRespond?.(message.conversationId, message.approval!.id, allow, run)
+                      }
+                    />
+                  )
+                if (message.plan) {
+                  const complete =
+                    message.plan.length > 0 &&
+                    message.plan.every((entry) => entry.status === 'completed')
+                  return complete ? (
+                    <p key={message.id} className="agent-plan-complete">
+                      <span>✓</span>
+                      {t('agent.stepsDone', { count: message.plan.length })}
+                    </p>
+                  ) : (
+                    <AgentPlan
+                      key={message.id}
+                      entries={message.plan}
+                      active={running && !busy && message.id === activePlan}
+                    />
+                  )
                 }
-              />
-            )}
-            {imported.length > 0 && !group.some((message) => message.receipt) && (
-              <AgentReceipt
-                receipt={{
-                  files: imported.map((message) => ({
-                    id: message.change!.id,
-                    name: message.change!.path.split('/').pop()!,
-                    path: message.change!.path,
-                    status: 'stored',
-                  })),
-                }}
-                onOpen={(id) => onOpenFile(`melo-attachment:${id}`, first.workspaceRoot)}
-              />
-            )}
-            {group.map((message) => {
-              if (message.id === activity[0]?.id)
+                if (message.role === 'tool') return null
                 return (
-                  <AgentActivity
-                    key={message.id}
-                    messages={activity}
-                    active={
-                      running &&
-                      group === groups.at(-1) &&
-                      first.conversationId === activeConversation
-                    }
-                  />
-                )
-              if (activity.includes(message)) return null
-              if (message.change || message.filing) return null
-              if (message.receipt)
-                return (
-                  <AgentReceipt
-                    key={message.id}
-                    receipt={message.receipt}
-                    onOpen={(id) => onOpenFile(`melo-attachment:${id}`, message.workspaceRoot)}
-                  />
-                )
-              if (message.approval)
-                return (
-                  <AgentPermission
-                    key={message.id}
-                    permission={message.approval}
-                    active={
-                      message.approval.id === activePermission &&
-                      message.conversationId === activeConversation
-                    }
-                    workspaceName={message.workspaceRoot.split('/').pop()!}
-                    busy={busy}
-                    onRespond={(allow, run) =>
-                      onRespond?.(message.conversationId, message.approval!.id, allow, run)
-                    }
-                  />
-                )
-              if (message.plan) {
-                const complete =
-                  message.plan.length > 0 &&
-                  message.plan.every((entry) => entry.status === 'completed')
-                return complete ? (
-                  <p key={message.id} className="agent-plan-complete">
-                    <span>✓</span>
-                    {t('agent.stepsDone', { count: message.plan.length })}
-                  </p>
-                ) : (
-                  <AgentPlan
-                    key={message.id}
-                    entries={message.plan}
-                    active={running && !busy && message.id === activePlan}
-                  />
-                )
-              }
-              if (message.role === 'tool') return null
-              return (
-                <ContextMenu.Root key={message.id}>
-                  <ContextMenu.Trigger asChild>
-                    <div
-                      className="agent-message-anchor"
-                      data-message-id={message.id}
-                      data-highlight={highlight === message.id || undefined}
-                    >
-                      <AgentMessage
-                        content={message.content}
-                        role={message.role}
-                        context={message.context}
-                        complete={
-                          !running ||
-                          message.conversationId !== activeConversation ||
-                          message.id !== messages.at(-1)?.id
-                        }
-                        onOpenFile={(path) => onOpenFile(path, message.workspaceRoot)}
-                        onOpenMessage={onOpenMessage}
-                      />
-                    </div>
-                  </ContextMenu.Trigger>
-                  <ContextMenu.Portal>
-                    <ContextMenu.Content className="top-menu agent-message-menu">
-                      <ContextMenu.Item
-                        className="tm-item"
-                        disabled={running || busy}
-                        onSelect={() => onDelete(message.id)}
+                  <ContextMenu.Root key={message.id}>
+                    <ContextMenu.Trigger asChild>
+                      <div
+                        className="agent-message-anchor"
+                        data-message-id={message.id}
+                        data-highlight={highlight === message.id || undefined}
                       >
-                        {t('agent.deleteMessage')}
-                      </ContextMenu.Item>
-                    </ContextMenu.Content>
-                  </ContextMenu.Portal>
-                </ContextMenu.Root>
-              )
-            })}
-            {filings.map((filing) => (
-              <AgentFilingResult
-                key={filing.id}
-                filing={filing}
-                disabled={running || busy || first.workspaceRoot !== activeWorkspace}
-                onOpenFile={(path) => onOpenFile(path, first.workspaceRoot)}
-                onUndo={() => onUndoFiling(first.conversationId, filing.id)}
-              />
-            ))}
-            {changes.length > 0 && (
-              <AgentChanges
-                messages={changes}
-                disabled={running || busy || first.workspaceRoot !== activeWorkspace}
-                onOpenFile={(path) => onOpenFile(path, first.workspaceRoot)}
-                onUndo={(ids) => onUndo(first.conversationId, ids)}
-              />
+                        <AgentMessage
+                          content={message.content}
+                          role={message.role}
+                          context={message.context}
+                          complete={
+                            !running ||
+                            message.conversationId !== activeConversation ||
+                            message.id !== messages.at(-1)?.id
+                          }
+                          onOpenFile={(path) => onOpenFile(path, message.workspaceRoot)}
+                          onOpenMessage={onOpenMessage}
+                        />
+                      </div>
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Portal>
+                      <ContextMenu.Content className="top-menu agent-message-menu">
+                        <ContextMenu.Item
+                          className="tm-item"
+                          disabled={running || busy}
+                          onSelect={() => onDelete(message.id)}
+                        >
+                          {t('agent.deleteMessage')}
+                        </ContextMenu.Item>
+                      </ContextMenu.Content>
+                    </ContextMenu.Portal>
+                  </ContextMenu.Root>
+                )
+              })
+              .map(
+                (content, index) =>
+                  content && dated(group[index].id, group[index].createdAt, content),
+              )}
+            {filings.map((filing) =>
+              dated(
+                filing.id,
+                group.at(-1)!.createdAt,
+                <AgentFilingResult
+                  key={filing.id}
+                  filing={filing}
+                  disabled={running || busy || first.workspaceRoot !== activeWorkspace}
+                  onOpenFile={(path) => onOpenFile(path, first.workspaceRoot)}
+                  onUndo={() => onUndoFiling(first.conversationId, filing.id)}
+                />,
+              ),
             )}
+            {changes.length > 0 &&
+              dated(
+                `changes:${first.id}`,
+                group.at(-1)!.createdAt,
+                <AgentChanges
+                  key={`changes:${first.id}`}
+                  messages={changes}
+                  disabled={running || busy || first.workspaceRoot !== activeWorkspace}
+                  onOpenFile={(path) => onOpenFile(path, first.workspaceRoot)}
+                  onUndo={(ids) => onUndo(first.conversationId, ids)}
+                />,
+              )}
           </Fragment>
         )
       })}

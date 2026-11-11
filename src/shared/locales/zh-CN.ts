@@ -2,6 +2,8 @@ import type { LocaleDict } from './en'
 
 export const zhCN: LocaleDict = {
   agent: {
+    historyToday: '今天',
+    historyYesterday: '昨天',
     moreHistory: '查看更多',
     changes: '文件改动',
     movedPath: '{{from}} → {{to}}',

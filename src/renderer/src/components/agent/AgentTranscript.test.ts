@@ -238,7 +238,7 @@ it('does not reopen a superseded confirmation when the user asks to revise the p
   expect(html).not.toContain('data-pending')
 })
 
-it('only marks a source change after sending, keeping repeated selections within the same file', () => {
+it('keeps file changes and explicit sources in their messages without splitting the conversation', () => {
   const html = renderToStaticMarkup(
     createElement(AgentTranscript, {
       messages: [
@@ -249,13 +249,35 @@ it('only marks a source change after sending, keeping repeated selections within
         },
         {
           ...message('3'),
+          content: '好了',
+          context: { activeFilePath: 'Projects/game.html' },
+        },
+        { ...message('4'), context: { activeFilePath: null } },
+        {
+          ...message('5'),
           context: {
             activeFilePath: 'Inbox/report.pdf',
             filePath: 'Ideas.md',
             selection: 'A different passage',
           },
         },
-        { ...message('4'), context: { activeFilePath: 'Inbox/report.pdf' } },
+        {
+          ...message('6'),
+          context: {
+            activeFilePath: 'Inbox/report.pdf',
+            filePath: 'Other.md',
+            selection: 'New source',
+          },
+        },
+        {
+          ...message('7'),
+          conversationId: 'another-conversation',
+          context: { activeFilePath: 'Background.md' },
+        },
+        {
+          ...message('8'),
+          context: { filePath: 'Other.md', selection: 'Back to quote' },
+        },
       ],
       running: false,
       activeWorkspace: '/notes',
@@ -268,11 +290,57 @@ it('only marks a source change after sending, keeping repeated selections within
       onDelete: () => {},
     }),
   )
-  expect(html.match(/class="agent-source-divider"/g)).toHaveLength(2)
-  const boundary = html.lastIndexOf('class="agent-source-divider"')
-  expect(boundary).toBeLessThan(html.indexOf('A different passage'))
-  expect(html.slice(boundary)).toContain('<strong>report.pdf</strong>')
+  expect(html.match(/class="agent-date-divider"/g)).toHaveLength(1)
+  expect(html).not.toContain('agent-source-divider')
+  expect(html).toContain('Other.md')
+  expect(html).toContain('Back to quote')
+  expect(html).not.toContain('Projects/game.html')
+  expect(html).not.toContain('report.pdf')
 })
+
+it.each([
+  { activeFilePath: 'Guide.md' },
+  { activeFilePath: null },
+  { activeFilePath: undefined },
+  { activeFilePath: 'Guide.md', filePath: 'Quotes.md', selection: 'Quoted passage' },
+])(
+  'keeps attachments and quotes with their message, without an editor heading ($activeFilePath)',
+  (source) => {
+    const html = renderToStaticMarkup(
+      createElement(AgentTranscript, {
+        messages: [
+          {
+            ...message('1'),
+            content: '整理这个文件',
+            context: {
+              ...source,
+              attachments: [{ id: 'csv', name: 'report.csv', size: 42, path: 'Inbox/report.csv' }],
+            },
+          },
+          {
+            ...message('2'),
+            content: '现在读编辑器里的文章',
+            context: { activeFilePath: 'Ideas.md' },
+          },
+        ],
+        running: false,
+        activeWorkspace: '/notes',
+        busy: false,
+        highlight: null,
+        onOpenFile: () => {},
+        onOpenMessage: () => {},
+        onUndo: () => {},
+        onUndoFiling: () => {},
+        onDelete: () => {},
+      }),
+    )
+    expect(html.match(/class="agent-date-divider"/g)).toHaveLength(1)
+    expect(html).not.toContain('agent-source-divider')
+    expect(html).toContain('report.csv')
+    expect(html).not.toContain('Guide.md')
+    expect(html).not.toContain('<strong>Ideas</strong>')
+  },
+)
 
 it('shows Inbox receipt separately from changes and never offers import undo while reviewing a plan', () => {
   const html = renderToStaticMarkup(
@@ -368,7 +436,7 @@ it('keeps change ownership across a deleted question and disables undo in other 
   })
   const groups = output.props.children as ReactElement<{ children: ReactElement[] }>[]
   const cards = groups.flatMap((group) =>
-    group.props.children.filter((child) => child?.type === AgentChanges),
+    group.props.children.flat(Infinity).filter((child) => child?.type === AgentChanges),
   ) as ReactElement<Parameters<typeof AgentChanges>[0]>[]
   expect(cards).toHaveLength(2)
   expect(cards[0].props.disabled).toBe(false)
@@ -507,7 +575,7 @@ it('keeps two filing batches separate from unrelated edits after their question 
   }
   const output = AgentTranscript(props)
   const groups = output.props.children as ReactElement<{ children: ReactElement[] }>[]
-  const children = groups.flatMap((group) => group.props.children.flat())
+  const children = groups.flatMap((group) => group.props.children.flat(Infinity))
   const batches = children.filter((child) => child?.type === AgentFilingResult) as ReactElement<
     Parameters<typeof AgentFilingResult>[0]
   >[]
@@ -562,4 +630,72 @@ it('keeps unresolved operations visible after all confirmed changes have been un
   expect(partial).toContain('agent.organization.undoConfirmed')
   expect(partial.match(/class="[^"]*agent-filing-undo/g)).toHaveLength(1)
   expect(partial).not.toContain('class="agent-quiet"')
+})
+
+it('separates an overnight reply by its actual local date, without splitting again for files or conversations', () => {
+  const sent = new Date(2026, 10, 10, 23, 59).getTime()
+  const replied = new Date(2026, 10, 11, 0, 1).getTime()
+  const render = (messages: AgentHistoryMessage[], running = false) =>
+    renderToStaticMarkup(
+      createElement(AgentTranscript, {
+        messages,
+        running,
+        activeConversation: 'conversation',
+        activePermission: 'permission',
+        busy: false,
+        activeWorkspace: '/notes',
+        highlight: null,
+        onOpenFile: () => {},
+        onOpenMessage: () => {},
+        onUndo: () => {},
+        onUndoFiling: () => {},
+        onDelete: () => {},
+      }),
+    )
+  const messages: AgentHistoryMessage[] = [
+    { ...message('1'), createdAt: sent },
+    { ...message('2'), role: 'assistant', content: 'Overnight reply', createdAt: replied },
+    {
+      ...message('3'),
+      context: { activeFilePath: 'Projects/game.html' },
+      createdAt: replied + 1000,
+    },
+    { ...message('4'), conversationId: 'another', createdAt: replied + 2000 },
+  ]
+  const html = render(messages)
+  expect(html.match(/class="agent-date-divider"/g)).toHaveLength(2)
+  expect(html.indexOf(new Date(replied).toISOString())).toBeLessThan(
+    html.indexOf('Overnight reply'),
+  )
+  const partial = render(messages.slice(1))
+  expect(partial.match(/class="agent-date-divider"/g)).toHaveLength(1)
+  expect(partial).not.toContain(new Date(sent).toISOString())
+  const pending = render(
+    [
+      { ...message('1'), createdAt: sent },
+      {
+        ...message('2'),
+        role: 'tool',
+        content: 'Reading report',
+        createdAt: sent + 1,
+        toolStatus: 'pending',
+        toolActivity: { kind: 'read' },
+      },
+      {
+        ...message('3'),
+        role: 'tool',
+        createdAt: replied,
+        approval: {
+          id: 'permission',
+          status: 'pending',
+          operation: { kind: 'native', title: 'Read report', detail: '{}' },
+        },
+      },
+    ],
+    true,
+  )
+  expect(pending.match(/class="agent-date-divider"/g)).toHaveLength(2)
+  expect(pending).toContain('agent.activityInProgress')
+  expect(pending).not.toContain('agent.activityEnded')
+  expect(pending).toContain('data-pending')
 })

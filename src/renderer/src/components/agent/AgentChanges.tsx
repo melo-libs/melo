@@ -108,6 +108,13 @@ export function AgentChanges({
               { count: trashed && pending.length ? pending.length : changes.length },
             )}
           </span>
+          {single && (
+            <span className="agent-operation-target">
+              {changes[0].kind === 'move'
+                ? t('agent.movedPath', { from: changes[0].source, to: changes[0].path })
+                : changes[0].path}
+            </span>
+          )}
           <Icon name="chev" size={12} />
         </summary>
         <div className="agent-change-files">{rows}</div>
