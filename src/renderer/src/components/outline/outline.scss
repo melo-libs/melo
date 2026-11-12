@@ -38,30 +38,31 @@
     box-shadow 160ms var(--ease);
   span {
     display: block;
-    width: 12px;
+    width: 8px;
     height: 2px;
     border-radius: 2px;
+    // Keep the collapsed rail quiet beside the document text.
     background: var(--ink-3);
-    opacity: 0.45;
+    opacity: 0.3;
     transition:
       width 200ms var(--ease),
       opacity 200ms var(--ease),
       background 200ms var(--ease);
     &[data-level='1'] {
-      width: 20px;
+      width: 16px;
     }
     &[data-level='2'] {
-      width: 16px;
+      width: 12px;
     }
     &[data-active] {
-      width: 16px;
-      background: var(--ink);
-      opacity: 0.9;
+      width: 12px;
+      background: var(--ink-2);
+      opacity: 0.65;
       &[data-level='1'] {
-        width: 24px;
+        width: 20px;
       }
       &[data-level='2'] {
-        width: 20px;
+        width: 16px;
       }
     }
   }
