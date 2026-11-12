@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.2.0](https://github.com/melo-libs/melo/compare/v2.1.3...v2.2.0) (2026-11-12)
+
+- Added Mermaid diagrams with source editing, image copying, and inline zoom and pan.
+- Added inline image navigation and fullscreen viewing.
+- Replaced the outline sidebar with a compact contents rail and added reference navigation in the document footer.
+- Added dockable, resizable Agent conversations and improved attachment targeting and document context feedback.
+- Improved rich-text and image clipboard handling and added an explicit Copy as Markdown command.
+- Added direct link navigation with modifier-key cursor feedback and workspace-aware path resolution.
+- Simplified web clipping actions, capture status, folder selection, and website icons.
+- Upgraded Tiptap to 3.33.0, fixed table alignment, and covered paragraph splitting and undo.
+
 ## [2.1.3](https://github.com/melo-libs/melo/compare/v2.1.2...v2.1.3) (2026-11-07)
 
 - API connections now distinguish saved credentials from verified connections, with clear feedback next to rejected keys.
