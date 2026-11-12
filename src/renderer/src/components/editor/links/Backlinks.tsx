@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Icon } from '../../Icon'
@@ -7,7 +7,7 @@ import { IpcChannels } from '@shared/types/ipc'
 import { toast } from '../../Toaster'
 import { openFileAtom } from '../../../store/editor'
 import { workspacePathAtom } from '../../../store/workspace'
-import { useNoteLinks } from './useNoteLinks'
+import type { NoteLinks } from './useNoteLinks'
 import { wikilinkSnippetHtml, mentionSnippetHtml } from './snippets'
 import { workspaceDisplayPath } from './resolve'
 
@@ -17,12 +17,22 @@ import { workspaceDisplayPath } from './resolve'
    fed by the links table (InvokeGetNoteLinks).
    ============================================================ */
 
-export const Backlinks = () => {
+export const Backlinks = ({
+  links,
+  notePath,
+  refresh,
+  open,
+  onToggle,
+  sectionRef,
+}: {
+  links: NoteLinks
+  notePath: string | null
+  refresh(): void
+  open: boolean
+  onToggle(): void
+  sectionRef: RefObject<HTMLElement>
+}) => {
   const { t } = useTranslation()
-  // Collapsed by default: a quiet one-line summary at the end of the note;
-  // the context only unfolds when asked for.
-  const [open, setOpen] = useState(false)
-  const { links, notePath, refresh } = useNoteLinks()
   const openFile = useSetAtom(openFileAtom)
   const workspacePath = useAtomValue(workspacePathAtom)
   // Paths just promoted via "Link" — highlighted after the refresh.
@@ -32,12 +42,11 @@ export const Backlinks = () => {
   const stem = (notePath?.split('/').pop() ?? '').replace(/\.(md|markdown)$/i, '')
   const highlights = [links.selfTitle, stem]
 
-  const totalRefs = links.backlinks.reduce((n, g) => n + g.refs.length, 0)
-  const backlinkSources = links.backlinks.length
+  const backlinkSources = links.backlinksTotal
 
   // Most notes have no references at all — render nothing rather than an
   // empty "Linked references 0" shell on every note.
-  if (!notePath || (links.backlinks.length === 0 && links.mentions.length === 0)) return null
+  if (!notePath || (backlinkSources === 0 && links.mentions.length === 0)) return null
 
   const linkIt = async (mention: { path: string; title: string }) => {
     const res = await window.api.invoke(IpcChannels.InvokeLinkMention, {
@@ -53,9 +62,9 @@ export const Backlinks = () => {
   }
 
   return (
-    <section className="bl">
+    <section className="bl" ref={sectionRef}>
       <div className="bl-rule" />
-      <button className="bl-head" onClick={() => setOpen((o) => !o)}>
+      <button className="bl-head" aria-expanded={open} onClick={onToggle}>
         <span className={'bl-head-chev' + (open ? ' open' : '')}>
           <Icon name="chev" size={13} />
         </span>
@@ -63,7 +72,7 @@ export const Backlinks = () => {
           <Icon name="backlink" size={16} />
         </span>
         <span className="bl-head-title">{t('links.linkedReferences')}</span>
-        <span className="bl-count">{totalRefs}</span>
+        <span className="bl-count">{backlinkSources}</span>
         <span className="bl-head-spacer" />
         <span className="bl-head-from">
           {backlinkSources

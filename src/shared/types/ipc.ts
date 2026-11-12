@@ -142,7 +142,7 @@ export enum IpcChannels {
   // Wikilinks: picker candidates + batch target resolution
   InvokeListLinkTargets = 'invoke-list-link-targets',
   InvokeResolveWikilinks = 'invoke-resolve-wikilinks',
-  // Backlinks panel / Links tab data for one note; link an unlinked mention
+  // Linked references and unlinked mentions for one note
   InvokeGetNoteLinks = 'invoke-get-note-links',
   InvokeLinkMention = 'invoke-link-mention',
   // Smart folders: definitions (.melo/views.json), query, counts, vocab
@@ -542,14 +542,13 @@ export interface IpcChannelDefinitions {
     args: { path: string }
     response: IpcResponse<{
       selfTitle: string
+      backlinksTotal: number
       backlinks: {
         path: string
         title: string
         refs: { heading: string | null; context: string }[]
       }[]
       mentions: { path: string; title: string; context: string }[]
-      outgoing: { target: string; path: string | null; title: string | null }[]
-      edges: [string, string][]
     }>
   }
   [IpcChannels.InvokeLinkMention]: {

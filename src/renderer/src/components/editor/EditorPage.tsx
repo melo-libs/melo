@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import i18n from '../../i18n'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { EditorState, NodeSelection, Selection } from '@tiptap/pm/state'
@@ -24,7 +24,6 @@ import { DocumentTags } from './DocumentTags'
 import { WikilinkLayer } from './links/WikilinkLayer'
 import { LinkPicker, type LinkPick } from './links/LinkPicker'
 import { sanitizeWikilinkTarget } from './links/Wikilink'
-import { Backlinks } from './links/Backlinks'
 import { MathEditor } from './MathEditor'
 import type { SharePayload } from './ShareCard'
 import { SlashMenu } from './SlashMenu'
@@ -52,6 +51,7 @@ export interface EditorPageProps {
   title: string
   width: 'narrow' | 'default' | 'wide' | 'full'
   onShare: (payload: SharePayload) => void
+  backlinks?: ReactNode
 }
 
 type BlockMenuState = { node: PMNode; pos: number; x: number; y: number }
@@ -61,7 +61,7 @@ type BlockMenuState = { node: PMNode; pos: number; x: number; y: number }
  * (lede paragraph) are editable document content. Bubble menu (selection),
  * slash command, and the drag handle + block menu are layered on top.
  */
-export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPageProps) => {
+export const EditorPage = ({ activeTabId, title, width, onShare, backlinks }: EditorPageProps) => {
   const metadata = useAtomValue(displayedMetadataAtom)
   const setToc = useSetAtom(tocAtom)
   const setWordCount = useSetAtom(wordCountAtom)
@@ -81,7 +81,7 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
         onUpdate: (content) => {
           const toc = content.map((i) => ({
             id: i.id,
-            level: Math.min(i.level, 3),
+            level: i.level,
             text: i.textContent,
             active: i.isActive,
           }))
@@ -501,7 +501,7 @@ export const EditorPage = ({ activeTabId, title, width, onShare }: EditorPagePro
       <EditorContent editor={editor} className="ed-prose">
         {editor && <SlashMenu editor={editor} />}
       </EditorContent>
-      <Backlinks />
+      {backlinks}
       <WikilinkLayer />
       {linkPicker && (
         <LinkPicker

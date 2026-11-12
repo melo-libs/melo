@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { persistTabSessionNow } from '../../store/tabSession'
 import { settingsAtom } from '../../store/settings'
 import i18n from '../../i18n'
@@ -25,6 +25,9 @@ import { workspacePathAtom, workspaceSwitchingAtom, treeSelectionAtom } from '..
 import { ViewerPage } from './viewers/ViewerPage'
 import { toast } from '../Toaster'
 import { tocAtom } from '../../store/toc'
+import { Outline } from '../outline/Outline'
+import { Backlinks } from './links/Backlinks'
+import { useNoteLinks } from './links/useNoteLinks'
 import {
   closeSession,
   flush,
@@ -45,7 +48,6 @@ export interface EditorProps {
   sidebarAvailable?: boolean
   onLifecycleReadyChange?: (ready: boolean) => void
   onToggleSidebar: () => void
-  onToggleOutline: () => void
   onToggleTheme: () => void
 }
 
@@ -86,7 +88,6 @@ export const Editor = ({
   sidebarAvailable = true,
   onLifecycleReadyChange,
   onToggleSidebar,
-  onToggleOutline,
   onToggleTheme,
 }: EditorProps) => {
   const editorWidth = useAtomValue(settingsAtom).editorWidth
@@ -441,7 +442,20 @@ export const Editor = ({
   const activeKind = activeTab ? tabKind(activeTab.id) : null
   const viewerActive = activeKind !== null && !isEditableKind(activeKind)
 
-  // The outline panel would otherwise keep showing the hidden document.
+  const noteLinks = useNoteLinks(viewerActive ? null : activeTab?.path || null)
+  const [referencesFor, setReferencesFor] = useState<string | null>(null)
+  const referencesOpen = referencesFor === activeTabId && activeTabId !== null
+  const references = useRef<HTMLElement>(null)
+  const revealReferences = useRef(false)
+  useLayoutEffect(() => {
+    // Only the footer requests a jump; returning to a tab must not move its reading position.
+    if (referencesOpen && revealReferences.current) {
+      references.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      revealReferences.current = false
+    }
+  }, [referencesOpen])
+
+  // Viewer tabs must not publish headings from the hidden editor.
   const setToc = useSetAtom(tocAtom)
   useEffect(() => {
     if (viewerActive) setToc([])
@@ -456,7 +470,6 @@ export const Editor = ({
         viewerActive={viewerActive}
         sidebarAvailable={sidebarAvailable}
         onToggleSidebar={onToggleSidebar}
-        onToggleOutline={onToggleOutline}
         onToggleTheme={onToggleTheme}
       />
       {hasTabs && (
@@ -474,27 +487,46 @@ export const Editor = ({
         <div className="editor-content">
           {hasTabs ? (
             <>
-              <div className="ed-scroll" data-viewer={viewerActive || undefined}>
-                <div style={{ display: viewerActive ? 'none' : 'contents' }}>
-                  <EditorPage
-                    activeTabId={viewerActive ? null : activeTabId}
-                    title={activeTab?.title ?? 'Untitled'}
-                    width={editorWidth}
-                    onShare={setSharePayload}
-                  />
+              <div className="ed-reading">
+                <div className="ed-scroll" data-viewer={viewerActive || undefined}>
+                  <div style={{ display: viewerActive ? 'none' : 'contents' }}>
+                    <EditorPage
+                      activeTabId={viewerActive ? null : activeTabId}
+                      title={activeTab?.title ?? 'Untitled'}
+                      width={editorWidth}
+                      onShare={setSharePayload}
+                      backlinks={
+                        <Backlinks
+                          key={`references:${activeTabId}`}
+                          {...noteLinks}
+                          open={referencesOpen}
+                          sectionRef={references}
+                          onToggle={() => setReferencesFor(referencesOpen ? null : activeTabId)}
+                        />
+                      }
+                    />
+                  </div>
+                  {viewerActive && activeTab && activeKind && (
+                    <ViewerPage
+                      key={activeTab.id}
+                      path={activeTab.id}
+                      kind={activeKind}
+                      name={activeTab.title}
+                    />
+                  )}
                 </div>
-                {viewerActive && activeTab && activeKind && (
-                  <ViewerPage
-                    key={activeTab.id}
-                    path={activeTab.id}
-                    kind={activeKind}
-                    name={activeTab.title}
-                  />
-                )}
+                {!viewerActive && <Outline key={activeTabId} />}
               </div>
               <BottomBar
                 filePath={activeTab?.path ?? null}
                 viewerKind={viewerActive ? activeKind : null}
+                references={noteLinks.links.backlinksTotal}
+                onReferences={() => {
+                  revealReferences.current = !referencesOpen
+                  setReferencesFor(activeTabId)
+                  if (referencesOpen)
+                    references.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
               />
             </>
           ) : (

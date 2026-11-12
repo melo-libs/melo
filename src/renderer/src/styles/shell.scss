@@ -1,24 +1,19 @@
 /* ============================================================
-   App shell — three-column grid: sidebar | editor | outline.
-   Sidebar and outline collapse to 0 via data attributes.
+   App shell — two-column grid: sidebar | editor.
+   The sidebar collapses to 0 via a data attribute.
    ============================================================ */
 
 .app {
   --sidebar-layout-w: var(--sidebar-w);
-  --outline-layout-w: var(--outline-w);
   --smart-layout-min-w: 0px;
   display: grid;
-  grid-template-columns: var(--sidebar-layout-w) minmax(0, 1fr) var(--outline-layout-w);
+  grid-template-columns: var(--sidebar-layout-w) minmax(0, 1fr);
   height: 100vh;
   background: transparent;
 }
 
 .app[data-sidebar='hidden'] {
   --sidebar-layout-w: 0px;
-}
-
-.app[data-outline='hidden'] {
-  --outline-layout-w: 0px;
 }
 
 /* Keep an automatically collapsed sidebar mounted: it owns document-action
@@ -35,11 +30,7 @@
 .app:is([data-smart], [data-agent-docked])[data-sidebar='shown'] {
   --sidebar-layout-w: min(
     var(--sidebar-w),
-    calc(
-      100% - var(--outline-layout-w) - var(--agent-layout-w, 0px) - var(--smart-layout-min-w) - var(
-          --editor-min-w
-        )
-    )
+    calc(100% - var(--agent-layout-w, 0px) - var(--smart-layout-min-w) - var(--editor-min-w))
   );
 }
 .app[data-smart] .smart-view {
@@ -60,17 +51,6 @@
   min-width: 0;
   height: 100vh;
   overflow: hidden;
-}
-
-.app-outline {
-  border-left: 1px solid var(--hairline);
-  background: var(--paper);
-}
-
-/* Zero the placeholder border when collapsed so a 0-width column
-   doesn't leave a 1px sliver. */
-.app[data-outline='hidden'] .app-outline {
-  border-left: 0;
 }
 
 /* When the sidebar is collapsed, the leftmost top bar needs room for

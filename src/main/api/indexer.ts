@@ -695,11 +695,7 @@ export function resolveWikilinks(targets: string[]): Record<string, ResolvedLink
   return out
 }
 
-/* ---------------- note links panel (F4) ----------------
-   Everything the backlinks panel and the Links tab need for one note,
-   in a single call: linked references with paragraph context, unlinked
-   mentions from full text, outgoing targets (pre-resolved), and the
-   links among those neighbors for the local graph. */
+/* Linked references with paragraph context and unlinked prose mentions. */
 
 export interface BacklinkRef {
   heading: string | null
@@ -718,31 +714,21 @@ export interface UnlinkedMention {
   context: string
 }
 
-export interface OutgoingTarget {
-  target: string
-  path: string | null
-  title: string | null
-}
-
 export interface NoteLinksData {
   /** Indexed title of the note itself (mention term, snippet highlight). */
   selfTitle: string
   backlinks: BacklinkSource[]
+  backlinksTotal: number
   mentions: UnlinkedMention[]
-  outgoing: OutgoingTarget[]
-  /** Absolute-path pairs among {self ∪ neighbors}, for the local graph. */
-  edges: [string, string][]
 }
 
 const EMPTY_NOTE_LINKS: NoteLinksData = {
   selfTitle: '',
   backlinks: [],
+  backlinksTotal: 0,
   mentions: [],
-  outgoing: [],
-  edges: [],
 }
 
-const MAX_BACKLINK_SOURCES = 30
 const MAX_REFS_PER_SOURCE = 4
 const MAX_MENTIONS = 20
 const CONTEXT_CHARS = 280
@@ -895,9 +881,13 @@ export function getNoteLinks(filePath: string): NoteLinksData {
       `SELECT DISTINCT f.id, f.path, f.title FROM links l
        JOIN files f ON f.id = l.source_id
        WHERE lower_u(l.target) IN (${marks}) AND f.id != ?
-       ORDER BY f.mtime DESC LIMIT ?`,
+       ORDER BY f.mtime DESC, f.id DESC`,
     )
-    .all(...variants, cur.id, MAX_BACKLINK_SOURCES) as { id: number; path: string; title: string }[]
+    .all(...variants, cur.id) as {
+    id: number
+    path: string
+    title: string
+  }[]
 
   const refRe = wikilinkRefRegex(variants)
   const backlinks: BacklinkSource[] = []
@@ -927,26 +917,25 @@ export function getNoteLinks(filePath: string): NoteLinksData {
   const mentions: UnlinkedMention[] = []
   const mentionTerm = cur.title.trim()
   if ([...mentionTerm].length >= 3) {
-    const linkedIds = new Set(sources.map((s) => s.id))
     try {
       const hits = db
         .prepare(
           `SELECT f.id, f.path, f.title
            FROM fts JOIN files f ON f.id = fts.rowid
            WHERE fts MATCH ? AND fts.rowid != ?
+             AND NOT EXISTS (
+               SELECT 1 FROM links l WHERE l.source_id = f.id
+               AND lower_u(l.target) IN (${marks})
+             )
            ORDER BY bm25(fts) LIMIT ?`,
         )
-        .all(
-          '"' + mentionTerm.replace(/"/g, '""') + '"',
-          cur.id,
-          MAX_MENTIONS + sources.length,
-        ) as {
+        .all('"' + mentionTerm.replace(/"/g, '""') + '"', cur.id, ...variants, MAX_MENTIONS) as {
         id: number
         path: string
         title: string
       }[]
       for (const h of hits) {
-        if (linkedIds.has(h.id) || mentions.length >= MAX_MENTIONS) continue
+        if (mentions.length >= MAX_MENTIONS) continue
         let body: string
         try {
           body = matter(fs.readFileSync(toAbs(h.path), 'utf-8')).content
@@ -970,59 +959,11 @@ export function getNoteLinks(filePath: string): NoteLinksData {
     }
   }
 
-  /* -- outgoing links, resolved here so the tab needs no second pass -- */
-  const outgoingRows = db
-    .prepare('SELECT DISTINCT target FROM links WHERE source_id = ? ORDER BY rowid')
-    .all(cur.id) as { target: string }[]
-  const resolved = resolveWikilinks(outgoingRows.map((r) => r.target))
-  const outgoing: OutgoingTarget[] = outgoingRows.map((r) => {
-    const hit = resolved[r.target]
-    return { target: r.target, path: hit?.path ?? null, title: hit?.title ?? null }
-  })
-
-  /* -- edges among self ∪ neighbors, for the local graph -- */
-  const selfAbs = toAbs(cur.path)
-  // rel path → { id, title, abs } for every on-screen neighbor (backlink
-  // sources carry their row; outgoing-only neighbors are looked up).
-  const rowByPath = db.prepare('SELECT id, title FROM files WHERE path = ?')
-  const neighbors = new Map<string, { id: number; title: string; abs: string }>()
-  for (const s of sources) neighbors.set(s.path, { id: s.id, title: s.title, abs: toAbs(s.path) })
-  for (const o of outgoing) {
-    if (!o.path) continue
-    const r = toRel(o.path)
-    if (!r || neighbors.has(r)) continue
-    const row = rowByPath.get(r) as { id: number; title: string } | undefined
-    if (row) neighbors.set(r, { id: row.id, title: row.title, abs: o.path })
-  }
-  const edges = new Set<string>()
-  for (const s of sources) edges.add(JSON.stringify([toAbs(s.path), selfAbs]))
-  for (const o of outgoing) if (o.path) edges.add(JSON.stringify([selfAbs, o.path]))
-  // Cross-links among neighbors (both endpoints already on screen).
-  if (neighbors.size) {
-    const ids = [...neighbors.values()].map((n) => n.id)
-    const idMarks = ids.map(() => '?').join(',')
-    const crossRows = db
-      .prepare(`SELECT source_id, target FROM links WHERE source_id IN (${idMarks})`)
-      .all(...ids) as { source_id: number; target: string }[]
-    const targetToAbs = new Map<string, string>()
-    const idToAbs = new Map<number, string>()
-    for (const [relPath, n] of neighbors) {
-      idToAbs.set(n.id, n.abs)
-      for (const v of targetVariantsOf(relPath, n.title)) targetToAbs.set(v, n.abs)
-    }
-    for (const r of crossRows) {
-      const from = idToAbs.get(r.source_id)
-      const to = targetToAbs.get(r.target.trim().toLowerCase())
-      if (from && to && from !== to) edges.add(JSON.stringify([from, to]))
-    }
-  }
-
   return {
     selfTitle: cur.title,
     backlinks,
+    backlinksTotal: sources.length,
     mentions,
-    outgoing,
-    edges: [...edges].map((e) => JSON.parse(e) as [string, string]),
   }
 }
 

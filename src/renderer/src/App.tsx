@@ -14,7 +14,6 @@ import { initTabSessionPersistence } from './store/tabSession'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { Editor } from './components/editor/Editor'
-import { Outline } from './components/outline/Outline'
 import { SmartView } from './components/smart/SmartView'
 import { SmartBuilder } from './components/smart/SmartBuilder'
 import { SearchPalette } from './components/search/SearchPalette'
@@ -62,10 +61,10 @@ const savedSidebarWidth = (): number => {
 }
 
 /**
- * App shell — three-column grid (sidebar | editor | outline).
+ * App shell — two-column grid (sidebar | editor).
  * Boot restores the last workspace (a plain folder); without one the
  * opener page shows instead. Smart Folders add a results list beside the
- * editor; the outline follows the active document in either browsing mode.
+ * editor; the document owns its outline in either browsing mode.
  */
 const App = () => {
   useEffect(connectAgent, [])
@@ -135,9 +134,6 @@ const App = () => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_WIDTH_DEFAULT))
   }, [])
   useEffect(() => () => stopSidebarResizeRef.current?.(), [])
-  // The setting provides the startup state; the toggle is a per-session
-  // choice and intentionally doesn't write back.
-  const [outlineShown, setOutlineShown] = useState(settings.outlineByDefault)
   // Theme lives in settings; 'system' resolves against the OS and follows
   // its changes live.
   const [sysDark, setSysDark] = useState(
@@ -160,19 +156,11 @@ const App = () => {
   const sidebarRequested = !!workspacePath && sidebarShown
   const agentExpanded = useAtomValue(agentExpandedAtom)
   const agentPanelMode = useAtomValue(agentPanelModeAtom)
-  const setAgentPanelMode = useSetAtom(agentPanelModeAtom)
   const preferredAgentWidth = useAtomValue(agentPanelWidthAtom)
   const [agentSpace, setAgentSpace] = useState(0)
   const dockWidth = agentDockWidth(preferredAgentWidth, agentSpace)
   const agentDocked =
     !!workspacePath && agentExpanded && agentPanelMode === 'docked' && dockWidth > 0
-  const showOutline = outlineShown && hasTabs && !agentDocked
-  const toggleOutline = () => {
-    if (agentDocked) {
-      setAgentPanelMode('floating')
-      setOutlineShown(true)
-    } else setOutlineShown((shown) => !shown)
-  }
   useLayoutEffect(() => {
     const shell = appRef.current
     if (!shell) return
@@ -222,7 +210,6 @@ const App = () => {
       SIDEBAR_WIDTH_MIN +
       parseFloat(style.getPropertyValue('--smart-list-min-w')) +
       parseFloat(style.getPropertyValue('--editor-min-w')) +
-      (showOutline ? parseFloat(style.getPropertyValue('--outline-w')) : 0) +
       (agentDocked ? dockWidth : 0)
     // Observe the shell, not its panes, so hiding the sidebar cannot make
     // the observer alternately show and hide it as the center grows.
@@ -231,12 +218,11 @@ const App = () => {
     const observer = new ResizeObserver(update)
     observer.observe(shell)
     return () => observer.disconnect()
-  }, [booting, smart, showOutline, workspacePath, agentDocked, dockWidth])
+  }, [booting, smart, workspacePath, agentDocked, dockWidth])
 
   const revealSidebar = useCallback(() => {
     // At narrow widths, the pane explicitly requested by the user wins.
     if (!sidebarFits) {
-      setOutlineShown(false)
       const shell = appRef.current!
       const style = getComputedStyle(shell)
       const minimumWidth =
@@ -620,7 +606,6 @@ const App = () => {
         } as CSSProperties
       }
       data-sidebar={showSidebar ? 'shown' : 'hidden'}
-      data-outline={showOutline ? 'shown' : 'hidden'}
       data-smart={smart || undefined}
       data-agent-docked={agentDocked || undefined}
     >
@@ -640,12 +625,10 @@ const App = () => {
             sidebarAvailable={!!workspacePath}
             onLifecycleReadyChange={handleEditorReadyChange}
             onToggleSidebar={toggleSidebar}
-            onToggleOutline={toggleOutline}
             onToggleTheme={() => setSetting('theme', theme === 'dark' ? 'light' : 'dark')}
           />
         </div>
       </div>
-      {showOutline ? <Outline /> : <div className="app-region" />}
       <SmartBuilder />
       <SearchPalette />
       <Toaster />
