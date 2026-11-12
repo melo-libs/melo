@@ -18,7 +18,6 @@ export interface EditorTopBarProps {
   viewerActive?: boolean
   sidebarAvailable?: boolean
   onToggleSidebar: () => void
-  onToggleOutline: () => void
   onToggleTheme: () => void
 }
 
@@ -86,7 +85,6 @@ export const EditorTopBar = ({
   viewerActive,
   sidebarAvailable = true,
   onToggleSidebar,
-  onToggleOutline,
   onToggleTheme,
 }: EditorTopBarProps) => {
   const { t } = useTranslation()
@@ -198,15 +196,6 @@ export const EditorTopBar = ({
           <span className="tooltip">
             {theme === 'dark' ? t('topBar.lightMode') : t('topBar.darkMode')}
           </span>
-        </button>
-
-        <button
-          className="ed-iconbtn"
-          onClick={onToggleOutline}
-          aria-label={t('topBar.toggleOutline')}
-        >
-          <Icon name="panelR" size={16} />
-          <span className="tooltip">{t('topBar.toggleOutline')}</span>
         </button>
 
         <DropdownMenu.Root>

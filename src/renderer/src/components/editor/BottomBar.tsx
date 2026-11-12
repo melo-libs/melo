@@ -10,9 +10,11 @@ export interface BottomBarProps {
   /** Set when a viewer tab is active — the bar shows type · size instead
    *  of word count. */
   viewerKind?: FileKind | null
+  references: number
+  onReferences(): void
 }
 
-export const BottomBar = ({ filePath, viewerKind }: BottomBarProps) => {
+export const BottomBar = ({ filePath, viewerKind, references, onReferences }: BottomBarProps) => {
   const { t, i18n } = useTranslation()
   const words = useAtomValue(wordCountAtom)
   const [stats, setStats] = useState<{ mtime: number; size: number } | null>(null)
@@ -57,8 +59,8 @@ export const BottomBar = ({ filePath, viewerKind }: BottomBarProps) => {
           <span>{t('bottomBar.words', { count: words })}</span>
           <span className="sep">·</span>
           <span>{t('bottomBar.minRead', { count: reading })}</span>
-          <span className="sep">·</span>
-          <span>{t('bottomBar.format')}</span>
+          <span className="sep ed-bar-detail">·</span>
+          <span className="ed-bar-detail">{t('bottomBar.format')}</span>
         </>
       )}
       {viewerKind && stats && (
@@ -69,8 +71,16 @@ export const BottomBar = ({ filePath, viewerKind }: BottomBarProps) => {
       )}
       {created && (
         <>
+          <span className="sep ed-bar-detail">·</span>
+          <span className="ed-bar-detail">{t('bottomBar.created', { date: created })}</span>
+        </>
+      )}
+      {!viewerKind && references > 0 && (
+        <>
           <span className="sep">·</span>
-          <span>{t('bottomBar.created', { date: created })}</span>
+          <button className="ed-bar-references" onClick={onReferences}>
+            {t('bottomBar.references', { count: references })}
+          </button>
         </>
       )}
     </div>

@@ -13,8 +13,6 @@ export interface AppSettings {
 
   theme: 'light' | 'dark' | 'system'
   editorWidth: 'narrow' | 'default' | 'wide' | 'full'
-  /** Show the outline column when the app starts. */
-  outlineByDefault: boolean
   /** File-tree ordering (folders first, Inbox pinned, then this rule). */
   treeSort:
     | 'name-asc'
@@ -43,7 +41,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoUpdate: true,
   theme: 'system',
   editorWidth: 'default',
-  outlineByDefault: false,
   treeSort: 'name-asc',
   editorFont: 'sans',
   codeIndent: 'tab',

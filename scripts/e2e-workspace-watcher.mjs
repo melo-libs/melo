@@ -76,6 +76,46 @@ function seedWorkspace() {
       '| Item | Status |\n| :--- | ---: |\n| First | One |\n| Second | Two |',
     ),
   )
+  fs.writeFileSync(
+    path.join(workspace, 'outline-sample.md'),
+    note(
+      'Outline sample',
+      Array.from(
+        { length: 12 },
+        (_, index) =>
+          `## Section ${index + 1}\n\n${'A paragraph about reading and writing. '.repeat(16)}\n\n### Detail ${index + 1}\n\n${'More details. '.repeat(24)}`,
+      ).join('\n\n'),
+    ),
+  )
+  fs.writeFileSync(
+    path.join(workspace, 'ref-a.md'),
+    note('Reference A', '[[outline-sample]]\n\nAnother [[outline-sample]]'),
+  )
+  fs.writeFileSync(path.join(workspace, 'ref-b.md'), note('Reference B', '[[outline-sample]]'))
+  for (let index = 0; index < 33; index++) {
+    fs.writeFileSync(
+      path.join(workspace, `ref-extra-${index}.md`),
+      note(`Reference ${index}`, '[[outline-sample]]'),
+    )
+  }
+  fs.writeFileSync(path.join(workspace, 'no-headings.md'), 'Plain text without a heading.\n')
+  fs.writeFileSync(
+    path.join(workspace, 'many-headings.md'),
+    note(
+      'Many headings',
+      Array.from(
+        { length: 80 },
+        (_, index) => `## Chapter ${index + 1}\n\n${'Reading text. '.repeat(40)}`,
+      ).join('\n\n'),
+    ),
+  )
+  fs.writeFileSync(
+    path.join(workspace, 'outline-image.png'),
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+nmS8AAAAASUVORK5CYII=',
+      'base64',
+    ),
+  )
   fs.mkdirSync(path.join(workspace, '00 Parent', '00 Child', '00 Target', '00 Deep'), {
     recursive: true,
   })
@@ -159,28 +199,61 @@ async function run() {
   await smartMenu.waitFor({ state: 'hidden' })
   assert(await smartResults.isVisible(), 'closing the file menu must keep the Smart Folder open')
   await smartNote.click()
-  const outlineToggle = page.getByRole('button', { name: 'Toggle outline', exact: true })
-  const outline = page.locator('.outline')
-  await outlineToggle.click()
-  await outline.waitFor({ state: 'visible' })
-  await waitUntil('the outline should follow the open Smart Folder result', async () =>
-    (await outline.locator('.ol-label').allTextContents()).includes('Captured'),
+  const outline = page.locator('.doc-outline')
+  const contents = page.locator('.doc-outline-card')
+  const contentsShortcut = process.platform === 'darwin' ? 'Meta+Alt+o' : 'Control+Alt+o'
+  const editorWidthBeforeContents = (await page.locator('.editor-content').boundingBox()).width
+  await outline.locator('.doc-outline-trigger').hover()
+  await contents.waitFor({ state: 'visible' })
+  assert((await contents.locator('.doc-outline-item').allTextContents()).includes('Captured'))
+  assert(await smartResults.isVisible(), 'opening contents keeps the Smart Folder visible')
+  assert.equal(
+    (await page.locator('.editor-content').boundingBox()).width,
+    editorWidthBeforeContents,
   )
-  assert(await smartResults.isVisible(), 'showing the outline should keep the results visible')
-  assert.equal(await page.locator('.app').getAttribute('data-outline'), 'shown')
-
-  await outlineToggle.click()
-  await outline.waitFor({ state: 'detached' })
-  assert.equal(await page.locator('.app').getAttribute('data-outline'), 'hidden')
-  await outlineToggle.click()
-  await outline.waitFor({ state: 'visible' })
+  await contents.evaluate((element) =>
+    Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+  )
+  const hoverCardBounds = await contents.boundingBox()
+  const hoverAwayBounds = await page.locator('.ed-breadcrumb').boundingBox()
+  // Locator actionability waits can exceed the close delay; exercise pointer travel directly.
+  await page.mouse.move(hoverAwayBounds.x + hoverAwayBounds.width / 2, hoverAwayBounds.y + 10)
+  await page.mouse.move(hoverCardBounds.x + hoverCardBounds.width / 2, hoverCardBounds.y + 10)
+  await page.waitForTimeout(180)
+  assert(await contents.isVisible(), 'brief pointer travel must not close the card')
+  await page.locator('.ed-breadcrumb').hover()
+  await contents.waitFor({ state: 'detached' })
+  await page.locator('.ProseMirror').focus()
+  await page.keyboard.press(contentsShortcut)
+  await contents.waitFor({ state: 'visible' })
+  assert(
+    await page
+      .locator('.doc-outline-item[aria-current]')
+      .evaluate((el) => document.activeElement === el),
+  )
+  await page.keyboard.press('Escape')
+  await contents.waitFor({ state: 'detached' })
+  assert(
+    await page.locator('.ProseMirror').evaluate((el) => document.activeElement === el),
+    'Escape restores editor focus after the exit animation',
+  )
+  await outline.locator('.doc-outline-trigger').focus()
+  await page.keyboard.press('Enter')
+  await contents.waitFor({ state: 'visible' })
+  await page.keyboard.press('Escape')
+  await contents.waitFor({ state: 'detached' })
+  assert(
+    await outline.locator('.doc-outline-trigger').evaluate((el) => document.activeElement === el),
+  )
 
   await treeRow(page, 'delete-me').first().click()
   await page.locator('.smart-view').waitFor({ state: 'detached' })
-  await waitUntil(
-    'workspace browsing should preserve the outline and update its headings',
-    async () => (await outline.locator('.ol-label').allTextContents()).includes('Delete Me'),
+  await outline.locator('.doc-outline-trigger').hover()
+  await waitUntil('contents follows the active document', async () =>
+    (await contents.locator('.doc-outline-item').allTextContents()).includes('Delete Me'),
   )
+  await page.locator('.ed-breadcrumb').hover()
+  await contents.waitFor({ state: 'detached' })
   const prose = page.locator('.ProseMirror')
   const originalBlocks = await prose.locator(':scope > *').count()
   const beforeBlankClick = await prose.innerText()
@@ -341,9 +414,11 @@ async function run() {
   await treeRow(page, 'captured').first().click()
   await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
   await smartResults.waitFor({ state: 'visible' })
-  await waitUntil('returning to Smart Folders should preserve the visible outline', async () =>
-    (await outline.locator('.ol-label').allTextContents()).includes('Captured'),
+  await outline.locator('.doc-outline-trigger').hover()
+  await waitUntil('contents follows the Smart Folder result', async () =>
+    (await contents.locator('.doc-outline-item').allTextContents()).includes('Captured'),
   )
+  await page.locator('.ed-breadcrumb').hover()
 
   const originalWindowSize = await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].getSize(),
@@ -354,56 +429,27 @@ async function run() {
     smartList: localStorage.getItem('melo.smartListWidth'),
   }))
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 860))
-  await waitUntil(
-    'a narrow Smart Folder should collapse the sidebar',
-    async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'hidden',
-  )
+  assert((await page.locator('.editor-content').boundingBox()).width >= 320)
+  assert((await page.locator('.smart-view').boundingBox()).width >= 240)
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+  await outline.locator('.doc-outline-trigger').hover()
+  await contents.waitFor({ state: 'visible' })
+  const cardBounds = await contents.boundingBox()
+  const readingBounds = await page.locator('.ed-reading').boundingBox()
   assert(
-    (await page.locator('.center-pane').boundingBox()).width >= 320,
-    'showing the outline at 800px should preserve usable editor space',
+    cardBounds.x >= readingBounds.x &&
+      cardBounds.x + cardBounds.width <= readingBounds.x + readingBounds.width,
   )
-  assert(
-    (await page.locator('.smart-view').boundingBox()).width >= 240,
-    'the Smart Folder list should retain its minimum width',
-  )
-  assert(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    'the narrow layout should fit without horizontal overflow',
-  )
-
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.25),
-  )
-  await waitUntil('the zoomed layout should fit beside the outline', async () => {
-    const editor = await page.locator('.center-pane').boundingBox()
-    const outlineBox = await outline.boundingBox()
-    return (
-      editor.width > 0 &&
-      editor.x + editor.width <= outlineBox.x &&
-      (await page.evaluate(() => window.innerWidth < 800))
-    )
-  })
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1),
-  )
-  await waitUntil('resetting zoom should restore the CSS viewport', () =>
-    page.evaluate(() => window.innerWidth >= 800),
-  )
-
-  await page.getByRole('button', { name: 'Toggle files', exact: true }).click()
-  await outline.waitFor({ state: 'detached' })
-  await waitUntil(
-    'explicitly opening the sidebar should make room by closing the outline',
-    async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'shown',
-  )
+  await page.locator('.ed-breadcrumb').hover()
 
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.25),
   )
   await waitUntil(
-    'zooming in should adapt to the smaller CSS viewport',
+    'zoomed Smart Folder collapses the sidebar',
     async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'hidden',
   )
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
   await page.getByRole('button', { name: 'Toggle files', exact: true }).click()
   await page.locator('.smart-view').waitFor({ state: 'detached' })
   await page.locator('.sidebar').waitFor({ state: 'visible' })
@@ -412,14 +458,12 @@ async function run() {
   )
   await page.locator('.sf-row', { hasText: 'Web Clips' }).click()
   await smartResults.waitFor({ state: 'visible' })
-  await outlineToggle.click()
-  await outline.waitFor({ state: 'visible' })
   await app.evaluate(
     ({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setSize(width, height),
     originalWindowSize,
   )
   await waitUntil(
-    'widening the window should restore the sidebar',
+    'widening restores the sidebar',
     async () => (await page.locator('.app').getAttribute('data-sidebar')) === 'shown',
   )
   assert.equal((await page.locator('.smart-view').boundingBox()).width, originalListWidth)
@@ -429,13 +473,159 @@ async function run() {
       smartList: localStorage.getItem('melo.smartListWidth'),
     })),
     preferredWidths,
-    'responsive layout should not overwrite preferred pane widths',
+  )
+  await outline.locator('.doc-outline-trigger').hover()
+  if (outlineScreenshotPath) await page.screenshot({ path: outlineScreenshotPath, fullPage: true })
+  await page.locator('.ed-breadcrumb').hover()
+
+  await treeRow(page, 'outline-sample').first().click()
+  await page.locator('.ProseMirror h1', { hasText: 'Outline sample' }).waitFor()
+  await outline.locator('.doc-outline-trigger span').first().waitFor()
+  assert.equal(await outline.getAttribute('data-dense'), 'true')
+  assert.equal(await outline.locator('.doc-outline-trigger span').count(), 13)
+  await outline.locator('.doc-outline-trigger').hover()
+  await contents.waitFor({ state: 'visible' })
+  assert.equal(await contents.locator('.doc-outline-item').count(), 25)
+  assert.equal(
+    await page.locator('.document-tags-add').count(),
+    1,
+    'references and tags must have distinct sibling keys',
+  )
+  assert.equal(await contents.locator('.doc-outline-list').getAttribute('data-below'), 'true')
+  await page.locator('.ed-breadcrumb').hover()
+  await contents.waitFor({ state: 'detached' })
+  const proseForOutline = page.locator('.ProseMirror')
+  await proseForOutline
+    .locator('h2', { hasText: 'Section 8', exact: true })
+    .evaluate((element) => element.scrollIntoView({ block: 'start' }))
+  await page.keyboard.press(contentsShortcut)
+  await waitUntil(
+    'current heading is revealed even when its scroll update arrives after opening',
+    async () =>
+      (await page.locator('.doc-outline-item[aria-current]').innerText()) === 'Section 8' &&
+      (await contents.locator('.doc-outline-list').evaluate((el) => el.scrollTop > 0)),
+  )
+  await page.keyboard.press('ArrowDown')
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Detail 8')
+  await page.keyboard.press('Escape')
+  await contents.waitFor({ state: 'detached' })
+  await outline.locator('.doc-outline-trigger').hover()
+  await contents.waitFor({ state: 'visible' })
+  assert.equal(
+    await contents.locator('.doc-outline-item[tabindex="0"]').innerText(),
+    'Section 8',
+    'hover reopening starts from the current heading rather than the previous keyboard cursor',
+  )
+  await page.locator('.ed-breadcrumb').hover()
+  await contents.waitFor({ state: 'detached' })
+  await page.keyboard.press(contentsShortcut)
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await contents.waitFor({ state: 'detached' })
+  await waitUntil('keyboard jump scrolls to a heading', async () => {
+    const heading = await proseForOutline
+      .locator('h3', { hasText: 'Detail 8', exact: true })
+      .boundingBox()
+    const scroll = await page.locator('.ed-scroll').boundingBox()
+    return Math.abs(heading.y - scroll.y) < 30
+  })
+  const referenceButton = page.locator('.ed-bar-references')
+  await waitUntil(
+    'footer counts referring notes rather than occurrences',
+    async () => (await referenceButton.innerText()) === '35 references',
+  )
+  await referenceButton.click()
+  await page.locator('.bl-body').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('.bl-group').count(), 35)
+  assert.equal(await page.locator('.bl-count').first().innerText(), '35')
+  await waitUntil('footer reveals references at the end of the note', async () => {
+    const section = await page.locator('.bl').boundingBox()
+    const reading = await page.locator('.ed-scroll').boundingBox()
+    return section.y >= reading.y && section.y < reading.y + reading.height
+  })
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 700))
+  await waitUntil(
+    'narrow footer hides secondary metadata',
+    async () => !(await page.locator('.ed-bar-detail').last().isVisible()),
+  )
+  assert(await referenceButton.isVisible())
+  const referenceBounds = await referenceButton.boundingBox()
+  const footerBounds = await page.locator('.ed-bottombar').boundingBox()
+  assert(
+    referenceBounds.x >= footerBounds.x &&
+      referenceBounds.x + referenceBounds.width <= footerBounds.x + footerBounds.width,
+  )
+  assert(await page.locator('.ed-bottombar').evaluate((el) => el.scrollWidth <= el.clientWidth))
+  if (outlineScreenshotPath)
+    await page.screenshot({ path: outlineScreenshotPath.replace('.png', '-references.png') })
+  await app.evaluate(
+    ({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setSize(width, height),
+    originalWindowSize,
+  )
+  await treeRow(page, 'no-headings').first().click()
+  await page.locator('.ProseMirror', { hasText: 'Plain text without a heading.' }).waitFor()
+  await outline.waitFor({ state: 'detached' })
+  assert.equal(await referenceButton.count(), 0)
+  await treeRow(page, 'many-headings').first().click()
+  await page.locator('.ProseMirror h1', { hasText: 'Many headings' }).waitFor()
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 520))
+  await waitUntil('all dense marks fit inside the shorter window', async () => {
+    const marks = outline.locator('.doc-outline-trigger span')
+    if ((await marks.count()) !== 81) return false
+    const first = await marks.first().boundingBox()
+    const last = await marks.last().boundingBox()
+    const trigger = await outline.locator('.doc-outline-trigger').boundingBox()
+    const reading = await page.locator('.ed-reading').boundingBox()
+    return (
+      first.y >= trigger.y &&
+      last.y + last.height <= trigger.y + trigger.height &&
+      trigger.y >= reading.y &&
+      trigger.y + trigger.height <= reading.y + reading.height
+    )
+  })
+  await page
+    .locator('.ProseMirror h2', { hasText: 'Chapter 80', exact: true })
+    .evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await outline.locator('.doc-outline-trigger').hover()
+  await contents.waitFor({ state: 'visible' })
+  assert.equal(await contents.locator('.doc-outline-item').count(), 81)
+  await waitUntil('card opening animation settles', () =>
+    contents.evaluate(
+      (el) => getComputedStyle(el).opacity === '1' && getComputedStyle(el).transform === 'none',
+    ),
   )
   if (outlineScreenshotPath) {
-    await page.screenshot({ path: outlineScreenshotPath, fullPage: true })
+    await page.screenshot({ path: outlineScreenshotPath.replace('.png', '-dense.png') })
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+    await contents.evaluate((element) =>
+      Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+    )
+    await page.screenshot({ path: outlineScreenshotPath.replace('.png', '-dense-dark.png') })
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
   }
-  await outlineToggle.click()
-  await outline.waitFor({ state: 'detached' })
+  await page.locator('.ed-breadcrumb').hover()
+  await contents.waitFor({ state: 'detached' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.locator('.ProseMirror').focus()
+  await page.keyboard.press(contentsShortcut)
+  await contents.waitFor({ state: 'visible' })
+  assert.equal(
+    await outline
+      .locator('.doc-outline-trigger span')
+      .first()
+      .evaluate((el) => getComputedStyle(el).transitionDuration),
+    '0s',
+  )
+  await page.keyboard.press('Escape')
+  await contents.waitFor({ state: 'detached' })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await app.evaluate(
+    ({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setSize(width, height),
+    originalWindowSize,
+  )
+  await treeRow(page, 'outline-image').first().click()
+  await page.locator('.ed-scroll[data-viewer]').waitFor()
+  assert.equal(await outline.count(), 0)
 
   await page.locator('.sf-row', { hasText: 'Recent' }).click()
   await smartResults.waitFor({ state: 'visible' })
@@ -735,7 +925,7 @@ async function run() {
       {
         ok: true,
         folders: LARGE_FOLDER_COUNT,
-        seededFiles: LARGE_FOLDER_COUNT * 3 + 3,
+        seededFiles: LARGE_FOLDER_COUNT * 3 + 42,
         elapsedMs: Date.now() - startedAt,
         mainProcessRssMb: Math.round(rssKb / 1024),
         moveRowsMounted: mountedAtTop,

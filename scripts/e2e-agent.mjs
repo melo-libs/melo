@@ -679,6 +679,7 @@ try {
     const originalBody = await editor.innerText()
     assert.equal(await page.locator('.document-tag').count(), 0)
     const emptyTags = page.locator('.document-tags-add')
+    assert.equal(await emptyTags.count(), 1, 'the editor must mount one tags entry per document')
     await page.mouse.move(20, 20)
     await page.getByRole('button', { name: 'More actions', exact: true }).focus()
     assert.equal(await emptyTags.evaluate((el) => getComputedStyle(el).opacity), '0')
@@ -1579,7 +1580,6 @@ try {
   // Docking changes the shell layout, not the conversation or its draft.
   const sameConversationPanel = await page.locator('.agent-window').elementHandle()
   const sameDraftInput = await page.locator('.agent-compose textarea').elementHandle()
-  const outlineWasShown = await page.locator('.app').getAttribute('data-outline')
   const dockDraft = 'Keep this unsent draft while moving between layouts. '.repeat(4)
   await page.locator('.agent-compose textarea').fill(dockDraft)
   const bodyBeforeDock = await page.locator('.agent-body').evaluate((element) => {
@@ -1599,7 +1599,6 @@ try {
     ),
   )
   assert.equal(await page.locator('.agent-compose textarea').inputValue(), dockDraft)
-  assert.equal(await page.locator('.app').getAttribute('data-outline'), 'hidden')
   const dockedBounds = await page.locator('.agent-window').boundingBox()
   const centerBounds = await page.locator('.editor-content').boundingBox()
   assert(
@@ -1688,20 +1687,34 @@ try {
       .locator('.agent-compose textarea')
       .evaluate((element) => element.clientHeight >= Math.min(130, element.scrollHeight - 2)),
   )
-  await page.getByRole('button', { name: 'Toggle outline', exact: true }).click()
-  await waitUntil('explicit outline request restores the outline', () =>
-    page
-      .locator('.app')
-      .evaluate(
-        (element) =>
-          element.getAttribute('data-outline') === 'shown' &&
-          !element.hasAttribute('data-agent-docked'),
-      ),
+  await page.locator('.agent-compose textarea').focus()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Alt+o' : 'Control+Alt+o')
+  assert.equal(await page.locator('.doc-outline-card').count(), 0, 'Agent inputs keep the shortcut')
+  await page.locator('.ProseMirror').focus()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Alt+o' : 'Control+Alt+o')
+  await page.locator('.doc-outline-card').waitFor()
+  assert(
+    await page.locator('.app[data-agent-docked]').count(),
+    'opening contents must not undock chat',
   )
-  if (outlineWasShown !== 'shown')
-    await page.getByRole('button', { name: 'Toggle outline', exact: true }).click()
-  await page.getByRole('button', { name: 'Dock to right', exact: true }).click()
-  await page.locator('.app[data-agent-docked]').waitFor()
+  const contentsBounds = await page.locator('.doc-outline-card').boundingBox()
+  const readingBounds = await page.locator('.ed-reading').boundingBox()
+  assert(
+    contentsBounds.x >= readingBounds.x &&
+      contentsBounds.x + contentsBounds.width <= readingBounds.x + readingBounds.width,
+  )
+  if (process.env.MELO_E2E_DOCK_SCREENSHOT) {
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-contents.png'),
+    })
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+    await page.screenshot({
+      path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', '-contents-dark.png'),
+    })
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+  }
+  await page.keyboard.press('Escape')
+  await page.locator('.doc-outline-card').waitFor({ state: 'detached' })
   if (bodyBeforeDock.total > bodyBeforeDock.height)
     await waitUntil('latest reply remains visible after docking', () =>
       page
@@ -1765,7 +1778,6 @@ try {
   await page.locator('.app[data-agent-docked]').waitFor()
   await page.getByRole('button', { name: 'Close conversation', exact: true }).click()
   assert.equal(await page.locator('.app[data-agent-docked]').count(), 0)
-  assert.equal(await page.locator('.app').getAttribute('data-outline'), outlineWasShown)
   await page.locator('.agent-dock').click()
   await page.locator('.app[data-agent-docked]').waitFor()
   const dockHeader = await page.locator('.agent-head').boundingBox()
@@ -1785,7 +1797,6 @@ try {
       .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight < 4),
   )
   assert.equal(await page.locator('.agent-compose textarea').inputValue(), dockDraft)
-  assert.equal(await page.locator('.app').getAttribute('data-outline'), outlineWasShown)
   const floatingHeader = await page.locator('.agent-head').boundingBox()
   await page.mouse.move(floatingHeader.x + 90, floatingHeader.y + 20)
   await page.mouse.down()

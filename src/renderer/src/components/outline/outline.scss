@@ -1,184 +1,173 @@
-/* ============================================================
-   Right column — document outline + file info + Melo card.
-   Ported from design outline.css.
-   ============================================================ */
-
-.outline {
-  background: var(--paper);
-  border-left: 1px solid var(--hairline);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-  height: 100vh;
-}
-
-.ol-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 14px 16px 8px;
-  border-bottom: 1px solid var(--hairline);
-}
-.ol-tab {
-  padding: 5px 10px;
-  border-radius: var(--r-sm);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-3);
-  transition:
-    background 120ms var(--ease),
-    color 120ms var(--ease);
-}
-.ol-tab:hover {
-  color: var(--ink);
-}
-.ol-tab[data-active='true'] {
-  background: var(--paper-2);
-  color: var(--ink);
-}
-
-.ol-body {
-  flex: 1;
-  overflow-y: auto;
-  /* 4px + the global 10px scrollbar gutter = the 14px left inset. */
-  padding: 12px 4px 20px 14px;
-  scrollbar-gutter: stable;
-}
-
-.ol-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--ink-4);
-  margin: 8px 6px 6px;
-}
-.ol-tags-title {
-  margin-top: 16px;
-}
-
-.ol-empty {
-  font-size: 12px;
-  color: var(--ink-4);
-  padding: 6px 8px;
-}
-
-/* ---------- Outline items ---------- */
-.ol-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  color: var(--ink-2);
-  cursor: pointer;
-  min-height: 24px;
-  position: relative;
-  transition:
-    background 120ms var(--ease),
-    color 120ms var(--ease);
-}
-.ol-item:hover {
-  background: var(--paper-2);
-  color: var(--ink);
-}
-.ol-item[data-active='true'] {
-  color: var(--accent);
-  font-weight: 500;
-}
-.ol-item[data-active='true']::before {
-  content: '';
+.doc-outline {
   position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  background: var(--accent);
-  border-radius: 2px;
+  inset: 16px 12px 16px auto;
+  width: 40px;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  align-items: center;
+  justify-items: end;
+  pointer-events: none;
+  z-index: 12;
+  // Keep the card's geometry stable until its exit animation finishes.
+  &:has(.doc-outline-card) {
+    width: min(320px, calc(100% - 24px));
+    .doc-outline-trigger {
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
 }
-.ol-item[data-level='1'] {
-  padding-left: 8px;
-  font-weight: 500;
-  color: var(--ink);
+
+.doc-outline-trigger {
+  --mark-step: 11px;
+  grid-area: 1 / 1;
+  pointer-events: auto;
+  width: 40px;
+  padding: 12px 8px;
+  height: min(calc(var(--mark-count) * var(--mark-step) + 24px), 100%);
+  display: grid;
+  grid-template-rows: repeat(var(--mark-count), minmax(0, 1fr));
+  justify-items: end;
+  align-items: center;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  backdrop-filter: blur(8px);
+  transition:
+    opacity 120ms var(--ease),
+    background 160ms var(--ease),
+    box-shadow 160ms var(--ease);
+  span {
+    display: block;
+    width: 12px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--ink-3);
+    opacity: 0.45;
+    transition:
+      width 200ms var(--ease),
+      opacity 200ms var(--ease),
+      background 200ms var(--ease);
+    &[data-level='1'] {
+      width: 20px;
+    }
+    &[data-level='2'] {
+      width: 16px;
+    }
+    &[data-active] {
+      width: 16px;
+      background: var(--ink);
+      opacity: 0.9;
+      &[data-level='1'] {
+        width: 24px;
+      }
+      &[data-level='2'] {
+        width: 20px;
+      }
+    }
+  }
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--paper) 95%, transparent);
+    box-shadow: var(--shadow-sm);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
-.ol-item[data-level='2'] {
-  padding-left: 22px;
+.doc-outline[data-dense] .doc-outline-trigger {
+  --mark-step: 7px;
 }
-.ol-item[data-level='3'] {
-  padding-left: 36px;
-  font-size: 12px;
-  color: var(--ink-3);
+
+.doc-outline-card {
+  grid-area: 1 / 1;
+  pointer-events: auto;
+  width: 100%;
+  max-height: min(400px, 100%);
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-md);
+  padding: 10px 6px;
+  &[inert] {
+    pointer-events: none;
+  }
 }
-.ol-item .ol-label {
+.doc-outline-list {
   flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  // Fade only the edges with more content, leaving the card and shadow intact.
+  &[data-above] {
+    mask-image: linear-gradient(to bottom, transparent, #000 10px);
+  }
+  &[data-below] {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 10px), transparent);
+  }
+  &[data-above][data-below] {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 10px,
+      #000 calc(100% - 10px),
+      transparent
+    );
+  }
+}
+.doc-outline-item {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: var(--r-md);
+  text-align: left;
+  font: 400 13px/20px var(--font-sans);
+  color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition:
+    color 160ms var(--ease),
+    background 160ms var(--ease);
+  &[data-level='2'] {
+    padding-left: 24px;
+  }
+  &[data-level='3'] {
+    padding-left: 36px;
+  }
+  &[data-level='4'] {
+    padding-left: 48px;
+  }
+  &[data-level='5'] {
+    padding-left: 60px;
+  }
+  &[data-level='6'] {
+    padding-left: 72px;
+  }
+  &[aria-current] {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  &:hover,
+  &:focus-visible {
+    background: var(--paper-2);
+    color: var(--ink);
+  }
+  &:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--hairline-2);
+  }
 }
 
-/* ---------- File meta card ---------- */
-.ol-meta {
-  margin: 8px 4px 0;
-  padding: 14px;
-  border-radius: var(--r-lg);
-  background: var(--paper-2);
-  border: 1px solid var(--hairline);
-  font-family: var(--font-sans);
-}
-.ol-meta-row {
-  display: flex;
-  justify-content: space-between;
-  /* Values can wrap (Path) — pin the label to the first line and keep
-     a real gutter between the columns. */
-  align-items: baseline;
-  gap: 12px;
-  padding: 5px 0;
-  font-size: 12px;
-}
-.ol-meta-row + .ol-meta-row {
-  border-top: 1px solid var(--hairline);
-}
-.ol-meta-row dt {
-  color: var(--ink-4);
-}
-.ol-meta-row dd {
-  margin: 0;
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-  min-width: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-.ol-meta-row dd.path {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-3);
-}
-/* Long values (Path) stack under their label instead of fighting it on
-   one line — a right-aligned multi-line path reads as a ragged blob. */
-.ol-meta-row.block {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-}
-.ol-meta-row.block dd {
-  text-align: left;
-  line-height: 1.5;
-}
-
-/* ---------- Tags ---------- */
-.ol-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 6px;
-}
-.ol-tag {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  border: 1px solid var(--hairline);
-  font-family: var(--font-sans);
+@media (prefers-reduced-motion: reduce) {
+  .doc-outline-trigger,
+  .doc-outline-trigger span,
+  .doc-outline-item {
+    transition: none;
+  }
 }

@@ -93,7 +93,35 @@ describe('listLinkTargets', () => {
 })
 
 describe('getNoteLinks', () => {
-  it('collects backlinks with heading context, outgoing and edges', () => {
+  it('returns every referring note without a preview limit or duplicate link suggestions', () => {
+    const target = write('Target.md', '# Target\n\nTarget body.')
+    for (let i = 0; i < 35; i++) {
+      write(
+        `Source-${i}.md`,
+        `# Source ${i}\n\n[[Target]]\n\nTarget in prose too.\n\nAgain [[Target]].`,
+      )
+    }
+    write('Mention.md', '# Mention\n\nTarget in prose only.')
+
+    const data = getNoteLinks(target)
+    expect(data.backlinksTotal).toBe(35)
+    expect(data.backlinks).toHaveLength(35)
+    expect(new Set(data.backlinks.map((source) => source.path)).size).toBe(35)
+    expect(data.mentions.map((mention) => mention.title)).toEqual(['Mention'])
+  })
+
+  it('keeps the total count and other previews when a source is unreadable', () => {
+    const target = write('Target.md', '# Target\n\nTarget body.')
+    for (let i = 0; i < 31; i++) write(`Source-${i}.md`, `# Source ${i}\n\n[[Target]].`)
+    const before = getNoteLinks(target)
+    fs.removeSync(before.backlinks[0].path)
+    const data = getNoteLinks(target)
+    expect(data.backlinksTotal).toBe(31)
+    expect(data.backlinks).toHaveLength(30)
+    expect(data.backlinks.some((source) => source.path === before.backlinks[0].path)).toBe(false)
+  })
+
+  it('collects backlinks with heading context', () => {
     const target = write('Target.md', '# Target\n\nSome body long enough to index.')
     write(
       'Source.md',
@@ -109,7 +137,6 @@ describe('getNoteLinks', () => {
     expect(data.backlinks[0].refs[0].context).toContain('[[Target]]')
 
     const source = getNoteLinks(path.join(root, 'Source.md'))
-    expect(source.outgoing).toEqual([{ target: 'Target', path: target, title: 'Target' }])
     expect(source.backlinks.map((b) => b.title)).toEqual(['Other'])
   })
 

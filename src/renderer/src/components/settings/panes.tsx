@@ -150,13 +150,6 @@ export function AppearancePane() {
             />
           }
         />
-        <Row
-          label={t('prefs.outlineByDefault')}
-          desc={t('prefs.outlineByDefaultDesc')}
-          control={
-            <Toggle on={s.outlineByDefault} onChange={(v) => setSetting('outlineByDefault', v)} />
-          }
-        />
       </Section>
     </div>
   )
