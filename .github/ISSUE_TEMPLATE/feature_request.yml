@@ -1,0 +1,22 @@
+name: Feature request / 功能建议
+description: Suggest an improvement to your workflow / 提出使用体验或功能建议
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do? / 你想完成什么？
+      description: Describe the situation and what gets in your way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience / 期望的体验
+      description: Explain how you would like Melo to help. Mockups and examples are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds / 替代方案或补充说明

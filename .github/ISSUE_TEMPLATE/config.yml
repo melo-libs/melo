@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas / 问题与交流
+    url: https://github.com/melo-libs/melo/discussions
+    about: Ask about using Melo or discuss an idea before opening an issue.
+  - name: User guide / 使用指南
+    url: https://github.com/melo-libs/melo/blob/main/src/renderer/src/assets/guides/melo.en.md
+    about: Read the guide, including editing, search, clipping, and shortcuts.
