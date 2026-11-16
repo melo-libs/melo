@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/melo-libs/melo/discussions
+    about: Ask questions, share workflows, and discuss ideas before they become feature requests.
+  - name: Report a security vulnerability
+    url: https://github.com/melo-libs/melo/security/advisories/new
+    about: Please report security issues privately, not as public issues.

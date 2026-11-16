@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Melo is not working as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please search [existing issues](https://github.com/melo-libs/melo/issues) first to avoid duplicates.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a note containing …
+        2. Press …
+        3. See …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Editor
+        - Assistant (AI)
+        - Search / ⌘K palette
+        - Web clipping
+        - Files, workspace, or sync with disk
+        - Export
+        - Updates or installation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: melo-version
+    attributes:
+      label: Melo version
+      description: Shown in Melo → About Melo.
+      placeholder: e.g. 2.1.3
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version and chip
+      placeholder: e.g. macOS 15.1, Apple silicon
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, recordings, or sample Markdown
+      description: Drag files here. Remove any private content first.
