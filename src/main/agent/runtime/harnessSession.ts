@@ -9,8 +9,10 @@ import { RuntimeEnvironment, adapterEntry } from './runtimeEnvironment'
 import { codexLaunch, CODEX_API_PROVIDER, CODEX_API_KEY_ENV } from './codexLaunch'
 import { applyNativePreferences } from './nativeConfiguration'
 import { agentApiService, savedAgentApiService } from '../../../shared/agentApi'
+import { APPROVAL_TIMEOUT_MS } from '../approval'
 
-const APPROVAL_TOOL_TIMEOUT_MS = 30 * 60 * 1000
+// Melo must resolve an expired confirmation before the Harness cancels its tool call.
+const APPROVAL_TOOL_TIMEOUT_MS = APPROVAL_TIMEOUT_MS + 60_000
 
 export interface HarnessSessionOptions {
   environment: RuntimeEnvironment

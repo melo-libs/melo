@@ -42,6 +42,17 @@ it('keeps an inactive confirmation visible as expired without stale approval act
   expect(html).not.toContain('data-pending')
 })
 
+it.each(['timed-out', 'cancelled', 'declined'] as const)(
+  'shows the actual %s reason without offering stale approval actions',
+  (status) => {
+    const html = render(false, status)
+    expect(html).toContain(`agent.approvalLabel.${status}`)
+    expect(html).toContain(`agent.approvalStatus.${status}`)
+    expect(html).not.toContain('agent.approve.apply')
+    expect(html).not.toContain('agent.approvalLabel.expired')
+  },
+)
+
 it('keeps arrows and newlines in a target path instead of parsing it as presentation data', () => {
   const path = 'folder/a → b\nc.md'
   const html = renderToStaticMarkup(

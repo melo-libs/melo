@@ -15,13 +15,17 @@ import { ConversationStore } from './storage/conversationStore'
 import { MemoryService } from './storage/memory'
 import { assembleContext } from './context'
 import type { AttachmentReceipt } from '../../shared/agentAttachments'
+import { APPROVAL_TIMEOUT_MS, ApprovalUnavailableError } from './approval'
+
+type ApprovalDecision = Exclude<AgentApproval['status'], 'pending'>
 
 interface LiveConversation {
   view: AgentView
   runtime: AgentRuntime | null
   turn: AbortController | null
   completion: Promise<void> | null
-  permission: ((allow: boolean) => void) | null
+  permission: ((decision: ApprovalDecision) => void) | null
+  approvalFailure: 'timed-out' | 'expired' | null
   permissionQueue: Promise<void>
   lastPersisted: number
   dirtyMessages: Set<string>
@@ -86,6 +90,7 @@ export class AgentService {
         turn: null,
         completion: null,
         permission: null,
+        approvalFailure: null,
         permissionQueue: Promise.resolve(),
         lastPersisted: 0,
         dirtyMessages: new Set(),
@@ -130,6 +135,7 @@ export class AgentService {
     const history = [...live.view.messages]
     const controller = new AbortController()
     live.turn = controller
+    live.approvalFailure = null
     live.turnId = randomUUID()
     live.view.completedTurn = undefined
     live.view.error = null
@@ -254,12 +260,12 @@ export class AgentService {
       // Closing drains MCP requests, including an approval wait. Release that
       // wait first or a disconnected harness can deadlock its own cleanup.
       turn.abort()
-      live.permission?.(false)
+      live.permission?.('expired')
       const runtime = live.runtime
       live.runtime = null
       if (runtime) await runtime.close()
     } finally {
-      live.permission?.(false)
+      live.permission?.('expired')
       live.permission = null
       live.view.permission = null
       for (const message of live.view.messages) {
@@ -378,6 +384,7 @@ export class AgentService {
   ): Promise<boolean> {
     const result = live.permissionQueue.then(async () => {
       if (!live.turn || live.turn.signal.aborted || signal?.aborted) return false
+      if (live.approvalFailure) throw new ApprovalUnavailableError(live.approvalFailure)
       if (AGENT_OPERATIONS[operation.kind].allowRun && live.view.allowChanges) return true
       live.view.status = 'awaiting-permission'
       const approval: AgentApproval = {
@@ -395,22 +402,31 @@ export class AgentService {
       })
       live.dirtyMessages.add(`approval:${approval.id}`)
       let cancelPermission!: () => void
-      const allowed = new Promise<boolean>((resolve) => {
+      const decision = new Promise<ApprovalDecision>((resolve) => {
         live.permission = resolve
-        cancelPermission = () => resolve(false)
+        cancelPermission = () => resolve('expired')
       })
       signal?.addEventListener('abort', cancelPermission, { once: true })
+      const timeout = setTimeout(() => live.permission?.('timed-out'), APPROVAL_TIMEOUT_MS)
       try {
         this.emit(live, true)
-        const answer = await allowed
-        approval.status =
-          live.turn?.signal.aborted || signal?.aborted ? 'expired' : answer ? 'allowed' : 'declined'
+        approval.status = await decision
+        if (
+          live.turn &&
+          !live.turn.signal.aborted &&
+          (approval.status === 'timed-out' || approval.status === 'expired')
+        ) {
+          // A missing decision is not a failed write to retry with a fresh card.
+          live.approvalFailure = approval.status
+          throw new ApprovalUnavailableError(approval.status)
+        }
         return approval.status === 'allowed'
       } finally {
+        clearTimeout(timeout)
         signal?.removeEventListener('abort', cancelPermission)
         if (approval.status === 'pending') approval.status = 'expired'
         live.dirtyMessages.add(`approval:${approval.id}`)
-        live.permission?.(false)
+        live.permission?.('expired')
         live.permission = null
         live.view.permission = null
         if (live.turn && !live.turn.signal.aborted) live.view.status = 'running'
@@ -431,7 +447,7 @@ export class AgentService {
       throw new Error('Permission request is no longer active')
     if (allow && conversation && AGENT_OPERATIONS[live.view.permission.operation.kind].allowRun)
       live.view.allowChanges = true
-    live.permission?.(allow)
+    live.permission?.(allow ? 'allowed' : 'declined')
   }
 
   async undo(id: string, changeIds: string[]): Promise<AgentView> {
@@ -512,8 +528,8 @@ export class AgentService {
       await live.completion
       return
     }
+    live.permission?.('cancelled')
     live.turn.abort()
-    live.permission?.(false)
     // Interrupt the owned process rather than waiting indefinitely for an agent
     // that ignores cooperative session/cancel. Conversation data stays in Melo.
     await live.runtime?.close()

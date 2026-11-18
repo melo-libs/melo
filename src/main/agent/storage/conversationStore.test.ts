@@ -167,6 +167,17 @@ it('persists interrupted tool and approval recovery for the complete timeline on
         content: 'Later',
         createdAt: index + 3,
       })),
+      ...(['timed-out', 'cancelled'] as const).map((status, index) => ({
+        id: `approval:${status}`,
+        role: 'tool' as const,
+        content: '',
+        createdAt: 98 + index,
+        approval: {
+          id: status,
+          operation: { kind: 'edit' as const, path: 'note.md', diff: '' },
+          status,
+        },
+      })),
       {
         id: 'approval:interrupted',
         role: 'tool',
@@ -190,6 +201,11 @@ it('persists interrupted tool and approval recovery for the complete timeline on
       store.messages(conversation.id).find((message) => message.id === 'finished-tool')?.toolStatus,
     ).toBe('completed')
     expect(store.messages(conversation.id).at(-1)?.approval?.status).toBe('expired')
+    for (const status of ['timed-out', 'cancelled'])
+      expect(
+        store.messages(conversation.id).find((message) => message.id === `approval:${status}`)
+          ?.approval?.status,
+      ).toBe(status)
     expect(
       store
         .messages(conversation.id)
