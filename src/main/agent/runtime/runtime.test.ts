@@ -8,17 +8,20 @@ import { AcpConnection } from './acpConnection'
 import type { AcpConnectionOptions } from './acpConnection'
 import { RuntimeEnvironment } from './runtimeEnvironment'
 import { startWorkspaceTools } from '../mcp/workspaceTools'
+import { ApprovalUnavailableError } from '../approval'
 
 it.each([
-  { kind: 'execute', allow: true, cancel: false },
-  { kind: 'execute', allow: false, cancel: false },
-  { kind: 'execute', allow: true, cancel: true },
-  { kind: 'edit', allow: true, cancel: false },
-  { kind: 'delete', allow: false, cancel: false },
-  { kind: 'read', allow: true, cancel: false },
+  { kind: 'execute', allow: true, cancel: false, unavailable: false },
+  { kind: 'execute', allow: false, cancel: false, unavailable: false },
+  { kind: 'execute', allow: true, cancel: true, unavailable: false },
+  { kind: 'edit', allow: true, cancel: false, unavailable: false },
+  { kind: 'delete', allow: false, cancel: false, unavailable: false },
+  { kind: 'read', allow: true, cancel: false, unavailable: false },
+  { kind: 'execute', allow: false, cancel: false, unavailable: 'timed-out' },
+  { kind: 'execute', allow: false, cancel: false, unavailable: 'expired' },
 ] as const)(
-  'routes native $kind permission through Melo (allow=$allow, cancel=$cancel)',
-  async ({ kind, allow, cancel }) => {
+  'routes native $kind permission through Melo (allow=$allow, cancel=$cancel, unavailable=$unavailable)',
+  async ({ kind, allow, cancel, unavailable }) => {
     const environment = new RuntimeEnvironment('unused')
     vi.spyOn(environment, 'requireNode').mockResolvedValue(process.execPath)
     vi.spyOn(environment, 'requireProvider').mockResolvedValue('/fixture/cli')
@@ -34,6 +37,7 @@ it.each([
     })
     const controller = new AbortController()
     const authorize = vi.fn(async () => {
+      if (unavailable) throw new ApprovalUnavailableError(unavailable)
       if (cancel) controller.abort()
       return allow
     })
@@ -100,7 +104,7 @@ it.each([
           status: 'completed',
         }),
       )
-      const outcome = await handlers.onPermission!({
+      const decision = handlers.onPermission!({
         sessionId: 'fixture',
         toolCall: {
           toolCallId: 'native',
@@ -119,10 +123,17 @@ it.each([
         title: 'Native action',
         detail: JSON.stringify({ command: 'fixture command' }),
       })
-      expect(outcome).toEqual({
-        outcome:
-          allow && !cancel ? { outcome: 'selected', optionId: 'once' } : { outcome: 'cancelled' },
-      })
+      if (unavailable) {
+        await expect(decision).rejects.toMatchObject({
+          code: RequestError.requestCancelled().code,
+          message: expect.stringContaining(new ApprovalUnavailableError(unavailable).message),
+        })
+      } else {
+        await expect(decision).resolves.toEqual({
+          outcome:
+            allow && !cancel ? { outcome: 'selected', optionId: 'once' } : { outcome: 'cancelled' },
+        })
+      }
       await runtime.close()
     } finally {
       await factory.close!()

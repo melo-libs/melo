@@ -75,7 +75,7 @@ export interface AgentPermission {
 }
 
 export interface AgentApproval extends AgentPermission {
-  status: 'pending' | 'allowed' | 'declined' | 'expired'
+  status: 'pending' | 'allowed' | 'declined' | 'expired' | 'timed-out' | 'cancelled'
 }
 
 export interface AgentView {

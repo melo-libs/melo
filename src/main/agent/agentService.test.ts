@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { AgentService } from './agentService'
 import { ConversationStore } from './storage/conversationStore'
 import { MemoryService } from './storage/memory'
 import type { RuntimeFactory, RuntimeRequest } from './agentTypes'
+import { APPROVAL_TIMEOUT_MS } from './approval'
 
 let root: string
 let store: ConversationStore
@@ -294,6 +295,63 @@ it('limits run approval to workspace changes and expires it at completion', asyn
   expect(service.open(view.conversation.id).allowChanges).toBe(false)
 })
 
+it.each([
+  { kind: 'memory' as const, scope: 'user' as const, content: 'Preference' },
+  { kind: 'native' as const, title: 'Additional access', detail: 'Read outside workspace' },
+])('keeps run-approved edits available after a $kind confirmation expires', async (operation) => {
+  const applied = vi.fn()
+  prompt.mockImplementationOnce(async () => {
+    expect(await request.authorize({ kind: 'edit', path: 'note.md', diff: '-old\n+first' })).toBe(
+      true,
+    )
+    applied('first')
+    await expect(request.authorize(operation)).rejects.toThrow('User confirmation timed out')
+    expect(
+      await request.authorize({ kind: 'edit', path: 'note.md', diff: '-first\n+second' }),
+    ).toBe(true)
+    applied('second')
+    await expect(request.authorize(operation)).rejects.toThrow('Do not retry')
+  })
+  const view = service.create(root, 'claude')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    service.send(view.conversation.id, 'Edit notes', {})
+    await vi.waitFor(() => expect(view.permission?.operation.kind).toBe('edit'))
+    service.respond(view.conversation.id, view.permission!.id, true, true)
+    await vi.waitFor(() => expect(view.permission?.operation.kind).toBe(operation.kind))
+    await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS)
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(applied.mock.calls).toEqual([['first'], ['second']])
+    expect(
+      store
+        .messages(view.conversation.id)
+        .flatMap((message) => (message.approval ? [message.approval.status] : [])),
+    ).toEqual(['allowed', 'timed-out'])
+    expect(view.allowChanges).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it.each(['workspace', 'window', 'configuration'])(
+  'records %s suspension as an interruption rather than a user stop',
+  async (reason) => {
+    prompt.mockImplementationOnce(async () => {
+      expect(await request.authorize({ kind: 'edit', path: 'note.md', diff: '-old\n+new' })).toBe(
+        false,
+      )
+    })
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Edit this', {})
+    await vi.waitFor(() => expect(view.permission).not.toBeNull())
+    await service.suspend(reason)
+    expect(
+      store.messages(view.conversation.id).find((message) => message.approval)?.approval?.status,
+    ).toBe('expired')
+    expect(view.permission).toBeNull()
+  },
+)
+
 it('records approved changes that finish during cancellation', async () => {
   prompt.mockImplementationOnce(async () => {
     await new Promise<void>((resolve) =>
@@ -452,7 +510,7 @@ it('undoes a persisted change outside the live message window', async () => {
   expect(store.changeMessages(conversation.id, ['older'])[0].change?.undone).toBe(true)
 })
 
-it('keeps interrupted confirmation in history instead of silently removing it', async () => {
+it('keeps a stopped confirmation in history instead of silently removing it', async () => {
   prompt.mockImplementationOnce(async () => {
     expect(await request.authorize({ kind: 'edit', path: 'Note.md', diff: '-old\n+new' })).toBe(
       false,
@@ -471,12 +529,56 @@ it('keeps interrupted confirmation in history instead of silently removing it', 
   expect(view.permission).toBeNull()
   expect(
     store.messages(view.conversation.id).find((message) => message.approval)?.approval,
-  ).toMatchObject({ id: approvalId, status: 'expired' })
+  ).toMatchObject({ id: approvalId, status: 'cancelled' })
   await service.suspend()
   service.resume()
   expect(
     service.current(root, 'claude').messages.find((message) => message.approval)?.approval?.status,
-  ).toBe('expired')
+  ).toBe('cancelled')
+})
+
+it('expires unanswered confirmation once, blocks retries in the turn, and allows a new user turn', async () => {
+  prompt.mockImplementationOnce(async () => {
+    await expect(
+      request.authorize({ kind: 'edit', path: 'note.md', diff: '-before\n+after' }),
+    ).rejects.toThrow('User confirmation timed out')
+    for (const operation of [
+      { kind: 'edit' as const, path: 'note.md', diff: '-before\n+revised attempt' },
+      { kind: 'create-note' as const, path: 'copy.md', content: 'after' },
+    ])
+      await expect(request.authorize(operation)).rejects.toThrow('Do not retry')
+    request.onEvent({ type: 'text', text: 'Confirmation expired; the change was not applied.' })
+  })
+  const view = service.create(root, 'claude')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    service.send(view.conversation.id, 'Edit this', {})
+    await vi.waitFor(() => expect(view.permission).not.toBeNull())
+    await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS)
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(view.permission).toBeNull()
+    expect(view.messages.filter((message) => message.approval)).toHaveLength(1)
+    expect(view.messages.find((message) => message.approval)?.approval?.status).toBe('timed-out')
+    expect(view.messages.some((message) => message.change)).toBe(false)
+    expect(view.messages.at(-1)?.content).toContain('Confirmation expired')
+    expect(
+      store.messages(view.conversation.id).find((message) => message.approval)?.approval,
+    ).toMatchObject({ status: 'timed-out' })
+  } finally {
+    vi.useRealTimers()
+  }
+  prompt.mockImplementationOnce(async () => {
+    expect(
+      await request.authorize({ kind: 'edit', path: 'note.md', diff: '-before\n+after' }),
+    ).toBe(true)
+  })
+  service.send(view.conversation.id, 'Please try again', {})
+  await vi.waitFor(() => expect(view.permission).not.toBeNull())
+  service.respond(view.conversation.id, view.permission!.id, true)
+  await vi.waitFor(() => expect(view.status).toBe('idle'))
+  expect(
+    view.messages.flatMap((message) => (message.approval ? [message.approval.status] : [])),
+  ).toEqual(['timed-out', 'allowed'])
 })
 
 it('coalesces streaming snapshots and persists only changed messages', async () => {
@@ -571,13 +673,14 @@ it('keeps plan ordering stable while updates are streamed and after history relo
   }
 })
 
-it('expires a cancelled MCP approval and permits the next tool call in the same turn', async () => {
+it('blocks repeated MCP edits after confirmation is interrupted while keeping reads available', async () => {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
   const { StreamableHTTPClientTransport } = await import(
     '@modelcontextprotocol/sdk/client/streamableHttp.js'
   )
   const { startWorkspaceTools } = await import('./mcp/workspaceTools')
   const applied: string[] = []
+  await writeFile(path.join(root, 'note.md'), 'old')
   let timedOut = false
   let proceed!: () => void
   const resume = new Promise<void>((resolve) => {
@@ -586,7 +689,10 @@ it('expires a cancelled MCP approval and permits the next tool call in the same 
   factory.mockImplementationOnce(async (request) => {
     const tools = await startWorkspaceTools((signal) => ({
       documents: {
-        read: async () => ({ content: 'old', revision: 'r1' }),
+        read: async () => ({
+          content: await readFile(path.join(root, 'note.md'), 'utf8'),
+          revision: 'r1',
+        }),
         edit: async (_path, _revision, content) => {
           if (
             !(await request.authorize(
@@ -597,6 +703,7 @@ it('expires a cancelled MCP approval and permits the next tool call in the same 
             throw new Error('Change was not approved')
           signal.throwIfAborted()
           applied.push(content)
+          await writeFile(path.join(root, 'note.md'), content)
           return { content, revision: 'r2' }
         },
       },
@@ -624,11 +731,24 @@ it('expires a cancelled MCP approval and permits the next tool call in the same 
             timedOut = true
           })
         await resume
-        if (!request.signal.aborted)
-          await client.callTool({
+        if (request.signal.aborted) return
+        for (const content of ['retry', 'revised retry']) {
+          const retry = await client.callTool({
             name: 'melo_edit_document',
-            arguments: { path: 'note.md', expectedRevision: 'r1', content: 'approved' },
+            arguments: { path: 'note.md', expectedRevision: 'r1', content },
           })
+          expect(retry.isError).toBe(true)
+          expect(retry.content).toEqual([
+            { type: 'text', text: expect.stringContaining('Do not retry') },
+          ])
+        }
+        const read = await client.callTool({
+          name: 'melo_read_document',
+          arguments: { path: 'note.md' },
+        })
+        expect(read.content).toEqual([
+          { type: 'text', text: JSON.stringify({ content: 'old', revision: 'r1' }) },
+        ])
       },
       close: async () => {
         await client.close()
@@ -638,7 +758,7 @@ it('expires a cancelled MCP approval and permits the next tool call in the same 
   })
   const view = service.create(root, 'claude')
   try {
-    service.send(view.conversation.id, 'Edit twice', {})
+    service.send(view.conversation.id, 'Edit this', {})
     await vi.waitFor(() => expect(view.permission).not.toBeNull())
     const expiredId = view.permission!.id
     await vi.waitFor(() => expect(timedOut).toBe(true))
@@ -647,16 +767,15 @@ it('expires a cancelled MCP approval and permits the next tool call in the same 
     expect(() => service.respond(view.conversation.id, expiredId, true)).toThrow('no longer active')
     expect(applied).toEqual([])
     proceed()
-    await vi.waitFor(() => expect(view.permission).not.toBeNull())
-    service.respond(view.conversation.id, view.permission!.id, true)
     await vi.waitFor(() => expect(view.status).toBe('idle'))
-    expect(applied).toEqual(['approved'])
+    expect(applied).toEqual([])
+    expect(await readFile(path.join(root, 'note.md'), 'utf8')).toBe('old')
     expect(
       store
         .messages(view.conversation.id)
         .filter((message) => message.approval)
         .map((message) => message.approval!.status),
-    ).toEqual(['expired', 'allowed'])
+    ).toEqual(['expired'])
   } finally {
     proceed()
   }

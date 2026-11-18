@@ -23,7 +23,7 @@ const presentationSchema = z.object({
     .object({
       id: z.string(),
       operation: agentOperationSchema,
-      status: z.enum(['pending', 'allowed', 'declined', 'expired']),
+      status: z.enum(['pending', 'allowed', 'declined', 'expired', 'timed-out', 'cancelled']),
     })
     .optional(),
   filingId: z.string().uuid().optional(),

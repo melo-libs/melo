@@ -6,6 +6,7 @@ import { HarnessProcess } from './harnessProcess'
 import { ownedMcpTool } from './toolIdentity'
 import { runtimeOutput } from './runtimeOutput'
 import type { AgentToolActivity } from '../../../shared/agentActivity'
+import { ApprovalUnavailableError } from '../approval'
 
 function toolFileTarget(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return
@@ -171,13 +172,20 @@ export function createRuntimeFactory(options: {
           }
           // Owned MCP tools approve their own changes. A native request that
           // survives the Harness mode still requires the user's decision.
-          const allowed =
-            !!owned ||
-            (await request.authorize({
-              kind: 'native',
-              title: output.sanitize(permission.toolCall.title ?? 'Agent permission'),
-              detail: output.sanitize(JSON.stringify(permission.toolCall.rawInput ?? {})),
-            }))
+          let allowed = !!owned
+          if (!owned) {
+            try {
+              allowed = await request.authorize({
+                kind: 'native',
+                title: output.sanitize(permission.toolCall.title ?? 'Agent permission'),
+                detail: output.sanitize(JSON.stringify(permission.toolCall.rawInput ?? {})),
+              })
+            } catch (error) {
+              if (!(error instanceof ApprovalUnavailableError)) throw error
+              // A cancelled outcome loses the cause in the adapter's permission handling.
+              throw RequestError.requestCancelled(undefined, error.message)
+            }
+          }
           const option =
             allowed && !request.signal.aborted && request.isActive()
               ? permission.options.find((option) => option.kind === 'allow_once')

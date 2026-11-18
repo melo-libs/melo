@@ -48,7 +48,7 @@ it('reserves the MCP deadline during prewarm and supplies task transports under 
         mcpServers: [{ type: 'http', name: 'task', url: `http://127.0.0.1:${port}`, headers: [] }],
         onUpdate: () => {},
       })
-      expect(config.mcp_servers[lease.toolName]).toEqual({ tool_timeout_sec: 1800 })
+      expect(config.mcp_servers[lease.toolName]).toEqual({ tool_timeout_sec: 1860 })
       expect(createSession).toHaveBeenLastCalledWith({
         mcpServers: [
           { type: 'http', name: lease.toolName, url: `http://127.0.0.1:${port}`, headers: [] },

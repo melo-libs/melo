@@ -60,17 +60,24 @@ const app = agent({ name: 'melo-test-agent' })
   .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
     const text = params.prompt.find((block) => block.type === 'text')?.text ?? ''
     if (text === 'crash') process.exit(17)
-    if (text === 'permission') {
-      const result = await client.request(methods.client.session.requestPermission, {
-        sessionId: params.sessionId,
-        toolCall: { toolCallId: 'fixture-write', title: 'Write a file', kind: 'edit' },
-        options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
-      })
+    if (text === 'permission' || text === 'permission-error') {
+      let outcome
+      try {
+        const result = await client.request(methods.client.session.requestPermission, {
+          sessionId: params.sessionId,
+          toolCall: { toolCallId: 'fixture-write', title: 'Write a file', kind: 'edit' },
+          options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+        })
+        outcome = result.outcome.outcome
+      } catch (error) {
+        if (text !== 'permission-error') throw error
+        outcome = error.message
+      }
       await client.notify(methods.client.session.update, {
         sessionId: params.sessionId,
         update: {
           sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: result.outcome.outcome },
+          content: { type: 'text', text: outcome },
         },
       })
     } else {

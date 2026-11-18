@@ -31,7 +31,9 @@ export const en = {
     nativeApproval: {
       allowed: 'Additional access allowed',
       declined: 'Additional access declined',
-      expired: 'Additional access request expired',
+      expired: 'Additional access request ended without approval.',
+      'timed-out': 'Confirmation timed out. No additional access was granted.',
+      cancelled: 'This operation was stopped. No additional access was granted.',
     },
 
     askAI: 'Ask AI',
@@ -85,14 +87,19 @@ export const en = {
       pending: 'Awaiting confirmation',
       allowed: 'Allowed',
       declined: 'Declined',
-      expired: 'No longer active',
+      expired: 'Confirmation ended · Not executed',
+      'timed-out': 'Confirmation timed out · Not executed',
+      cancelled: 'Stopped · Not executed',
     },
     approvalStatus: {
       pending: 'Waiting for your confirmation.',
       allowed: 'Permission granted. Check the change summary for the result.',
       declined: 'You declined this change. Nothing was applied by this request.',
       expired:
-        'This confirmation is no longer active. No change was approved. Ask Melo to prepare it again.',
+        'This confirmation was interrupted or the session ended. This operation was not executed. Ask Melo to prepare it again when ready.',
+      'timed-out':
+        'No confirmation was received in time. This operation was not executed. Ask Melo to prepare it again when ready.',
+      cancelled: 'This operation was stopped before approval. This operation was not executed.',
     },
     searchHistory: 'Search chat history',
     searchPlaceholder: 'Search chat history…',
