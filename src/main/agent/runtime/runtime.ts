@@ -182,6 +182,8 @@ export function createRuntimeFactory(options: {
               })
             } catch (error) {
               if (!(error instanceof ApprovalUnavailableError)) throw error
+              // A cancelled outcome loses the cause in the adapter's permission handling.
+              throw RequestError.requestCancelled(undefined, error.message)
             }
           }
           const option =

@@ -384,8 +384,8 @@ export class AgentService {
   ): Promise<boolean> {
     const result = live.permissionQueue.then(async () => {
       if (!live.turn || live.turn.signal.aborted || signal?.aborted) return false
-      if (live.approvalFailure) throw new ApprovalUnavailableError(live.approvalFailure)
       if (AGENT_OPERATIONS[operation.kind].allowRun && live.view.allowChanges) return true
+      if (live.approvalFailure) throw new ApprovalUnavailableError(live.approvalFailure)
       live.view.status = 'awaiting-permission'
       const approval: AgentApproval = {
         id: randomUUID(),
@@ -521,14 +521,14 @@ export class AgentService {
     return live.view
   }
 
-  async cancel(id: string): Promise<void> {
+  async cancel(id: string, approvalStatus: 'cancelled' | 'expired' = 'cancelled'): Promise<void> {
     const live = this.live.get(id)
     if (!live) return
     if (!live.turn) {
       await live.completion
       return
     }
-    live.permission?.('cancelled')
+    live.permission?.(approvalStatus)
     live.turn.abort()
     // Interrupt the owned process rather than waiting indefinitely for an agent
     // that ignores cooperative session/cancel. Conversation data stays in Melo.
@@ -539,7 +539,7 @@ export class AgentService {
 
   async suspend(reason = 'workspace'): Promise<void> {
     this.suspensions.add(reason)
-    await Promise.all([...this.live.keys()].map((id) => this.cancel(id)))
+    await Promise.all([...this.live.keys()].map((id) => this.cancel(id, 'expired')))
     await Promise.all(
       [...this.live.values()].map(async (live) => {
         await live.runtime?.close()

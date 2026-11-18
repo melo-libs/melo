@@ -295,6 +295,63 @@ it('limits run approval to workspace changes and expires it at completion', asyn
   expect(service.open(view.conversation.id).allowChanges).toBe(false)
 })
 
+it.each([
+  { kind: 'memory' as const, scope: 'user' as const, content: 'Preference' },
+  { kind: 'native' as const, title: 'Additional access', detail: 'Read outside workspace' },
+])('keeps run-approved edits available after a $kind confirmation expires', async (operation) => {
+  const applied = vi.fn()
+  prompt.mockImplementationOnce(async () => {
+    expect(await request.authorize({ kind: 'edit', path: 'note.md', diff: '-old\n+first' })).toBe(
+      true,
+    )
+    applied('first')
+    await expect(request.authorize(operation)).rejects.toThrow('User confirmation timed out')
+    expect(
+      await request.authorize({ kind: 'edit', path: 'note.md', diff: '-first\n+second' }),
+    ).toBe(true)
+    applied('second')
+    await expect(request.authorize(operation)).rejects.toThrow('Do not retry')
+  })
+  const view = service.create(root, 'claude')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    service.send(view.conversation.id, 'Edit notes', {})
+    await vi.waitFor(() => expect(view.permission?.operation.kind).toBe('edit'))
+    service.respond(view.conversation.id, view.permission!.id, true, true)
+    await vi.waitFor(() => expect(view.permission?.operation.kind).toBe(operation.kind))
+    await vi.advanceTimersByTimeAsync(APPROVAL_TIMEOUT_MS)
+    await vi.waitFor(() => expect(view.status).toBe('idle'))
+    expect(applied.mock.calls).toEqual([['first'], ['second']])
+    expect(
+      store
+        .messages(view.conversation.id)
+        .flatMap((message) => (message.approval ? [message.approval.status] : [])),
+    ).toEqual(['allowed', 'timed-out'])
+    expect(view.allowChanges).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it.each(['workspace', 'window', 'configuration'])(
+  'records %s suspension as an interruption rather than a user stop',
+  async (reason) => {
+    prompt.mockImplementationOnce(async () => {
+      expect(await request.authorize({ kind: 'edit', path: 'note.md', diff: '-old\n+new' })).toBe(
+        false,
+      )
+    })
+    const view = service.create(root, 'claude')
+    service.send(view.conversation.id, 'Edit this', {})
+    await vi.waitFor(() => expect(view.permission).not.toBeNull())
+    await service.suspend(reason)
+    expect(
+      store.messages(view.conversation.id).find((message) => message.approval)?.approval?.status,
+    ).toBe('expired')
+    expect(view.permission).toBeNull()
+  },
+)
+
 it('records approved changes that finish during cancellation', async () => {
   prompt.mockImplementationOnce(async () => {
     await new Promise<void>((resolve) =>

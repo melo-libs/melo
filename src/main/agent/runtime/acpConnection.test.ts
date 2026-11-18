@@ -2,8 +2,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionNotification } from '@agentclientprotocol/sdk'
+import { RequestError, type SessionNotification } from '@agentclientprotocol/sdk'
 import { AcpConnection } from './acpConnection'
+import { ApprovalUnavailableError } from '../approval'
 
 let root: string
 const connections: AcpConnection[] = []
@@ -181,6 +182,35 @@ describe.skipIf(process.platform === 'win32')('ACP process connection', () => {
     await connection.prompt([{ type: 'text', text: 'permission' }])
     expect(updates.at(-1)?.update).toMatchObject({ content: { text: 'cancelled' } })
   })
+
+  it.each(['timed-out', 'expired'] as const)(
+    'delivers the %s approval cause to the agent over ACP without closing the session',
+    async (status) => {
+      const updates: SessionNotification[] = []
+      const cause = new ApprovalUnavailableError(status)
+      const connection = await AcpConnection.start({
+        launch: {
+          command: process.execPath,
+          args: [path.resolve('scripts/fixtures/agent-acp.mjs')],
+        },
+        workspaceRoot: root,
+        onUpdate: (update) => updates.push(update),
+        onPermission: async () => {
+          throw RequestError.requestCancelled(undefined, cause.message)
+        },
+      })
+      connections.push(connection)
+      await connection.createSession({ mcpServers: [] })
+      await connection.prompt([{ type: 'text', text: 'permission-error' }])
+      expect(updates.at(-1)?.update).toMatchObject({
+        content: { text: expect.stringContaining(cause.message) },
+      })
+      await connection.prompt([{ type: 'text', text: 'Continue with approved work' }])
+      expect(updates.at(-1)?.update).toMatchObject({
+        content: { text: 'Continue with approved work' },
+      })
+    },
+  )
 
   it('keeps a single session per connection', async () => {
     const connection = await start()

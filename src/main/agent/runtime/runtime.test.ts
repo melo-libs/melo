@@ -17,7 +17,8 @@ it.each([
   { kind: 'edit', allow: true, cancel: false, unavailable: false },
   { kind: 'delete', allow: false, cancel: false, unavailable: false },
   { kind: 'read', allow: true, cancel: false, unavailable: false },
-  { kind: 'execute', allow: false, cancel: false, unavailable: true },
+  { kind: 'execute', allow: false, cancel: false, unavailable: 'timed-out' },
+  { kind: 'execute', allow: false, cancel: false, unavailable: 'expired' },
 ] as const)(
   'routes native $kind permission through Melo (allow=$allow, cancel=$cancel, unavailable=$unavailable)',
   async ({ kind, allow, cancel, unavailable }) => {
@@ -36,7 +37,7 @@ it.each([
     })
     const controller = new AbortController()
     const authorize = vi.fn(async () => {
-      if (unavailable) throw new ApprovalUnavailableError('timed-out')
+      if (unavailable) throw new ApprovalUnavailableError(unavailable)
       if (cancel) controller.abort()
       return allow
     })
@@ -103,7 +104,7 @@ it.each([
           status: 'completed',
         }),
       )
-      const outcome = await handlers.onPermission!({
+      const decision = handlers.onPermission!({
         sessionId: 'fixture',
         toolCall: {
           toolCallId: 'native',
@@ -122,10 +123,17 @@ it.each([
         title: 'Native action',
         detail: JSON.stringify({ command: 'fixture command' }),
       })
-      expect(outcome).toEqual({
-        outcome:
-          allow && !cancel ? { outcome: 'selected', optionId: 'once' } : { outcome: 'cancelled' },
-      })
+      if (unavailable) {
+        await expect(decision).rejects.toMatchObject({
+          code: RequestError.requestCancelled().code,
+          message: expect.stringContaining(new ApprovalUnavailableError(unavailable).message),
+        })
+      } else {
+        await expect(decision).resolves.toEqual({
+          outcome:
+            allow && !cancel ? { outcome: 'selected', optionId: 'once' } : { outcome: 'cancelled' },
+        })
+      }
       await runtime.close()
     } finally {
       await factory.close!()
