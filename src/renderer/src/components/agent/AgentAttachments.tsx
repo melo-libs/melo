@@ -4,6 +4,8 @@ import { Button } from '../ui/Button'
 import { Icon } from '../Icon'
 import { formatSize } from '../../lib/format'
 import { AgentAttachmentVisual } from './AgentAttachmentVisual'
+import { filePreview } from '@shared/filePreview'
+import { AgentImage } from './AgentImage'
 
 export function AgentAttachments({
   files,
@@ -27,6 +29,23 @@ export function AgentAttachments({
       aria-label={t('agent.attachments')}
     >
       {files.map((file) => {
+        if (onOpen && filePreview(file.name).kind === 'image')
+          return (
+            <div key={file.id} className="agent-sent-image">
+              <AgentImage attachmentId={file.id} alt={file.name} workspaceRoot={workspaceRoot} />
+              <Button
+                size="small"
+                className="agent-image-file"
+                aria-label={file.name}
+                onClick={() => onOpen(file.id)}
+              >
+                <span className="agent-attachment-meta">
+                  <strong title={file.name}>{file.name}</strong>
+                  <small>{formatSize(file.size)}</small>
+                </span>
+              </Button>
+            </div>
+          )
         const label = (
           <>
             <AgentAttachmentVisual file={file} workspaceRoot={workspaceRoot} />

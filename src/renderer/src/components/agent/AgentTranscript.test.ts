@@ -17,6 +17,36 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
+it('passes the message workspace through to local image previews', () => {
+  const html = renderToStaticMarkup(
+    createElement(AgentTranscript, {
+      messages: [
+        {
+          id: 'image',
+          conversationId: 'conversation',
+          workspaceRoot: '/notes',
+          sequence: 1,
+          role: 'assistant',
+          content: '![Reference](.assets/reference.png)',
+          createdAt: 1,
+        },
+      ],
+      running: false,
+      busy: false,
+      activeWorkspace: '/notes',
+      highlight: null,
+      onOpenFile: () => {},
+      onOpenMessage: () => {},
+      onRespond: () => {},
+      onUndo: () => {},
+      onUndoFiling: () => {},
+      onDelete: () => {},
+    }),
+  )
+  expect(html).toContain('agent.loadingImage')
+  expect(html).not.toContain('agent.imageUnavailable')
+})
+
 it('keeps native activity and resolved permissions compact while retaining command details', () => {
   const command = 'pdftotext "Inbox/statement.pdf" - | head -60'
   const activity = renderToStaticMarkup(

@@ -182,6 +182,8 @@ export type AgentCommand =
   | { action: 'paste-attachments'; workspaceRoot: string }
   | { action: 'drop-attachments'; workspaceRoot: string; files: string[] }
   | { action: 'attachment-preview'; workspaceRoot: string; attachmentId: string }
+  | { action: 'image-preview'; workspaceRoot: string; source: string }
+  | { action: 'attachment-image-preview'; workspaceRoot: string; attachmentId: string }
   | { action: 'draft-attachments'; workspaceRoot: string }
   | { action: 'remove-attachment'; workspaceRoot: string; attachmentId: string }
   | { action: 'attachment'; workspaceRoot: string; attachmentId: string }
@@ -204,6 +206,7 @@ export type AgentCommand =
 
 export interface AgentCommandResult {
   attachmentPreview?: string
+  imagePreview?: string
   intakeErrors?: { name: string; error: string }[]
   intakeHandled?: boolean
   intake?: { workspaceRoot: string; attachments: AgentAttachment[] }

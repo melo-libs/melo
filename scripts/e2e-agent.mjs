@@ -43,6 +43,7 @@ async function installFixtureStorage(instance) {
 }
 let app
 let passed = false
+let releaseReadingImage
 const fixtureReply =
   '## Weekend plan\n\nStart with **one place**.\n\n- Book a train\n- Pack light\n\n```text\nSaturday: riverside market\n```\n\nSee [Weekend note](note.md) and [Packing list](packing.md). [Outside alias](external.md).' +
   Array.from(
@@ -58,6 +59,23 @@ const fixture = createServer((request, response) => {
 })
 async function respondToFixture(request, response) {
   const url = new URL(request.url, 'http://localhost')
+  if (url.pathname === '/chat-reference.svg') {
+    if (url.searchParams.get('turn')?.includes('reading older'))
+      await new Promise((resolve) => {
+        releaseReadingImage = resolve
+      })
+    else await new Promise((resolve) => setTimeout(resolve, 1800))
+    response.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' })
+    response.end(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="280"><rect width="640" height="280" fill="#eaf0ff"/><circle cx="160" cy="140" r="76" fill="#ffcd32"/><path d="M300 100h220M300 140h180M300 180h200" stroke="#607087" stroke-width="14" stroke-linecap="round"/></svg>',
+    )
+    return
+  }
+  if (url.pathname === '/missing-chat-image.png') {
+    response.writeHead(404)
+    response.end()
+    return
+  }
   if (url.pathname === '/execution-probe') {
     response.writeHead(200, { 'Content-Type': 'text/plain' })
     response.end('Native network fixture')
@@ -497,6 +515,9 @@ async function respondToFixture(request, response) {
     delta: {
       type: 'text_delta',
       text:
+        (currentRequest.startsWith('message_rendering_fixture')
+          ? `**太阳纹。 **在阳光下可见。**带“引号”**的文字。\n\n![Reference](http://127.0.0.1:${fixture.address().port}/chat-reference.svg?turn=${encodeURIComponent(currentRequest.slice(0, 50))})\n\n![Local](.assets/chat-reference.svg)\n\n![Unavailable](http://127.0.0.1:${fixture.address().port}/missing-chat-image.png)\n\nEnd of image reply.${currentRequest.includes('reading older') ? '\n\nMore context below the reading position.'.repeat(24) : ''}`
+          : '') ||
         (currentRequest.startsWith('active_file_fixture') ? 'Current file received.' : '') ||
         metadataReply ||
         filingReply ||
@@ -550,6 +571,11 @@ try {
   await new Promise((resolve) => fixture.listen(0, '127.0.0.1', resolve))
   const fixtureUrl = `http://127.0.0.1:${fixture.address().port}/anthropic`
   fs.mkdirSync(workspace)
+  fs.mkdirSync(path.join(workspace, '.assets'))
+  fs.writeFileSync(
+    path.join(workspace, '.assets/chat-reference.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="160"><rect width="480" height="160" fill="#edf6ef"/><circle cx="80" cy="80" r="42" fill="#42a56a"/><path d="M170 60h240M170 100h180" stroke="#64806b" stroke-width="12" stroke-linecap="round"/></svg>',
+  )
   const existingFilingFolder = 'Family/Baby/Medical reports/2026/Checkups'
   fs.mkdirSync(path.join(workspace, existingFilingFolder), { recursive: true })
   fs.mkdirSync(profile)
@@ -1295,7 +1321,7 @@ try {
   await page.locator('.agent-dock').click()
   const expired = page
     .locator('.agent-approval-record')
-    .filter({ hasText: 'No longer active' })
+    .filter({ hasText: 'Stopped · Not executed' })
     .last()
   await expired.locator(':scope > summary').waitFor()
   assert.equal(await expired.getAttribute('open'), null, 'superseded confirmations stay collapsed')
@@ -2591,6 +2617,129 @@ try {
           path: process.env.MELO_E2E_DOCK_SCREENSHOT.replace('.png', `-${name}-scrollbar.png`),
         })
     }
+  }
+  if (!live && !packagedApp) {
+    if (await page.locator('.agent-dock').count()) await page.locator('.agent-dock').click()
+    const input = page.locator('.agent-compose textarea')
+    const remote = `http://127.0.0.1:${fixture.address().port}/chat-reference.svg?turn=user`
+    await input.fill(`message_rendering_fixture\n\n![User reference](${remote})`)
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    const reply = page.locator('.agent-assistant').last()
+    await reply.getByText('End of image reply.').waitFor()
+    await page.locator('.agent-status').waitFor({ state: 'hidden' })
+    assert((await reply.locator('strong').allTextContents()).includes('太阳纹。 '))
+    assert((await reply.locator('strong').allTextContents()).includes('带“引号”'))
+    const body = page.locator('.agent-body')
+    await body.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
+    await waitUntil('late remote image loads', () =>
+      reply.locator('img[alt="Reference"]').evaluate((el) => el.naturalWidth > 0),
+    )
+    await waitUntil('late image keeps the latest reply at the bottom', () =>
+      body.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 3),
+    )
+    for (const alt of ['Reference', 'Local']) {
+      const image = reply.locator(`img[alt="${alt}"]`)
+      await image.scrollIntoViewIfNeeded()
+      await waitUntil(`${alt} image loads in chat`, () =>
+        image.evaluate((el) => el.naturalWidth > 0),
+      )
+    }
+    await reply.locator('.agent-image-fallback').filter({ hasText: 'Unavailable' }).waitFor()
+    const userImage = page.locator('.agent-user img[alt="User reference"]')
+    await userImage.scrollIntoViewIfNeeded()
+    await waitUntil('user Markdown image loads', () =>
+      userImage.evaluate((el) => el.naturalWidth > 0),
+    )
+    await reply.getByRole('button', { name: 'View image: Reference', exact: true }).click()
+    await page.locator('.ilb-scrim').waitFor()
+    await waitUntil('chat lightbox image loads', () =>
+      page.locator('.ilb-img').evaluate((el) => el.naturalWidth > 0),
+    )
+    assert(
+      await page.locator('.ilb-scrim').evaluate((el) => {
+        const target = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
+        return el.contains(target)
+      }),
+      'the viewer must appear above the floating Agent',
+    )
+    if (process.env.MELO_E2E_MESSAGE_SCREENSHOT)
+      await page.screenshot({
+        path: process.env.MELO_E2E_MESSAGE_SCREENSHOT.replace('.png', '-viewer.png'),
+      })
+    await page.keyboard.press('Escape')
+    await page.locator('.ilb-scrim').waitFor({ state: 'hidden' })
+    assert.equal(await page.locator('.agent-window:not([data-collapsed])').count(), 1)
+    if (process.env.MELO_E2E_MESSAGE_SCREENSHOT) {
+      await reply.locator('strong').first().scrollIntoViewIfNeeded()
+      await page
+        .locator('.agent-window')
+        .screenshot({ path: process.env.MELO_E2E_MESSAGE_SCREENSHOT })
+      const previousTheme = await page.evaluate(() => document.documentElement.dataset.theme)
+      await page.evaluate(() => {
+        document.documentElement.dataset.theme = 'dark'
+      })
+      await page
+        .locator('.agent-window')
+        .screenshot({ path: process.env.MELO_E2E_MESSAGE_SCREENSHOT.replace('.png', '-dark.png') })
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme
+      }, previousTheme)
+    }
+    const previousReplies = await page.locator('.agent-assistant').count()
+    await input.fill('message_rendering_fixture reading older')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    await waitUntil(
+      'the next image reply appears',
+      async () => (await page.locator('.agent-assistant').count()) > previousReplies,
+    )
+    const laterReply = page.locator('.agent-assistant').last()
+    await laterReply
+      .getByText('More context below the reading position.', { exact: true })
+      .first()
+      .waitFor()
+    const anchor = laterReply.getByText('End of image reply.', { exact: true })
+    await anchor.waitFor()
+    await page.locator('.agent-status').waitFor({ state: 'hidden' })
+    await laterReply.locator('img[alt="Reference"]').scrollIntoViewIfNeeded()
+    await waitUntil('the reading image request is pending', () => !!releaseReadingImage)
+    await anchor.evaluate((element) => {
+      const body = element.closest('.agent-body')
+      body.scrollTop += element.getBoundingClientRect().top - body.getBoundingClientRect().top - 12
+    })
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    const imageBounds = await laterReply.locator('img[alt="Reference"]').boundingBox()
+    assert(
+      imageBounds.y + imageBounds.height < (await body.boundingBox()).y,
+      'the delayed image must be above the reading viewport',
+    )
+    const readingY = (await anchor.boundingBox()).y
+    const readingBefore = await body.evaluate((el) => ({
+      top: el.scrollTop,
+      height: el.scrollHeight,
+      viewport: el.clientHeight,
+    }))
+    assert(readingBefore.height - readingBefore.top - readingBefore.viewport > 60)
+    releaseReadingImage()
+    await waitUntil('late image above a reading position loads', () =>
+      laterReply.locator('img[alt="Reference"]').evaluate((el) => el.naturalWidth > 0),
+    )
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    const readingAfter = await body.evaluate((el) => ({
+      top: el.scrollTop,
+      height: el.scrollHeight,
+      viewport: el.clientHeight,
+    }))
+    const currentY = (await anchor.boundingBox()).y
+    assert(
+      Math.abs(currentY - readingY) < 3,
+      JSON.stringify({ readingY, currentY, readingBefore, readingAfter }),
+    )
   }
   const errors = logs.filter((log) => log.includes('TypeError') || log.includes('ReferenceError'))
   assert.deepEqual(errors, [])

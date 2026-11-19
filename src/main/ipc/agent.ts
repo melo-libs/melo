@@ -26,6 +26,7 @@ import { AGENT_API_SERVICES, canReuseAgentApiKey } from '../../shared/agentApi'
 import { FileIntake } from '../agent/storage/fileIntake'
 import { getClipboardFiles } from '../api/fileOperations/clipboardOperations'
 import { fileThumbnail } from '../libs/fileThumbnail'
+import { readAgentImage, readAgentImageFile } from '../libs/agentImage'
 
 const execute = promisify(execFile)
 const provider = z.enum(['claude', 'codex'])
@@ -73,6 +74,12 @@ const COMMAND = z.discriminatedUnion('action', [
     files: z.array(filePath).min(1).max(20),
   }),
   z.object({ action: z.literal('attachment-preview'), workspaceRoot: filePath, attachmentId: id }),
+  z.object({ action: z.literal('image-preview'), workspaceRoot: filePath, source: filePath }),
+  z.object({
+    action: z.literal('attachment-image-preview'),
+    workspaceRoot: filePath,
+    attachmentId: id,
+  }),
   z.object({ action: z.literal('draft-attachments'), workspaceRoot: filePath }),
   z.object({ action: z.literal('remove-attachment'), workspaceRoot: filePath, attachmentId: id }),
   z.object({ action: z.literal('attachment'), workspaceRoot: filePath, attachmentId: id }),
@@ -245,6 +252,7 @@ export function setupAgentIPC(): void {
         'workspaceRoot' in command &&
         command.action !== 'attachment' &&
         command.action !== 'attachment-preview' &&
+        command.action !== 'attachment-image-preview' &&
         command.workspaceRoot !== root
       )
         throw new Error('Workspace is not active')
@@ -269,6 +277,20 @@ export function setupAgentIPC(): void {
       )
         journal.reconcileAttachments()
       switch (command.action) {
+        case 'image-preview':
+          result = { imagePreview: await readAgentImage(command.workspaceRoot, command.source) }
+          break
+        case 'attachment-image-preview': {
+          journal.reconcileAttachments()
+          const file = intake.get(command.workspaceRoot, command.attachmentId)
+          const source = await intake.openPreview(command.workspaceRoot, file.id)
+          try {
+            result = { imagePreview: await readAgentImageFile(source, file.name) }
+          } finally {
+            await source.close()
+          }
+          break
+        }
         case 'attachment-preview': {
           const file = intake.get(command.workspaceRoot, command.attachmentId)
           const source = await intake.openPreview(command.workspaceRoot, file.id)

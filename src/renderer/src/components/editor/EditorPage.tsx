@@ -10,7 +10,6 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { workspacePathAtom } from '../../store/workspace'
 import { editorExtensions } from './tiptapExtensions'
 import { EditorBubbleMenu, ImageBubble } from './BubbleMenu'
-import { ImageLightbox } from './ImageLightbox'
 import { FindBar } from './FindBar'
 import { CodeLangPicker } from './CodeLangPicker'
 import { downloadRemoteImages } from './localizeImages'
@@ -516,7 +515,6 @@ export const EditorPage = ({ activeTabId, title, width, onShare, backlinks }: Ed
         <>
           <EditorBubbleMenu editor={editor} onShare={shareSelection} />
           <ImageBubble editor={editor} />
-          <ImageLightbox />
           <FindBar editor={editor} />
           <CodeLangPicker editor={editor} />
           <TableHandle editor={editor} />

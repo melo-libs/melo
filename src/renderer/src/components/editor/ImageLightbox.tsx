@@ -179,6 +179,7 @@ export const ImageLightbox = () => {
       <img
         className="ilb-img"
         src={src}
+        referrerPolicy="no-referrer"
         draggable={false}
         onLoad={onLoad}
         onPointerDown={onImgPointerDown}
