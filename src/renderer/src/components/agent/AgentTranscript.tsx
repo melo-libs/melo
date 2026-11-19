@@ -188,6 +188,7 @@ export function AgentTranscript({
                           content={message.content}
                           role={message.role}
                           context={message.context}
+                          workspaceRoot={message.workspaceRoot}
                           complete={
                             !running ||
                             message.conversationId !== activeConversation ||

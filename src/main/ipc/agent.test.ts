@@ -6,6 +6,7 @@ import { setupAgentIPC } from './agent'
 import type { createRuntimeFactory } from '../agent/runtime/runtime'
 import { testAgentApi } from '../agent/runtime/apiConnection'
 import { checkNativeAuthentication } from '../agent/runtime/nativeAuthentication'
+import { readAgentImage } from '../libs/agentImage'
 
 const {
   profiles,
@@ -42,6 +43,10 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('node:fs', () => ({ mkdirSync: vi.fn() }))
+vi.mock('../libs/agentImage', () => ({
+  readAgentImage: vi.fn(async () => 'data:image/png;base64,Zml4dHVyZQ=='),
+  readAgentImageFile: vi.fn(),
+}))
 vi.mock('../windows', () => ({ getMainWindow: () => ({ webContents: sender }) }))
 vi.mock('../api/indexer', () => ({ activeWorkspaceRoot: () => '/notes' }))
 vi.mock('../agent/storage/agentSettings', () => ({
@@ -163,6 +168,25 @@ function invoke(command: AgentCommand) {
     command,
   )
 }
+
+it('serves message images only for the active workspace', async () => {
+  const result = await invoke({
+    action: 'image-preview',
+    workspaceRoot: '/notes',
+    source: '.assets/a.png',
+  })
+  expect(result).toMatchObject({
+    success: true,
+    data: { imagePreview: 'data:image/png;base64,Zml4dHVyZQ==' },
+  })
+  expect(readAgentImage).toHaveBeenCalledWith('/notes', '.assets/a.png')
+  vi.mocked(readAgentImage).mockClear()
+  expect(
+    (await invoke({ action: 'image-preview', workspaceRoot: '/other', source: '.assets/a.png' }))
+      .success,
+  ).toBe(false)
+  expect(readAgentImage).not.toHaveBeenCalled()
+})
 
 it('switches providers without waiting for a CLI account check', async () => {
   vi.mocked(checkNativeAuthentication).mockImplementation(() => new Promise(() => {}))

@@ -40,6 +40,7 @@ import {
 } from './lib/workspace'
 import { openCodeGuide } from './lib/codeGuide'
 import { AgentWindow } from './components/agent/AgentWindow'
+import { ImageLightbox } from './components/editor/ImageLightbox'
 import {
   connectAgent,
   agentExpandedAtom,
@@ -631,6 +632,7 @@ const App = () => {
       </div>
       <SmartBuilder />
       <SearchPalette />
+      <ImageLightbox />
       <Toaster />
     </div>
   )

@@ -758,7 +758,7 @@ body.melo-eq-editing .bubble {
 .ilb-scrim {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: 800;
   background: oklch(0.14 0.008 250 / 0.92);
   overflow: hidden;
   animation: pop 120ms var(--ease);

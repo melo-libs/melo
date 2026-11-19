@@ -1,10 +1,5 @@
 import { Fragment, memo, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MarkdownManager } from '@tiptap/markdown'
-import { StarterKit } from '@tiptap/starter-kit'
-import { Highlight } from '@tiptap/extension-highlight'
-import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table'
-import { TaskList, TaskItem } from '@tiptap/extension-list'
 import type { JSONContent } from '@tiptap/core'
 import { IpcChannels } from '@shared/types/ipc'
 import { safeExternalUrl } from '../../lib/url'
@@ -13,21 +8,18 @@ import type { AgentContext } from '@shared/types/agent'
 import { AgentQuote } from './AgentQuote'
 import { AgentAttachments } from './AgentAttachments'
 import { agentFilePath } from './agentFiles'
-
-// Render model output as React nodes: no raw HTML, remote images or executable
-// links. Replies share the editor's Markdown parser without mounting an editor.
-const markdown = new MarkdownManager({
-  extensions: [StarterKit, Highlight, Table, TableRow, TableCell, TableHeader, TaskList, TaskItem],
-})
+import { agentMarkdown, userMarkdown } from './agentMarkdown'
+import { AgentImage } from './AgentImage'
 
 function renderNode(
   node: JSONContent,
   key: number,
   onOpenFile?: (path: string) => void,
   onOpenMessage?: (id: string) => void,
+  workspaceRoot?: string,
 ): ReactNode {
   const children = node.content?.map((child, index) =>
-    renderNode(child, index, onOpenFile, onOpenMessage),
+    renderNode(child, index, onOpenFile, onOpenMessage, workspaceRoot),
   )
   if (node.type === 'text') {
     let text: ReactNode = node.text
@@ -89,6 +81,15 @@ function renderNode(
     return <Fragment key={key}>{text}</Fragment>
   }
   switch (node.type) {
+    case 'image':
+      return (
+        <AgentImage
+          key={key}
+          source={typeof node.attrs?.src === 'string' ? node.attrs.src : ''}
+          alt={typeof node.attrs?.alt === 'string' ? node.attrs.alt : ''}
+          workspaceRoot={workspaceRoot}
+        />
+      )
     case 'paragraph':
       return <p key={key}>{children}</p>
     case 'heading':
@@ -167,15 +168,15 @@ export const AgentMessage = memo(function AgentMessage({
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const document = useMemo(
-    () => (role === 'assistant' ? markdown.parse(content) : null),
+    () => (role === 'assistant' ? agentMarkdown : userMarkdown).parse(content),
     [content, role],
   )
   const body = useMemo(
     () =>
-      document
-        ? document.content?.map((node, index) => renderNode(node, index, onOpenFile, onOpenMessage))
-        : content,
-    [document, content, onOpenFile, onOpenMessage],
+      document.content?.map((node, index) =>
+        renderNode(node, index, onOpenFile, onOpenMessage, workspaceRoot),
+      ),
+    [document, onOpenFile, onOpenMessage, workspaceRoot],
   )
   return (
     <div className={`agent-message agent-${role}`}>
@@ -189,7 +190,9 @@ export const AgentMessage = memo(function AgentMessage({
       {role === 'user' && context?.selection && (
         <AgentQuote context={context} onOpenFile={onOpenFile} />
       )}
-      <div className={role === 'assistant' ? 'agent-markdown' : 'agent-user-text'}>{body}</div>
+      {content && (
+        <div className={`agent-markdown${role === 'user' ? ' agent-user-text' : ''}`}>{body}</div>
+      )}
       {role === 'assistant' && complete && (
         <button
           className="agent-quiet agent-copy"

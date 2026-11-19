@@ -42,14 +42,53 @@ describe('Agent reply rendering', () => {
     expect(html).toContain('<pre><code>const n = 1</code></pre>')
     expect(html).toContain('<table>')
   })
-  it('does not activate model-provided HTML, images or executable links', () => {
+  it('renders Markdown images without activating raw HTML or executable links', () => {
     const html = render(
       '[unsafe](javascript:alert(1))\n\n![remote](https://example.com/tracker.png)\n\n<img src="https://example.com/raw.png" onerror="alert(1)">\n\n<script>alert(1)</script>',
     )
     expect(html).not.toContain('href="javascript:')
-    expect(html).not.toContain('<img')
+    expect(html).toContain('<img src="https://example.com/tracker.png"')
+    expect(html).not.toContain('<img src="https://example.com/raw.png"')
     expect(html).not.toContain('<script')
     expect(html).toContain('unsafe')
+  })
+
+  it.each([
+    ['**太阳纹，指的是车漆最外层清漆上的极细划痕。 **在阳光下可见。', '极细划痕。 '],
+    ['**太阳纹。**在阳光下可见。', '太阳纹。'],
+    ['**带“引号”**的内容', '带“引号”'],
+  ])('renders model emphasis at punctuation and whitespace boundaries: %s', (source, text) => {
+    const html = render(source)
+    expect(html).toContain(text + '</strong>')
+    expect(html).not.toContain('**')
+  })
+
+  it('preserves literal markers, code and unfinished streamed bold', () => {
+    const html = render(
+      '`**literal**`\n\n```md\n**code。 **\n```\n\n\\*\\*escaped\\*\\*\n\n**still streaming',
+    )
+    expect(html).not.toContain('<strong>')
+    expect(html).toContain('<code>**literal**</code>')
+    expect(html).toContain('**code。 **')
+    expect(html).toContain('**escaped**')
+    expect(html).toContain('**still streaming')
+    expect(render('**before `a**b` after。 **next')).toContain(
+      '<strong>before </strong><strong><code>a**b</code></strong><strong> after。 </strong>',
+    )
+  })
+
+  it.each(['assistant', 'user'] as const)('renders safe images in %s messages', (role) => {
+    const html = renderToStaticMarkup(
+      createElement(AgentMessage, {
+        content: '![Reference](https://example.com/reference.jpg)\n\n![unsafe](javascript:alert)',
+        role,
+        complete: true,
+      }),
+    )
+    expect(html).toContain('<img src="https://example.com/reference.jpg"')
+    expect(html).toContain('referrerPolicy="no-referrer"')
+    expect(html).toContain('agent.imageUnavailable')
+    expect(html).not.toContain('src="javascript:')
   })
 })
 

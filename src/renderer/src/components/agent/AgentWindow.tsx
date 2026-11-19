@@ -151,11 +151,15 @@ export const AgentWindow = ({
     if (!element || collapsed || searching || settingsOpen) return
     // Dragging out of the sidebar and reflowing a draft can resize the body
     // without a React layout change. Preserve the same reading position then too.
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
       if (paging.current || prepend.current || jump.current) return
-      element.scrollTop = nearBottom.current ? element.scrollHeight : scrollTop.current
+      if (nearBottom.current) element.scrollTop = element.scrollHeight
+      else if (entries.some((entry) => entry.target === element))
+        element.scrollTop = scrollTop.current
     })
     observer.observe(element)
+    const transcript = element.querySelector('.agent-transcript')
+    if (transcript) observer.observe(transcript)
     return () => observer.disconnect()
   }, [collapsed, searching, settingsOpen])
   useLayoutEffect(() => {

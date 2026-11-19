@@ -239,7 +239,9 @@
   background: var(--paper-2);
 }
 .agent-user-text {
-  white-space: pre-wrap;
+  p {
+    white-space: pre-wrap;
+  }
 }
 .agent-user > .agent-quote {
   padding-bottom: 8px;
@@ -508,6 +510,49 @@
       gap: 8px;
     }
   }
+}
+.agent-image {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+}
+.agent-window .agent-image-open {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--paper-2);
+  cursor: zoom-in;
+  img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 320px;
+    object-fit: contain;
+  }
+}
+.agent-image-fallback,
+.agent-image-loading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  a {
+    color: var(--link);
+  }
+}
+.agent-image-loading {
+  min-height: 80px;
 }
 .agent-inline-file {
   display: inline;
@@ -1163,6 +1208,8 @@
 }
 .agent-attachments[data-sent] {
   justify-content: flex-end;
+  max-height: none;
+  overflow: visible;
   margin: 0 0 6px;
   padding: 0;
   .agent-attachment {
@@ -1185,6 +1232,20 @@
     line-height: 10px;
     right: 4px;
     bottom: 1px;
+  }
+}
+.agent-sent-image {
+  width: min(100%, 320px);
+  > .agent-image-file {
+    height: auto;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+  }
+  .agent-attachment-meta {
+    max-width: 100%;
   }
 }
 .agent-user:has(> .agent-attachments) {
